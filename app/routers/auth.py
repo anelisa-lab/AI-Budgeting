@@ -1,3 +1,4 @@
+import psycopg2.errors
 from fastapi import APIRouter, HTTPException, Depends, status
 
 from app.database import get_connection
@@ -15,22 +16,26 @@ def register(payload: RegisterRequest):
 
     conn = get_connection()
     try:
-        with conn, conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE email = %s", (payload.email,))
-            if cur.fetchone():
-                raise HTTPException(status_code=409, detail="An account with that email already exists")
+        try:
+            with conn, conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(%s)", (payload.email,))
+                if cur.fetchone():
+                    raise HTTPException(status_code=409, detail="An account with that email already exists")
 
-            password_hash = hash_password(payload.password)
-            cur.execute(
-                """INSERT INTO users (name, email, password_hash)
-                   VALUES (%s, %s, %s)
-                   RETURNING id, name, email, created_at""",
-                (payload.name, payload.email, password_hash),
-            )
-            user = cur.fetchone()
+                password_hash = hash_password(payload.password)
+                cur.execute(
+                    """INSERT INTO users (name, email, password_hash)
+                       VALUES (%s, %s, %s)
+                       RETURNING id, name, email, created_at""",
+                    (payload.name, payload.email, password_hash),
+                )
+                user = cur.fetchone()
 
-            # Give every new user an empty preferences row so the recommender never hits a missing row
-            cur.execute("INSERT INTO preferences (user_id) VALUES (%s)", (user["id"],))
+                # Give every new user an empty preferences row so the recommender never hits a missing row
+                cur.execute("INSERT INTO preferences (user_id) VALUES (%s)", (user["id"],))
+        except psycopg2.errors.UniqueViolation:
+            # Race: two concurrent registrations with the same (case-insensitive) email
+            raise HTTPException(status_code=409, detail="An account with that email already exists")
 
         token = create_access_token(user["id"])
         return AuthResponse(user=UserOut(**user), token=token)
@@ -44,7 +49,7 @@ def login(payload: LoginRequest):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, email, password_hash, created_at FROM users WHERE email = %s",
+                "SELECT id, name, email, password_hash, created_at FROM users WHERE LOWER(email) = LOWER(%s)",
                 (payload.email,),
             )
             user = cur.fetchone()

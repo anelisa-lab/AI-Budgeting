@@ -70,24 +70,47 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | PUT    | /profile                | Yes   | `{ name }`                                     |
 | GET    | /profile/preferences    | Yes   | Returns preferred_categories, preferred_stores, max_distance_km |
 | PUT    | /profile/preferences    | Yes   | Any subset of the same three fields            |
+| POST   | /budgets                | Yes   | `{ total_amount, cycle_start_date, cycle_end_date, budget_kind?, savings_percentage? }` |
+| GET    | /budgets                | Yes   | List all budgets (history) for the user       |
+| GET    | /budgets/current        | Yes   | The user's single active budget                |
+| PUT    | /budgets/{id}           | Yes   | `{ total_amount?, cycle_end_date? }`           |
+| POST   | /budgets/{id}/transactions | Yes | `{ item_name, amount, category?, is_essential? }` — records spend, recalculates `remaining_amount`, flags overspend |
+| GET    | /budgets/{id}/transactions | Yes | List transactions for a budget                 |
+| GET    | /search                 | Yes   | `?q=&category=&brand=&colour=&size=&store=&min_price=&max_price=&max_shipping_cost=&availability=&essential_only=&sort=&limit=&offset=` |
 
 ## Schema (for sign-off — see `sql/schema.sql`)
 
-- **users**: id, name, email, password_hash, created_at
-- **budgets**: id, user_id, total_amount, remaining_amount, cycle_start_date, cycle_end_date, created_at, updated_at
-- **transactions**: id, user_id, budget_id, item_name, amount, category, store, created_at
-- **preferences**: id, user_id, preferred_categories[], preferred_stores[], max_distance_km, updated_at
+The schema is broader than the Day-1 diagram since it also covers stores,
+products/offers, recommendations and community features that later phases
+need — but the core four tables match the plan:
+
+- **users**: id, name, email, password_hash, created_at, updated_at (plus phone_number, residence_area_code, email_verified_at)
+- **budgets**: id, user_id, total_amount, remaining_amount, savings_percentage, savings_amount, cycle_start_date, cycle_end_date, status, created_at, updated_at
+- **transactions**: id, user_id, budget_id, item_name, amount, category, is_essential, store_id (FK, nullable — not a plain text column), created_at
+- **preferences**: id, user_id, preferred_categories[], preferred_stores[], max_distance_km, updated_at (plus brand/colour/size/price/shipping preferences)
 
 `cycle_end_date` on `budgets` is the next NSFAS payout date — Member 6 needs
 this for the Daily Budget Split calc (`remaining_amount ÷ days until cycle_end_date`).
 
-## For Member 3 (budgets)
+## For Member 3 (budgets) — done, see `app/routers/budgets.py`
 
-Query `budgets` filtered by `user_id` (available via the `get_current_user_id`
-dependency, already wired — see `app/dependencies.py`). Insert into
-`transactions`, then update `budgets.remaining_amount` in the same request.
+Budget entry, update and the remaining-balance recalculation are implemented.
+The overspend-warning rule triggers when a transaction's `amount` is greater
+than the budget's `remaining_amount` at the time it's recorded; the
+transaction is still logged (so spending history stays accurate) and
+`remaining_amount` is floored at 0 rather than going negative, matching the
+schema's `remaining_amount >= 0` constraint. See the docstring at the top of
+`budgets.py` for the full spec and recalculation pseudocode.
 
-## For Member 4/5/6 (search, recommender, true cost)
+## For Member 4 (search) — done, see `app/routers/search.py`
+
+`GET /search` filters `product_offers` joined to `products`/`stores` by
+price, colour, size, brand, store, shipping cost and availability. Free-text
+`q` uses simple keyword parsing (split on whitespace, ILIKE each token
+against name/brand/category) rather than NLP, to keep Day-1 scope small —
+see the docstring at the top of `search.py` for the full API contract.
+
+## For Member 5/6 (recommender, true cost)
 
 `preferences` is already seeded with an empty row on every registration —
 you'll never hit a missing-row case. Join against it using `user_id`. Since
@@ -107,6 +130,8 @@ app/
   routers/
     auth.py
     profile.py
+    budgets.py
+    search.py
 sql/
   schema.sql
 ```
