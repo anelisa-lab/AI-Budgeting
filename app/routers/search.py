@@ -31,6 +31,14 @@ router = APIRouter(prefix="/search", tags=["search"])
 # Response shape: { results: [...], count, limit, offset }
 # count is the total number of matches (ignoring limit/offset), so the
 # frontend can paginate.
+#
+# Phase 2 addition (for Member 5's recommender — see app/recommender.py):
+# each result now also carries subcategory, store_latitude/store_longitude,
+# rating, rating_count and last_updated (product_offers.last_checked_at,
+# i.e. how fresh the price is). The recommender scores on all five, and the
+# frontend can show the rating and a "price checked X hours ago" label.
+# `subcategory`, `rating` and `rating_count` were added to the schema in
+# sql/002_phase2_recommender.sql — run that migration if your dev DB predates it.
 
 
 @router.get("", response_model=SearchResponse)
@@ -117,10 +125,12 @@ def search_offers(
             cur.execute(
                 f"""SELECT
                         o.id AS offer_id, p.id AS product_id, p.name AS product_name,
-                        p.brand, p.category, p.colour, p.size, p.is_essential,
+                        p.brand, p.category, p.subcategory, p.colour, p.size, p.is_essential,
                         s.id AS store_id, s.name AS store_name, s.store_type,
+                        s.latitude AS store_latitude, s.longitude AS store_longitude,
                         o.price, o.shipping_cost, o.total_cost, o.currency,
-                        o.availability_status, o.product_url
+                        o.availability_status, o.rating, o.rating_count,
+                        o.last_checked_at AS last_updated, o.product_url
                     {base_from}
                     ORDER BY {order_by}
                     LIMIT %s OFFSET %s""",

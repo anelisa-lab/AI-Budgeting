@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS products (
   description        TEXT,
   brand              VARCHAR(150),
   category           VARCHAR(100),
+  subcategory        VARCHAR(100),
   colour             VARCHAR(80),
   size               VARCHAR(80),
   is_essential       BOOLEAN NOT NULL DEFAULT FALSE,
@@ -201,6 +202,12 @@ CREATE TABLE IF NOT EXISTS product_offers (
   currency             CHAR(3) NOT NULL DEFAULT 'ZAR',
   availability_status  VARCHAR(20) NOT NULL DEFAULT 'unknown'
                        CHECK (availability_status IN ('available', 'out_of_stock', 'unknown')),
+  rating               NUMERIC(2,1)
+                       CONSTRAINT product_offers_rating_range
+                       CHECK (rating IS NULL OR rating BETWEEN 0 AND 5),
+  rating_count         INTEGER NOT NULL DEFAULT 0
+                       CONSTRAINT product_offers_rating_count_positive
+                       CHECK (rating_count >= 0),
   stock_quantity       INTEGER CHECK (stock_quantity IS NULL OR stock_quantity >= 0),
   estimated_delivery_days INTEGER
                        CHECK (estimated_delivery_days IS NULL OR estimated_delivery_days >= 0),
@@ -209,6 +216,49 @@ CREATE TABLE IF NOT EXISTS product_offers (
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (store_id, external_product_id)
+);
+
+-- Per-store charges that are NOT part of the listed price: delivery fees,
+-- service/handling fees, card surcharges, packaging levies. Member 6's
+-- store_true_cost() reads these so "true cost" is the number a student
+-- actually pays, not the sticker price.
+--
+-- Rules of the table:
+--   * calculation='flat'       -> add `amount`
+--   * calculation='percentage' -> add `percentage` % of the item subtotal,
+--                                 then clamp to [min_charge, max_charge]
+--   * free_over_amount         -> the charge falls away once the subtotal
+--                                 reaches this value (free delivery over R500)
+--   * applies_to               -> 'delivery' | 'collection' | 'both', so a
+--                                 student collecting in person isn't charged
+--                                 a courier fee
+--   * a charge_type='delivery' row is IGNORED when the offer already carries
+--     its own product_offers.shipping_cost — the offer-level number is more
+--     specific and would otherwise be double-counted.
+CREATE TABLE IF NOT EXISTS store_charges (
+  id                SERIAL PRIMARY KEY,
+  store_id          INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  charge_type       VARCHAR(30) NOT NULL
+                    CHECK (charge_type IN ('delivery', 'service', 'transaction',
+                                           'packaging', 'card', 'collection', 'other')),
+  label             VARCHAR(120) NOT NULL,
+  calculation       VARCHAR(20) NOT NULL DEFAULT 'flat'
+                    CHECK (calculation IN ('flat', 'percentage')),
+  amount            NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  percentage        NUMERIC(5,2) NOT NULL DEFAULT 0
+                    CHECK (percentage BETWEEN 0 AND 100),
+  applies_to        VARCHAR(20) NOT NULL DEFAULT 'delivery'
+                    CHECK (applies_to IN ('delivery', 'collection', 'both')),
+  free_over_amount  NUMERIC(12,2) CHECK (free_over_amount IS NULL OR free_over_amount >= 0),
+  min_charge        NUMERIC(12,2) CHECK (min_charge IS NULL OR min_charge >= 0),
+  max_charge        NUMERIC(12,2) CHECK (max_charge IS NULL OR max_charge >= 0),
+  is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+  note              TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT store_charges_min_max CHECK (
+    min_charge IS NULL OR max_charge IS NULL OR max_charge >= min_charge
+  )
 );
 
 -- -------------------------
@@ -422,6 +472,10 @@ CREATE INDEX IF NOT EXISTS idx_product_offers_availability
   ON product_offers(availability_status);
 CREATE INDEX IF NOT EXISTS idx_product_offers_total_cost
   ON product_offers(total_cost);
+CREATE INDEX IF NOT EXISTS idx_products_subcategory
+  ON products(subcategory);
+CREATE INDEX IF NOT EXISTS idx_store_charges_store_active
+  ON store_charges(store_id) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_searches_user_created
   ON shopping_searches(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_recommendation_runs_user_created
@@ -481,6 +535,11 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_offers_updated_at ON product_offers;
 CREATE TRIGGER trg_offers_updated_at
 BEFORE UPDATE ON product_offers
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_store_charges_updated_at ON store_charges;
+CREATE TRIGGER trg_store_charges_updated_at
+BEFORE UPDATE ON store_charges
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS trg_comparison_lists_updated_at ON comparison_lists;
