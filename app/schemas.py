@@ -5,7 +5,7 @@ from decimal import Decimal
 
 
 class RegisterRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     password: str
 
@@ -28,7 +28,7 @@ class AuthResponse(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
 
 
 class PreferencesOut(BaseModel):
@@ -40,7 +40,7 @@ class PreferencesOut(BaseModel):
 class UpdatePreferencesRequest(BaseModel):
     preferred_categories: Optional[List[str]] = None
     preferred_stores: Optional[List[str]] = None
-    max_distance_km: Optional[float] = None
+    max_distance_km: Optional[float] = Field(default=None, ge=0, le=9999)
 
 
 # -------------------------
@@ -51,13 +51,17 @@ class BudgetCreateRequest(BaseModel):
     total_amount: Decimal = Field(gt=0)
     cycle_start_date: date
     cycle_end_date: date
-    budget_kind: str = "monthly"
+    budget_kind: str = Field(default="monthly", pattern="^(monthly|available)$")
     savings_percentage: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    # Remaining balance at or below this flips the Daily Budget Split into
+    # survival mode (essentials only). Optional — no threshold, no survival mode.
+    survival_threshold: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class BudgetUpdateRequest(BaseModel):
     total_amount: Optional[Decimal] = Field(default=None, gt=0)
     cycle_end_date: Optional[date] = None
+    survival_threshold: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class BudgetOut(BaseModel):
@@ -72,14 +76,17 @@ class BudgetOut(BaseModel):
     savings_amount: Decimal
     cycle_start_date: date
     cycle_end_date: date
+    daily_limit: Optional[Decimal] = None
+    survival_threshold: Optional[Decimal] = None
+    budget_mode: str = "normal"
     created_at: datetime
     updated_at: datetime
 
 
 class TransactionCreateRequest(BaseModel):
-    item_name: str
+    item_name: str = Field(min_length=1, max_length=150)
     amount: Decimal = Field(gt=0)
-    category: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=100)
     is_essential: bool = False
 
 
@@ -100,6 +107,11 @@ class TransactionResult(BaseModel):
     budget: BudgetOut
     overspend_warning: bool
     warning_message: Optional[str] = None
+    # Phase 3: the purchase fit the cycle but not today's Daily Budget Split
+    daily_limit_warning: bool = False
+    daily_limit_message: Optional[str] = None
+    # The split recalculated after this transaction (None if it could not be built)
+    daily_split: Optional["BudgetSplitOut"] = None
 
 
 # -------------------------
@@ -137,6 +149,14 @@ class SearchResponse(BaseModel):
     count: int
     limit: int
     offset: int
+    # Phase 3 pagination helpers (additive — older callers can ignore them)
+    page: int = 1
+    total_pages: int = 0
+    has_more: bool = False
+    next_offset: Optional[int] = None
+    message: Optional[str] = None
+    # How a natural-language `q` was read (None when q was not sent)
+    parsed: Optional["ParsedQueryOut"] = None
 
 
 # -------------------------
@@ -205,10 +225,33 @@ class BudgetSplitOut(BaseModel):
     daily_limit: Decimal
     spent_today: Decimal
     remaining_today: Decimal
+    tomorrow_limit: Optional[Decimal] = None
     mode: str
     survival_threshold: Optional[Decimal] = None
     message: str
     days: List[DaySplitOut] = []
+
+
+class BudgetHealthOut(BaseModel):
+    warning_level: str
+    spendable_amount: Decimal
+    spent_amount: Decimal
+    spent_percentage: Decimal
+    over_daily_limit_by: Decimal
+    warnings: List[str] = []
+
+
+class BudgetWithSplitOut(BudgetOut):
+    """BudgetOut plus the Daily Budget Split — GET /budgets/current."""
+    daily_split: BudgetSplitOut
+
+
+class BudgetDashboardOut(BaseModel):
+    """GET /budgets/dashboard — everything the dashboard screen renders."""
+    budget: BudgetOut
+    daily_split: BudgetSplitOut
+    health: BudgetHealthOut
+    recent_transactions: List[TransactionOut] = []
 
 
 class AffordabilityRequest(BaseModel):
@@ -303,3 +346,8 @@ class RecommendationResponse(BaseModel):
     candidates_considered: int
     response_time_ms: int
     message: Optional[str] = None
+
+
+# These refer to models declared further down the file.
+TransactionResult.model_rebuild()
+SearchResponse.model_rebuild()

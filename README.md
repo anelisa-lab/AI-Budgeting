@@ -70,13 +70,14 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | PUT    | /profile                | Yes   | `{ name }`                                     |
 | GET    | /profile/preferences    | Yes   | Returns preferred_categories, preferred_stores, max_distance_km |
 | PUT    | /profile/preferences    | Yes   | Any subset of the same three fields            |
-| POST   | /budgets                | Yes   | `{ total_amount, cycle_start_date, cycle_end_date, budget_kind?, savings_percentage? }` |
+| POST   | /budgets                | Yes   | `{ total_amount, cycle_start_date, cycle_end_date, budget_kind?, savings_percentage?, survival_threshold? }` |
 | GET    | /budgets                | Yes   | List all budgets (history) for the user       |
-| GET    | /budgets/current        | Yes   | The user's single active budget                |
-| PUT    | /budgets/{id}           | Yes   | `{ total_amount?, cycle_end_date? }`           |
-| POST   | /budgets/{id}/transactions | Yes | `{ item_name, amount, category?, is_essential? }` — records spend, recalculates `remaining_amount`, flags overspend |
+| GET    | /budgets/current        | Yes   | The user's single active budget, plus its `daily_split` |
+| GET    | /budgets/dashboard      | Yes   | `?recent=5` — budget + Daily Budget Split + `health` (warning level, % spent, warnings) + recent transactions |
+| PUT    | /budgets/{id}           | Yes   | `{ total_amount?, cycle_end_date?, survival_threshold? }` |
+| POST   | /budgets/{id}/transactions | Yes | `{ item_name, amount, category?, is_essential? }` — records spend, recalculates `remaining_amount`, flags overspend and over-today's-allowance, returns the new `daily_split` |
 | GET    | /budgets/{id}/transactions | Yes | List transactions for a budget                 |
-| GET    | /search                 | Yes   | `?q=&category=&brand=&colour=&size=&store=&min_price=&max_price=&max_shipping_cost=&availability=&essential_only=&sort=&limit=&offset=` |
+| GET    | /search                 | Yes   | `?q=&category=&brand=&colour=&size=&store=&min_price=&max_price=&max_shipping_cost=&availability=&essential_only=&sort=&limit=&offset=&page=` — `q` accepts natural language ("bread under R20"); response adds `page`, `total_pages`, `has_more`, `next_offset`, `message`, `parsed` |
 | POST   | /recommendations        | Yes   | `{ query?, category?, max_price?, fulfilment?, limit?, include_unaffordable?, candidate_pool? }` — ranked offers with true cost, scores and an explanation |
 | GET    | /recommendations/history | Yes  | `?limit=` — recent runs and the items they returned |
 | POST   | /true-cost              | Yes   | `{ offer_ids[], quantity?, fulfilment?, use_my_location? }` — itemised true cost per offer, cheapest flagged |
@@ -84,6 +85,23 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | GET    | /budget-split           | Yes   | Daily allowance for the active budget + a day-by-day schedule |
 | POST   | /budget-split/check     | Yes   | `{ amount }` — "can I afford this today?" |
 | GET    | /budget-split/{budget_id} | Yes | The same split for one specific budget |
+
+## Phase 3 — backend
+
+- **Token handling (Member 2):** every protected route answers a missing,
+  malformed or expired token — or a token for a deleted account — with
+  `401` + `WWW-Authenticate: Bearer` (a missing header used to be `403`,
+  which the frontend didn't treat as "signed out"). `/profile` and
+  `/profile/` both work, so no redirect drops the `Authorization` header.
+- **Dashboard + Daily Budget Split in the budget payload (Member 3):**
+  `GET /budgets/dashboard`, `daily_split` on `/budgets/current` and on every
+  transaction result, `daily_limit_warning` when a purchase fits the cycle
+  but not today's allowance. Warning levels come from
+  `calculate_budget_health()` in `app/budget_calc.py` (unit-tested).
+- **Search edge cases + pagination (Member 4):** `400` with a readable
+  `detail` for `min_price > max_price`, unknown `availability` or `sort`;
+  blank params are ignored; empty results carry a `message`; `page` and
+  pagination metadata were added.
 
 ## Schema (for sign-off — see `sql/schema.sql`)
 
@@ -229,7 +247,7 @@ Member 9's real figures land.
 pytest
 ```
 
-100 tests covering the recommender, true-cost, budget-split, geo, query
+115 tests covering the recommender, true-cost, budget-split, geo, query
 parser and budget arithmetic (`budget_calc`). They are all pure functions, so **no database or `.env` is needed** —
 useful for Member 10's QA checklist and for CI. `tests/test_recommender.py`
 holds the four whole scenarios from the Phase 3 task (broke student,

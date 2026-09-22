@@ -71,7 +71,7 @@ def _load_budget(cur, user_id: int, budget_id: Optional[int] = None) -> dict:
     return budget
 
 
-def _spent_by_date(cur, budget_id: int) -> Dict[date, Decimal]:
+def spent_by_date(cur, budget_id: int) -> Dict[date, Decimal]:
     """
     Daily spend for this budget.
 
@@ -90,7 +90,7 @@ def _spent_by_date(cur, budget_id: int) -> Dict[date, Decimal]:
     return {row["day"]: Decimal(row["total"]) for row in cur.fetchall()}
 
 
-def _persist(cur, split: BudgetSplit) -> None:
+def persist_split(cur, split: BudgetSplit) -> None:
     """Write the recalculated schedule back so the dashboard has history."""
     cur.executemany(
         """INSERT INTO budget_daily_limits
@@ -122,7 +122,7 @@ def _persist(cur, split: BudgetSplit) -> None:
     )
 
 
-def _to_out(split: BudgetSplit) -> BudgetSplitOut:
+def split_to_out(split: BudgetSplit) -> BudgetSplitOut:
     payload = split.as_dict()
     payload["days"] = [DaySplitOut(**d) for d in payload["days"]]
     return BudgetSplitOut(**payload)
@@ -133,8 +133,8 @@ def _compute(user_id: int, budget_id: Optional[int] = None) -> BudgetSplit:
     try:
         with conn, conn.cursor() as cur:
             budget = _load_budget(cur, user_id, budget_id)
-            split = build_split(budget, spent_by_date=_spent_by_date(cur, budget["id"]))
-            _persist(cur, split)
+            split = build_split(budget, spent_by_date=spent_by_date(cur, budget["id"]))
+            persist_split(cur, split)
         return split
     finally:
         conn.close()
@@ -149,7 +149,7 @@ def get_current_split(user_id: int = Depends(get_current_user_id)):
     answer changes the moment a transaction is recorded, which is the whole
     point of the feature.
     """
-    return _to_out(_compute(user_id))
+    return split_to_out(_compute(user_id))
 
 
 @router.post("/check", response_model=AffordabilityOut)
@@ -170,4 +170,4 @@ def check_purchase(
 @router.get("/{budget_id}", response_model=BudgetSplitOut)
 def get_split_for_budget(budget_id: int, user_id: int = Depends(get_current_user_id)):
     """The split for one specific budget — used by the budget history screen."""
-    return _to_out(_compute(user_id, budget_id))
+    return split_to_out(_compute(user_id, budget_id))

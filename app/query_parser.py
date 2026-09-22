@@ -126,6 +126,9 @@ STOPWORDS = {
     "max", "maximum", "min", "minimum", "up", "most", "least", "about",
     "around", "cheapest", "cheap", "best", "near", "nearby", "closest",
     "size", "rand", "r", "zar", "bucks", "delivery", "shipping", "free",
+    # Intent words: they already set a flag or sort hint above, and as search
+    # text they'd require e.g. "rated" to appear in the product name.
+    "rated", "highest", "affordable", "essential", "essentials", "basics", "close",
 }
 
 # ---------------------------------------------------------------------------

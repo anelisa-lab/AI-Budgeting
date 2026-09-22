@@ -11,6 +11,17 @@ the words mean:
         created (see Member 3's create_budget), so remaining_amount is money
         the student may actually spend. The split never touches savings.
 
+    today's allowance is fixed at the START of the day:
+        (remaining_amount + spent_today) / days
+        remaining_amount already has today's purchases subtracted (Member 3's
+        transaction handler does that), so dividing it and then subtracting
+        spent_today again would count every purchase today twice. Fixing the
+        allowance at start-of-day also means the headline number doesn't
+        wobble every time the student buys something.
+
+    tomorrow_limit = what's left after today's allowance / the remaining days.
+        Overspend today and this is the number that drops.
+
     days to next payout = budgets.cycle_end_date, counted INCLUSIVELY from
         today. If today is the 20th and payout is the 22nd, that is 3 days of
         eating, not 2. Getting this off by one is the difference between a
@@ -131,6 +142,7 @@ class BudgetSplit:
     survival_threshold: Optional[Decimal]
     message: str
     days: List[DaySplit] = field(default_factory=list)
+    tomorrow_limit: Optional[Decimal] = None   # None on payout day / after it
 
     def as_dict(self) -> dict:
         return {
@@ -143,6 +155,7 @@ class BudgetSplit:
             "daily_limit": self.daily_limit,
             "spent_today": self.spent_today,
             "remaining_today": self.remaining_today,
+            "tomorrow_limit": self.tomorrow_limit,
             "mode": self.mode,
             "survival_threshold": self.survival_threshold,
             "message": self.message,
@@ -162,7 +175,13 @@ def _build_message(
     days: int,
     mode: str,
     cycle_ended: bool,
+    spent_today: Decimal = ZERO,
+    tomorrow_limit: Optional[Decimal] = None,
 ) -> str:
+    if spent_today > daily_limit and remaining > 0 and not cycle_ended and mode != MODE_SURVIVAL:
+        over = _money(spent_today - daily_limit)
+        tail = f" From tomorrow you have R{tomorrow_limit} a day." if tomorrow_limit is not None else ""
+        return f"You're R{over} over today's R{daily_limit} allowance.{tail}"
     if remaining <= 0:
         return (
             "Your allowance for this cycle is finished. Nothing left to split — "
@@ -185,7 +204,7 @@ def _build_message(
             "very tight — stick to essentials and look for cheaper stores."
         )
     return (
-        f"R{remaining} over {days} days gives you R{daily_limit} a day. "
+        f"R{_money(remaining + spent_today)} over {days} days gives you R{daily_limit} a day. "
         f"You have R{remaining_today} left to spend today."
     )
 
@@ -223,16 +242,28 @@ def build_split(
 
     days = days_remaining(as_of, cycle_end)
     cycle_ended = cycle_end < as_of
-    limit = daily_allowance(remaining, as_of, cycle_end)
-
     spent_today = _money(spent_by_date.get(as_of, ZERO))
+
+    # Today's allowance comes from the balance at the START of today — see the
+    # module docstring. A budget that's run dry gets no allowance at all
+    # (remaining_amount is floored at 0, so adding spent_today back would
+    # invent money that was never there).
+    start_of_day = _money(remaining + spent_today) if remaining > 0 else ZERO
+    limit = daily_allowance(start_of_day, as_of, cycle_end)
     remaining_today = max(_money(limit - spent_today), ZERO)
+
+    # Tomorrow onwards: whatever is left once today's allowance is used up,
+    # spread over the days after today.
+    tomorrow_limit = None
+    if days > 1 and not cycle_ended:
+        after_today = max(_money(remaining - remaining_today), ZERO)
+        tomorrow_limit = _money_down(after_today / Decimal(days - 1))
 
     mode = MODE_SURVIVAL if (threshold is not None and remaining <= threshold) else MODE_NORMAL
 
-    # Day-by-day schedule. Past days keep whatever was actually spent; future
-    # days all carry the same planned limit, because the split is recalculated
-    # from scratch every time anyway.
+    # Day-by-day schedule. Today carries today's allowance; the days after it
+    # carry tomorrow_limit, so an overspend today shows up as tighter days
+    # ahead. The split is recalculated from scratch on every read anyway.
     schedule: List[DaySplit] = []
     last_day = min(cycle_end, as_of + timedelta(days=horizon_days - 1))
     if last_day < as_of:
@@ -241,12 +272,13 @@ def build_split(
     cursor_date = as_of
     while cursor_date <= last_day:
         spent = _money(spent_by_date.get(cursor_date, ZERO))
+        planned = limit if cursor_date == as_of or tomorrow_limit is None else tomorrow_limit
         schedule.append(
             DaySplit(
                 limit_date=cursor_date,
-                planned_limit=limit,
+                planned_limit=planned,
                 spent_amount=spent,
-                remaining_limit=max(_money(limit - spent), ZERO),
+                remaining_limit=max(_money(planned - spent), ZERO),
                 is_today=(cursor_date == as_of),
             )
         )
@@ -264,8 +296,12 @@ def build_split(
         remaining_today=remaining_today,
         mode=mode,
         survival_threshold=threshold,
-        message=_build_message(remaining, limit, remaining_today, days, mode, cycle_ended),
+        message=_build_message(
+            remaining, limit, remaining_today, days, mode, cycle_ended,
+            spent_today=spent_today, tomorrow_limit=tomorrow_limit,
+        ),
         days=schedule,
+        tomorrow_limit=tomorrow_limit,
     )
 
 
