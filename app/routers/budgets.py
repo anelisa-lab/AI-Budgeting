@@ -3,6 +3,7 @@ from decimal import Decimal
 from fastapi import APIRouter, HTTPException, Depends, status
 import psycopg2.errors
 
+from app.budget_calc import calculate_transaction_impact, calculate_budget_update
 from app.database import get_connection
 from app.dependencies import get_current_user_id
 from app.schemas import (
@@ -43,6 +44,11 @@ router = APIRouter(prefix="/budgets", tags=["budgets"])
 #   5. insert transaction row
 #   6. update budgets.remaining_amount = new_remaining
 #   7. return transaction + updated budget + overspend flag
+#
+# The actual arithmetic for steps 3-4 (and the equivalent for PUT
+# /budgets/{id}) lives in app/budget_calc.py as pure, unit-tested
+# functions — see tests/test_budget_calc.py — so the route handlers below
+# and the tested logic can't drift apart.
 
 
 def _get_owned_budget(cur, budget_id: int, user_id: int) -> dict:
@@ -127,12 +133,11 @@ def update_budget(budget_id: int, payload: BudgetUpdateRequest, user_id: int = D
         with conn, conn.cursor() as cur:
             budget = _get_owned_budget(cur, budget_id, user_id)
 
-            new_total = budget["total_amount"]
-            new_remaining = budget["remaining_amount"]
-            if payload.total_amount is not None:
-                delta = payload.total_amount - budget["total_amount"]
-                new_total = payload.total_amount
-                new_remaining = max(budget["remaining_amount"] + delta, 0)
+            new_total, new_remaining = calculate_budget_update(
+                current_total=budget["total_amount"],
+                current_remaining=budget["remaining_amount"],
+                new_total=payload.total_amount,
+            )
 
             new_end_date = payload.cycle_end_date or budget["cycle_end_date"]
             if new_end_date < budget["cycle_start_date"]:
@@ -160,8 +165,10 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
             if budget["status"] != "active":
                 raise HTTPException(status_code=400, detail="Cannot record a transaction against a budget that is not active")
 
-            overspend_warning = payload.amount > budget["remaining_amount"]
-            new_remaining = max(budget["remaining_amount"] - payload.amount, 0)
+            impact = calculate_transaction_impact(
+                remaining_amount=budget["remaining_amount"],
+                transaction_amount=payload.amount,
+            )
 
             cur.execute(
                 """INSERT INTO transactions (user_id, budget_id, item_name, amount, category, is_essential)
@@ -173,19 +180,18 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
 
             cur.execute(
                 "UPDATE budgets SET remaining_amount = %s, updated_at = NOW() WHERE id = %s RETURNING *",
-                (new_remaining, budget_id),
+                (impact.new_remaining, budget_id),
             )
             updated_budget = cur.fetchone()
 
         warning_message = None
-        if overspend_warning:
-            over_by = payload.amount - budget["remaining_amount"]
-            warning_message = f"This purchase is R{over_by:.2f} over your remaining budget."
+        if impact.overspend_warning:
+            warning_message = f"This purchase is R{impact.over_by:.2f} over your remaining budget."
 
         return TransactionResult(
             transaction=TransactionOut(**transaction),
             budget=BudgetOut(**updated_budget),
-            overspend_warning=overspend_warning,
+            overspend_warning=impact.overspend_warning,
             warning_message=warning_message,
         )
     finally:

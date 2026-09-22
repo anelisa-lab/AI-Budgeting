@@ -102,6 +102,18 @@ transaction is still logged (so spending history stays accurate) and
 schema's `remaining_amount >= 0` constraint. See the docstring at the top of
 `budgets.py` for the full spec and recalculation pseudocode.
 
+The arithmetic itself lives in `app/budget_calc.py` as pure functions (no
+database, no FastAPI) so it's unit-tested in isolation — see
+`tests/test_budget_calc.py` (12 tests: zero remaining, zero transaction
+amount, negative-input validation, exact-match spending, one-cent-over the
+boundary, and budget total increases/decreases including flooring at R0).
+Run them with:
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
 ## For Member 4 (search) — done, see `app/routers/search.py`
 
 `GET /search` filters `product_offers` joined to `products`/`stores` by
@@ -127,11 +139,14 @@ app/
   security.py         # password hashing + JWT helpers
   dependencies.py    # get_current_user_id — use as a route dependency
   schemas.py           # Pydantic request/response models
+  budget_calc.py       # pure budget/transaction math, unit-tested
   routers/
     auth.py
     profile.py
     budgets.py
     search.py
+tests/
+  test_budget_calc.py
 sql/
   schema.sql
 ```
