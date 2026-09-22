@@ -1,0 +1,11 @@
+store_id,store_name,suburb,lat,lng,distance_km,online_only,delivery_available,collection_available,base_shipping_fee,free_delivery_over
+shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,False,False,True,0.0,0
+checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,False,True,True,35.0,0
+game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,False,True,True,60.0,1000
+picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,False,True,True,45.0,0
+clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,False,True,True,50.0,450
+spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,False,True,True,40.0,0
+foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,False,True,True,45.0,0
+makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,False,True,True,65.0,1000
+incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,False,True,True,99.0,2000
+takealot,Takealot (online only),Online,,,,True,True,False,60.0,450

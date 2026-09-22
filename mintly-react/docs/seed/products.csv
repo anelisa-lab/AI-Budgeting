@@ -1,0 +1,258 @@
+id,name,brand,category,subcategory,colour,size,unit,price,currency,store_id,store_name,store_suburb,store_lat,store_lng,distance_km,shipping_fee,total_cost,delivery_available,collection_available,in_stock,rating,icon
+P001,Super Maize Meal,Ace,Groceries,Staples,n/a,2.5kg,pack,40.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,40.49,False,True,True,4.4,🌽
+P002,Super Maize Meal,Ace,Groceries,Staples,n/a,2.5kg,pack,42.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,77.99,True,True,True,4.4,🌽
+P003,Super Maize Meal,Ace,Groceries,Staples,n/a,2.5kg,pack,46.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,91.49,True,True,True,4.4,🌽
+P004,Super Maize Meal,Ace,Groceries,Staples,n/a,2.5kg,pack,43.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,83.49,True,True,True,4.4,🌽
+P005,Super Maize Meal,Ace,Groceries,Staples,n/a,2.5kg,pack,37.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,82.49,True,True,True,4.4,🌽
+P006,Super Maize Meal,Ace,Groceries,Staples,n/a,2.5kg,pack,35.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,100.95,True,True,True,4.4,🌽
+P007,Parboiled White Rice,Tastic,Groceries,Staples,n/a,2kg,pack,41.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,41.49,False,True,True,4.6,🍚
+P008,Parboiled White Rice,Tastic,Groceries,Staples,n/a,2kg,pack,43.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,78.99,True,True,True,4.6,🍚
+P009,Parboiled White Rice,Tastic,Groceries,Staples,n/a,2kg,pack,47.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,92.49,True,True,True,4.6,🍚
+P010,Parboiled White Rice,Tastic,Groceries,Staples,n/a,2kg,pack,44.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,84.49,True,True,True,4.6,🍚
+P011,Parboiled White Rice,Tastic,Groceries,Staples,n/a,2kg,pack,38.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,83.49,True,True,True,4.6,🍚
+P012,Parboiled White Rice,Tastic,Groceries,Staples,n/a,2kg,pack,36.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,101.49,True,True,True,4.6,🍚
+P013,Cake Flour,Snowflake,Groceries,Staples,n/a,2.5kg,pack,31.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,31.95,False,True,True,4.4,🌾
+P014,Cake Flour,Snowflake,Groceries,Staples,n/a,2.5kg,pack,33.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,68.95,True,True,True,4.4,🌾
+P015,Cake Flour,Snowflake,Groceries,Staples,n/a,2.5kg,pack,36.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,81.49,True,True,True,4.4,🌾
+P016,Cake Flour,Snowflake,Groceries,Staples,n/a,2.5kg,pack,33.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,73.99,True,True,True,4.4,🌾
+P017,Cake Flour,Snowflake,Groceries,Staples,n/a,2.5kg,pack,29.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,74.49,True,True,True,4.4,🌾
+P018,Cake Flour,Snowflake,Groceries,Staples,n/a,2.5kg,pack,27.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,92.99,True,True,True,4.4,🌾
+P019,Samp,Imbo,Groceries,Staples,n/a,1kg,pack,19.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,19.49,False,True,True,4.2,🌽
+P020,Samp,Imbo,Groceries,Staples,n/a,1kg,pack,20.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,55.49,True,True,True,4.2,🌽
+P021,Samp,Imbo,Groceries,Staples,n/a,1kg,pack,21.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,66.99,True,True,True,4.2,🌽
+P022,Samp,Imbo,Groceries,Staples,n/a,1kg,pack,16.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,81.99,True,True,True,4.2,🌽
+P023,Sugar Beans,Imbo,Groceries,Staples,n/a,1kg,pack,31.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,31.95,False,True,True,4.3,🫘
+P024,Sugar Beans,Imbo,Groceries,Staples,n/a,1kg,pack,33.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,68.95,True,True,True,4.3,🫘
+P025,Sugar Beans,Imbo,Groceries,Staples,n/a,1kg,pack,36.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,81.49,True,True,True,4.3,🫘
+P026,Sugar Beans,Imbo,Groceries,Staples,n/a,1kg,pack,33.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,73.99,True,True,True,4.3,🫘
+P027,Sugar Beans,Imbo,Groceries,Staples,n/a,1kg,pack,27.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,92.99,True,True,True,4.3,🫘
+P028,2-Minute Noodles,Maggi,Groceries,Pantry,n/a,5 x 73g,pack,25.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,25.99,False,True,True,4.0,🍜
+P029,2-Minute Noodles,Maggi,Groceries,Pantry,n/a,5 x 73g,pack,27.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,62.49,True,True,True,4.0,🍜
+P030,2-Minute Noodles,Maggi,Groceries,Pantry,n/a,5 x 73g,pack,29.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,74.95,True,True,True,4.0,🍜
+P031,2-Minute Noodles,Maggi,Groceries,Pantry,n/a,5 x 73g,pack,27.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,67.95,True,True,True,4.0,🍜
+P032,2-Minute Noodles,Maggi,Groceries,Pantry,n/a,5 x 73g,pack,23.99,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,68.99,True,True,True,4.0,🍜
+P033,2-Minute Noodles,Maggi,Groceries,Pantry,n/a,5 x 73g,pack,22.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,87.95,True,True,True,4.0,🍜
+P034,Instant Oats,Jungle,Groceries,Staples,n/a,1kg,pack,45.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,45.49,False,True,True,4.4,🥣
+P035,Instant Oats,Jungle,Groceries,Staples,n/a,1kg,pack,47.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,82.99,True,True,True,4.4,🥣
+P036,Instant Oats,Jungle,Groceries,Staples,n/a,1kg,pack,51.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,96.95,True,True,True,4.4,🥣
+P037,Instant Oats,Jungle,Groceries,Staples,n/a,1kg,pack,48.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,88.49,True,True,True,4.4,🥣
+P038,Instant Oats,Jungle,Groceries,Staples,n/a,1kg,pack,39.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,104.99,True,True,True,4.4,🥣
+P039,White Bread,Albany,Groceries,Bakery,n/a,700g,loaf,19.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,19.49,False,True,True,4.2,🍞
+P040,White Bread,Albany,Groceries,Bakery,n/a,700g,loaf,20.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,55.49,True,True,True,4.2,🍞
+P041,White Bread,Albany,Groceries,Bakery,n/a,700g,loaf,21.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,66.99,True,True,True,4.2,🍞
+P042,White Bread,Albany,Groceries,Bakery,n/a,700g,loaf,20.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,60.49,True,True,True,4.2,🍞
+P043,White Bread,Albany,Groceries,Bakery,n/a,700g,loaf,17.95,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,62.95,True,True,True,4.2,🍞
+P044,White Bread,Albany,Groceries,Bakery,n/a,700g,loaf,16.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,81.99,True,True,True,4.2,🍞
+P045,Brown Bread,Albany,Groceries,Bakery,n/a,700g,loaf,17.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,17.95,False,True,True,4.2,🍞
+P046,Brown Bread,Albany,Groceries,Bakery,n/a,700g,loaf,18.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,53.95,True,True,True,4.2,🍞
+P047,Brown Bread,Albany,Groceries,Bakery,n/a,700g,loaf,20.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,65.49,True,True,True,4.2,🍞
+P048,Brown Bread,Albany,Groceries,Bakery,n/a,700g,loaf,18.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,58.99,True,True,True,4.2,🍞
+P049,Brown Bread,Albany,Groceries,Bakery,n/a,700g,loaf,16.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,61.49,True,True,True,4.2,🍞
+P050,Brown Bread,Albany,Groceries,Bakery,n/a,700g,loaf,15.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,80.95,True,True,True,4.2,🍞
+P051,Full Cream Milk,Clover,Groceries,Dairy,n/a,2L,bottle,33.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,33.49,False,True,True,4.5,🥛
+P052,Full Cream Milk,Clover,Groceries,Dairy,n/a,2L,bottle,35.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,70.95,True,True,True,4.5,🥛
+P053,Full Cream Milk,Clover,Groceries,Dairy,n/a,2L,bottle,38.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,83.49,True,True,True,4.5,🥛
+P054,Full Cream Milk,Clover,Groceries,Dairy,n/a,2L,bottle,35.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,75.99,True,True,True,4.5,🥛
+P055,Full Cream Milk,Clover,Groceries,Dairy,n/a,2L,bottle,31.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,76.49,True,True,True,4.5,🥛
+P056,Full Cream Milk,Clover,Groceries,Dairy,n/a,2L,bottle,29.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,94.95,True,True,True,4.5,🥛
+P057,Large Eggs,Nulaid,Groceries,Dairy,n/a,18 pack,tray,55.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,55.95,False,True,True,4.3,🥚
+P058,Large Eggs,Nulaid,Groceries,Dairy,n/a,18 pack,tray,59.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,94.49,True,True,True,4.3,🥚
+P059,Large Eggs,Nulaid,Groceries,Dairy,n/a,18 pack,tray,63.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,108.95,True,True,True,4.3,🥚
+P060,Large Eggs,Nulaid,Groceries,Dairy,n/a,18 pack,tray,59.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,99.95,True,True,True,4.3,🥚
+P061,Large Eggs,Nulaid,Groceries,Dairy,n/a,18 pack,tray,51.99,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,96.99,True,True,True,4.3,🥚
+P062,Large Eggs,Nulaid,Groceries,Dairy,n/a,18 pack,tray,49.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,114.49,True,True,True,4.3,🥚
+P063,Margarine Spread,Rama,Groceries,Dairy,n/a,1kg,tub,45.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,45.49,False,True,True,4.1,🧈
+P064,Margarine Spread,Rama,Groceries,Dairy,n/a,1kg,tub,47.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,82.99,True,True,True,4.1,🧈
+P065,Margarine Spread,Rama,Groceries,Dairy,n/a,1kg,tub,51.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,96.95,True,True,True,4.1,🧈
+P066,Margarine Spread,Rama,Groceries,Dairy,n/a,1kg,tub,48.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,88.49,True,True,True,4.1,🧈
+P067,Margarine Spread,Rama,Groceries,Dairy,n/a,1kg,tub,39.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,104.99,True,True,True,4.1,🧈
+P068,Frozen Chicken Portions,Goldi,Groceries,Meat,n/a,2kg,pack,86.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,86.49,False,True,True,4.1,🍗
+P069,Frozen Chicken Portions,Goldi,Groceries,Meat,n/a,2kg,pack,91.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,126.99,True,True,True,4.1,🍗
+P070,Frozen Chicken Portions,Goldi,Groceries,Meat,n/a,2kg,pack,98.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,143.99,True,True,True,4.1,🍗
+P071,Frozen Chicken Portions,Goldi,Groceries,Meat,n/a,2kg,pack,92.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,132.95,True,True,True,4.1,🍗
+P072,Frozen Chicken Portions,Goldi,Groceries,Meat,n/a,2kg,pack,80.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,125.49,True,True,True,4.1,🍗
+P073,Frozen Chicken Portions,Goldi,Groceries,Meat,n/a,2kg,pack,76.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,141.49,True,True,True,4.1,🍗
+P074,Polony,Eskort,Groceries,Meat,n/a,1kg,roll,28.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,28.95,False,True,True,3.9,🥓
+P075,Polony,Eskort,Groceries,Meat,n/a,1kg,roll,30.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,65.95,True,True,True,3.9,🥓
+P076,Polony,Eskort,Groceries,Meat,n/a,1kg,roll,32.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,77.99,True,True,True,3.9,🥓
+P077,Polony,Eskort,Groceries,Meat,n/a,1kg,roll,30.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,70.95,True,True,True,3.9,🥓
+P078,Sunflower Oil,Sunfoil,Groceries,Pantry,n/a,2L,bottle,67.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,67.49,False,True,True,4.4,🫗
+P079,Sunflower Oil,Sunfoil,Groceries,Pantry,n/a,2L,bottle,71.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,106.95,True,True,True,4.4,🫗
+P080,Sunflower Oil,Sunfoil,Groceries,Pantry,n/a,2L,bottle,76.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,121.99,True,True,True,4.4,🫗
+P081,Sunflower Oil,Sunfoil,Groceries,Pantry,n/a,2L,bottle,72.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,112.49,True,True,True,4.4,🫗
+P082,Sunflower Oil,Sunfoil,Groceries,Pantry,n/a,2L,bottle,62.95,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,107.95,True,True,True,4.4,🫗
+P083,Sunflower Oil,Sunfoil,Groceries,Pantry,n/a,2L,bottle,59.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,124.49,True,True,True,4.4,🫗
+P084,White Sugar,Huletts,Groceries,Pantry,n/a,2.5kg,pack,57.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,57.95,False,True,True,4.5,🧂
+P085,White Sugar,Huletts,Groceries,Pantry,n/a,2.5kg,pack,61.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,96.49,True,True,True,4.5,🧂
+P086,White Sugar,Huletts,Groceries,Pantry,n/a,2.5kg,pack,65.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,110.99,True,True,True,4.5,🧂
+P087,White Sugar,Huletts,Groceries,Pantry,n/a,2.5kg,pack,61.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,101.95,True,True,True,4.5,🧂
+P088,White Sugar,Huletts,Groceries,Pantry,n/a,2.5kg,pack,53.95,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,98.95,True,True,True,4.5,🧂
+P089,White Sugar,Huletts,Groceries,Pantry,n/a,2.5kg,pack,50.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,115.99,True,True,True,4.5,🧂
+P090,Baked Beans,Koo,Groceries,Canned,n/a,410g,tin,15.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,15.49,False,True,True,4.3,🫘
+P091,Baked Beans,Koo,Groceries,Canned,n/a,410g,tin,16.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,51.49,True,True,True,4.3,🫘
+P092,Baked Beans,Koo,Groceries,Canned,n/a,410g,tin,17.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,62.49,True,True,True,4.3,🫘
+P093,Baked Beans,Koo,Groceries,Canned,n/a,410g,tin,16.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,56.49,True,True,True,4.3,🫘
+P094,Baked Beans,Koo,Groceries,Canned,n/a,410g,tin,14.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,59.49,True,True,True,4.3,🫘
+P095,Baked Beans,Koo,Groceries,Canned,n/a,410g,tin,13.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,78.49,True,True,True,4.3,🫘
+P096,Pilchards in Tomato Sauce,Lucky Star,Groceries,Canned,n/a,400g,tin,26.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,26.95,False,True,True,4.4,🐟
+P097,Pilchards in Tomato Sauce,Lucky Star,Groceries,Canned,n/a,400g,tin,28.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,63.49,True,True,True,4.4,🐟
+P098,Pilchards in Tomato Sauce,Lucky Star,Groceries,Canned,n/a,400g,tin,30.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,75.95,True,True,True,4.4,🐟
+P099,Pilchards in Tomato Sauce,Lucky Star,Groceries,Canned,n/a,400g,tin,28.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,68.95,True,True,True,4.4,🐟
+P100,Pilchards in Tomato Sauce,Lucky Star,Groceries,Canned,n/a,400g,tin,24.99,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,69.99,True,True,True,4.4,🐟
+P101,Pilchards in Tomato Sauce,Lucky Star,Groceries,Canned,n/a,400g,tin,23.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,88.95,True,True,True,4.4,🐟
+P102,Peanut Butter,Black Cat,Groceries,Pantry,n/a,400g,jar,45.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,45.49,False,True,True,4.5,🥜
+P103,Peanut Butter,Black Cat,Groceries,Pantry,n/a,400g,jar,47.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,82.99,True,True,True,4.5,🥜
+P104,Peanut Butter,Black Cat,Groceries,Pantry,n/a,400g,jar,51.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,96.95,True,True,True,4.5,🥜
+P105,Peanut Butter,Black Cat,Groceries,Pantry,n/a,400g,jar,48.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,88.49,True,True,True,4.5,🥜
+P106,Peanut Butter,Black Cat,Groceries,Pantry,n/a,400g,jar,39.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,104.99,True,True,True,4.5,🥜
+P107,Tagless Teabags,Five Roses,Groceries,Pantry,n/a,100s,box,43.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,43.49,False,True,True,4.4,🍵
+P108,Tagless Teabags,Five Roses,Groceries,Pantry,n/a,100s,box,45.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,80.99,True,True,True,4.4,🍵
+P109,Tagless Teabags,Five Roses,Groceries,Pantry,n/a,100s,box,49.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,94.49,True,True,True,4.4,🍵
+P110,Tagless Teabags,Five Roses,Groceries,Pantry,n/a,100s,box,46.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,86.49,True,True,True,4.4,🍵
+P111,Tagless Teabags,Five Roses,Groceries,Pantry,n/a,100s,box,40.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,85.49,True,True,True,4.4,🍵
+P112,Tagless Teabags,Five Roses,Groceries,Pantry,n/a,100s,box,38.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,103.49,True,True,True,4.4,🍵
+P113,Potatoes,Loose,Groceries,Fresh Produce,n/a,2kg,bag,28.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,28.95,False,True,True,4.5,🥔
+P114,Potatoes,Loose,Groceries,Fresh Produce,n/a,2kg,bag,30.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,65.95,True,True,True,4.5,🥔
+P115,Potatoes,Loose,Groceries,Fresh Produce,n/a,2kg,bag,32.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,77.99,True,True,True,4.5,🥔
+P116,Potatoes,Loose,Groceries,Fresh Produce,n/a,2kg,bag,30.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,70.95,True,True,True,4.5,🥔
+P117,Potatoes,Loose,Groceries,Fresh Produce,n/a,2kg,bag,26.95,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,71.95,True,True,True,4.5,🥔
+P118,Potatoes,Loose,Groceries,Fresh Produce,n/a,2kg,bag,25.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,90.49,True,True,True,4.5,🥔
+P119,Onions,Loose,Groceries,Fresh Produce,n/a,2kg,bag,31.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,31.95,False,True,True,4.4,🧅
+P120,Onions,Loose,Groceries,Fresh Produce,n/a,2kg,bag,33.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,68.95,True,True,True,4.4,🧅
+P121,Onions,Loose,Groceries,Fresh Produce,n/a,2kg,bag,36.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,81.49,True,True,True,4.4,🧅
+P122,Onions,Loose,Groceries,Fresh Produce,n/a,2kg,bag,33.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,73.99,True,True,True,4.4,🧅
+P123,Onions,Loose,Groceries,Fresh Produce,n/a,2kg,bag,29.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,74.49,True,True,True,4.4,🧅
+P124,Onions,Loose,Groceries,Fresh Produce,n/a,2kg,bag,27.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,92.99,True,True,True,4.4,🧅
+P125,Tomatoes,Loose,Groceries,Fresh Produce,Red,1kg,bag,23.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,23.99,False,True,True,4.3,🍅
+P126,Tomatoes,Loose,Groceries,Fresh Produce,Red,1kg,bag,25.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,60.49,True,True,True,4.3,🍅
+P127,Tomatoes,Loose,Groceries,Fresh Produce,Red,1kg,bag,27.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,72.49,True,True,True,4.3,🍅
+P128,Tomatoes,Loose,Groceries,Fresh Produce,Red,1kg,bag,25.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,65.95,True,True,True,4.3,🍅
+P129,Tomatoes,Loose,Groceries,Fresh Produce,Red,1kg,bag,22.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,67.49,True,True,True,4.3,🍅
+P130,Tomatoes,Loose,Groceries,Fresh Produce,Red,1kg,bag,21.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,86.49,True,True,True,4.3,🍅
+P131,Bananas,Loose,Groceries,Fresh Produce,Yellow,1kg,bag,20.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,20.99,False,True,True,4.6,🍌
+P132,Bananas,Loose,Groceries,Fresh Produce,Yellow,1kg,bag,22.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,57.49,True,True,True,4.6,🍌
+P133,Bananas,Loose,Groceries,Fresh Produce,Yellow,1kg,bag,24.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,69.49,True,True,True,4.6,🍌
+P134,Bananas,Loose,Groceries,Fresh Produce,Yellow,1kg,bag,22.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,62.49,True,True,True,4.6,🍌
+P135,Bananas,Loose,Groceries,Fresh Produce,Yellow,1kg,bag,19.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,64.49,True,True,True,4.6,🍌
+P136,Bananas,Loose,Groceries,Fresh Produce,Yellow,1kg,bag,18.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,83.49,True,True,True,4.6,🍌
+P137,Cabbage,Loose,Groceries,Fresh Produce,Green,1 head,each,23.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,23.99,False,True,True,4.2,🥬
+P138,Cabbage,Loose,Groceries,Fresh Produce,Green,1 head,each,25.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,60.49,True,True,True,4.2,🥬
+P139,Cabbage,Loose,Groceries,Fresh Produce,Green,1 head,each,27.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,72.49,True,True,True,4.2,🥬
+P140,Cabbage,Loose,Groceries,Fresh Produce,Green,1 head,each,25.95,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,65.95,True,True,True,4.2,🥬
+P141,Cabbage,Loose,Groceries,Fresh Produce,Green,1 head,each,22.49,ZAR,foodlovers,Food Lover's Market Overport,Overport,-29.833,31.0,2.55,45.0,67.49,True,True,True,4.2,🥬
+P142,Cabbage,Loose,Groceries,Fresh Produce,Green,1 head,each,21.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,86.49,True,True,True,4.2,🥬
+P143,Toothpaste,Colgate,Toiletries,Oral Care,White,100ml,tube,32.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,82.95,True,True,True,4.6,🪥
+P144,Toothpaste,Colgate,Toiletries,Oral Care,White,100ml,tube,31.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,31.99,False,True,True,4.6,🪥
+P145,Toothpaste,Colgate,Toiletries,Oral Care,White,100ml,tube,33.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,68.49,True,True,True,4.6,🪥
+P146,Toothpaste,Colgate,Toiletries,Oral Care,White,100ml,tube,35.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,80.49,True,True,True,4.6,🪥
+P147,Toothpaste,Colgate,Toiletries,Oral Care,White,100ml,tube,33.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,73.99,True,True,True,4.6,🪥
+P148,Toothpaste,Colgate,Toiletries,Oral Care,White,100ml,tube,27.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,92.99,True,True,True,4.6,🪥
+P149,Sunlight Soap Bar,Sunlight,Toiletries,Body,Green,175g,bar,13.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,63.95,True,True,True,4.3,🧼
+P150,Sunlight Soap Bar,Sunlight,Toiletries,Body,Green,175g,bar,13.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,13.49,False,True,True,4.3,🧼
+P151,Sunlight Soap Bar,Sunlight,Toiletries,Body,Green,175g,bar,13.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,48.99,True,True,True,4.3,🧼
+P152,Sunlight Soap Bar,Sunlight,Toiletries,Body,Green,175g,bar,14.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,59.99,True,True,True,4.3,🧼
+P153,Sunlight Soap Bar,Sunlight,Toiletries,Body,Green,175g,bar,14.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,54.49,True,True,True,4.3,🧼
+P154,Sunlight Soap Bar,Sunlight,Toiletries,Body,Green,175g,bar,11.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,76.95,True,True,True,4.3,🧼
+P155,Antibacterial Soap,Dettol,Toiletries,Body,Blue,175g,bar,17.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,67.95,True,True,True,4.5,🧼
+P156,Antibacterial Soap,Dettol,Toiletries,Body,Blue,175g,bar,17.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,17.49,False,True,True,4.5,🧼
+P157,Antibacterial Soap,Dettol,Toiletries,Body,Blue,175g,bar,18.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,53.49,True,True,True,4.5,🧼
+P158,Antibacterial Soap,Dettol,Toiletries,Body,Blue,175g,bar,19.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,64.49,True,True,True,4.5,🧼
+P159,Antibacterial Soap,Dettol,Toiletries,Body,Blue,175g,bar,18.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,58.49,True,True,True,4.5,🧼
+P160,Antibacterial Soap,Dettol,Toiletries,Body,Blue,175g,bar,15.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,80.49,True,True,True,4.5,🧼
+P161,Roll-On Deodorant,Shield,Toiletries,Body,Blue,50ml,roll-on,34.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,84.95,True,True,True,4.2,🧴
+P162,Roll-On Deodorant,Shield,Toiletries,Body,Blue,50ml,roll-on,33.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,33.99,False,True,True,4.2,🧴
+P163,Roll-On Deodorant,Shield,Toiletries,Body,Blue,50ml,roll-on,35.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,70.49,True,True,True,4.2,🧴
+P164,Roll-On Deodorant,Shield,Toiletries,Body,Blue,50ml,roll-on,37.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,82.49,True,True,True,4.2,🧴
+P165,Roll-On Deodorant,Shield,Toiletries,Body,Blue,50ml,roll-on,35.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,75.99,True,True,True,4.2,🧴
+P166,Roll-On Deodorant,Shield,Toiletries,Body,Blue,50ml,roll-on,29.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,94.95,True,True,True,4.2,🧴
+P167,Petroleum Jelly,Vaseline,Toiletries,Skin,White,250ml,tub,42.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,92.95,True,True,True,4.7,🧴
+P168,Petroleum Jelly,Vaseline,Toiletries,Skin,White,250ml,tub,41.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,41.95,False,True,True,4.7,🧴
+P169,Petroleum Jelly,Vaseline,Toiletries,Skin,White,250ml,tub,43.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,78.49,True,True,True,4.7,🧴
+P170,Petroleum Jelly,Vaseline,Toiletries,Skin,White,250ml,tub,45.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,90.99,True,True,True,4.7,🧴
+P171,Petroleum Jelly,Vaseline,Toiletries,Skin,White,250ml,tub,44.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,84.49,True,True,True,4.7,🧴
+P172,Petroleum Jelly,Vaseline,Toiletries,Skin,White,250ml,tub,36.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,101.49,True,True,True,4.7,🧴
+P173,Shampoo,Head & Shoulders,Toiletries,Hair,White,400ml,bottle,54.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,104.95,True,True,True,4.4,🧴
+P174,Shampoo,Head & Shoulders,Toiletries,Hair,White,400ml,bottle,55.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,90.95,True,True,True,4.4,🧴
+P175,Shampoo,Head & Shoulders,Toiletries,Hair,White,400ml,bottle,58.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,103.95,True,True,True,4.4,🧴
+P176,Shampoo,Head & Shoulders,Toiletries,Hair,White,400ml,bottle,46.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,111.95,True,True,True,4.4,🧴
+P177,Shampoo,Head & Shoulders,Toiletries,Hair,White,400ml,bottle,52.95,ZAR,takealot,Takealot (online only),Online,,,,60.0,112.95,True,False,True,4.4,🧴
+P178,Toilet Paper 2-Ply,Baby Soft,Toiletries,Household,White,9 pack,pack,74.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,124.95,True,True,True,4.5,🧻
+P179,Toilet Paper 2-Ply,Baby Soft,Toiletries,Household,White,9 pack,pack,72.95,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,72.95,False,True,True,4.5,🧻
+P180,Toilet Paper 2-Ply,Baby Soft,Toiletries,Household,White,9 pack,pack,75.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,110.99,True,True,True,4.5,🧻
+P181,Toilet Paper 2-Ply,Baby Soft,Toiletries,Household,White,9 pack,pack,80.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,125.49,True,True,True,4.5,🧻
+P182,Toilet Paper 2-Ply,Baby Soft,Toiletries,Household,White,9 pack,pack,77.49,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,117.49,True,True,True,4.5,🧻
+P183,Toilet Paper 2-Ply,Baby Soft,Toiletries,Household,White,9 pack,pack,63.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,128.95,True,True,True,4.5,🧻
+P184,Auto Washing Powder,OMO,Toiletries,Laundry,n/a,2kg,box,94.49,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,144.49,True,True,True,4.4,🧺
+P185,Auto Washing Powder,OMO,Toiletries,Laundry,n/a,2kg,box,92.49,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,92.49,False,True,True,4.4,🧺
+P186,Auto Washing Powder,OMO,Toiletries,Laundry,n/a,2kg,box,96.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,131.49,True,True,True,4.4,🧺
+P187,Auto Washing Powder,OMO,Toiletries,Laundry,n/a,2kg,box,101.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,146.49,True,True,True,4.4,🧺
+P188,Auto Washing Powder,OMO,Toiletries,Laundry,n/a,2kg,box,97.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,137.99,True,True,True,4.4,🧺
+P189,Auto Washing Powder,OMO,Toiletries,Laundry,n/a,2kg,box,80.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,145.95,True,True,True,4.4,🧺
+P190,Sanitary Pads,Always,Toiletries,Feminine Care,n/a,10 pack,pack,32.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,82.95,True,True,True,4.6,🩹
+P191,Sanitary Pads,Always,Toiletries,Feminine Care,n/a,10 pack,pack,31.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,31.99,False,True,True,4.6,🩹
+P192,Sanitary Pads,Always,Toiletries,Feminine Care,n/a,10 pack,pack,33.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,68.49,True,True,True,4.6,🩹
+P193,Sanitary Pads,Always,Toiletries,Feminine Care,n/a,10 pack,pack,35.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,80.49,True,True,True,4.6,🩹
+P194,Sanitary Pads,Always,Toiletries,Feminine Care,n/a,10 pack,pack,33.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,73.99,True,True,True,4.6,🩹
+P195,Sanitary Pads,Always,Toiletries,Feminine Care,n/a,10 pack,pack,27.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,92.99,True,True,True,4.6,🩹
+P196,Dishwashing Liquid,Sunlight,Toiletries,Household,Yellow,750ml,bottle,34.95,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,84.95,True,True,True,4.3,🧽
+P197,Dishwashing Liquid,Sunlight,Toiletries,Household,Yellow,750ml,bottle,33.99,ZAR,shoprite,Shoprite Warwick Junction,Warwick,-29.857,31.014,0.6,0.0,33.99,False,True,True,4.3,🧽
+P198,Dishwashing Liquid,Sunlight,Toiletries,Household,Yellow,750ml,bottle,35.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,70.49,True,True,True,4.3,🧽
+P199,Dishwashing Liquid,Sunlight,Toiletries,Household,Yellow,750ml,bottle,37.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,82.49,True,True,True,4.3,🧽
+P200,Dishwashing Liquid,Sunlight,Toiletries,Household,Yellow,750ml,bottle,35.99,ZAR,spar,SPAR Glenwood,Glenwood,-29.869,30.999,1.83,40.0,75.99,True,True,True,4.3,🧽
+P201,Dishwashing Liquid,Sunlight,Toiletries,Household,Yellow,750ml,bottle,29.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,94.95,True,True,True,4.3,🧽
+P202,A4 Feint & Margin Book,Croxley,Stationery,Books,Blue,72 page,book,18.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,78.49,True,True,True,4.2,📓
+P203,A4 Feint & Margin Book,Croxley,Stationery,Books,Blue,72 page,book,17.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,77.49,True,False,True,4.2,📓
+P204,A4 Feint & Margin Book,Croxley,Stationery,Books,Blue,72 page,book,16.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,81.49,True,True,True,4.2,📓
+P205,A4 Feint & Margin Book,Croxley,Stationery,Books,Blue,72 page,book,20.95,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,65.95,True,True,True,4.2,📓
+P206,A4 Feint & Margin Book,Croxley,Stationery,Books,Blue,72 page,book,19.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,54.95,True,True,True,4.2,📓
+P207,Ballpoint Pens,BIC,Stationery,Writing,Blue,10 pack,pack,38.95,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,98.95,True,True,True,4.5,🖊️
+P208,Ballpoint Pens,BIC,Stationery,Writing,Blue,10 pack,pack,36.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,96.49,True,False,True,4.5,🖊️
+P209,Ballpoint Pens,BIC,Stationery,Writing,Blue,10 pack,pack,34.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,99.95,True,True,True,4.5,🖊️
+P210,Ballpoint Pens,BIC,Stationery,Writing,Blue,10 pack,pack,43.99,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,93.99,True,True,True,4.5,🖊️
+P211,Ballpoint Pens,BIC,Stationery,Writing,Blue,10 pack,pack,41.95,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,76.95,True,True,True,4.5,🖊️
+P212,Scientific Calculator,Casio,Stationery,Calculators,Black,FX-82ZA,unit,338.0,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,398.0,True,True,True,4.8,🧮
+P213,Scientific Calculator,Casio,Stationery,Calculators,Black,FX-82ZA,unit,318.0,ZAR,takealot,Takealot (online only),Online,,,,60.0,378.0,True,False,True,4.8,🧮
+P214,Scientific Calculator,Casio,Stationery,Calculators,Black,FX-82ZA,unit,303.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,368.49,True,True,True,4.8,🧮
+P215,Scientific Calculator,Casio,Stationery,Calculators,Black,FX-82ZA,unit,391.49,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,490.49,True,True,True,4.8,🧮
+P216,A4 Printing Paper,Typek,Stationery,Paper,White,500 sheets,ream,106.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,166.49,True,True,True,4.6,📄
+P217,A4 Printing Paper,Typek,Stationery,Paper,White,500 sheets,ream,100.0,ZAR,takealot,Takealot (online only),Online,,,,60.0,160.0,True,False,True,4.6,📄
+P218,A4 Printing Paper,Typek,Stationery,Paper,White,500 sheets,ream,95.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,160.49,True,True,True,4.6,📄
+P219,A4 Printing Paper,Typek,Stationery,Paper,White,500 sheets,ream,106.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,166.49,True,True,True,4.6,📄
+P220,USB Flash Drive,SanDisk,Electronics,Storage,Black,64GB,unit,161.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,221.49,True,False,True,4.6,💾
+P221,USB Flash Drive,SanDisk,Electronics,Storage,Black,64GB,unit,194.95,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,293.95,True,True,True,4.6,💾
+P222,USB Flash Drive,SanDisk,Electronics,Storage,Black,64GB,unit,177.0,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,237.0,True,True,True,4.6,💾
+P223,USB Flash Drive,SanDisk,Electronics,Storage,Black,64GB,unit,155.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,220.49,True,True,True,4.6,💾
+P224,Wired Earphones,Sony,Electronics,Audio,Black,3.5mm,unit,179.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,239.49,True,False,True,4.3,🎧
+P225,Wired Earphones,Sony,Electronics,Audio,Black,3.5mm,unit,216.49,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,315.49,True,True,True,4.3,🎧
+P226,Wired Earphones,Sony,Electronics,Audio,Black,3.5mm,unit,196.95,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,256.95,True,True,True,4.3,🎧
+P227,Wired Earphones,Sony,Electronics,Audio,Black,3.5mm,unit,173.0,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,238.0,True,True,True,4.3,🎧
+P228,Power Bank,Romoss,Electronics,Power,Black,10000mAh,unit,314.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,374.49,True,False,True,4.4,🔋
+P229,Power Bank,Romoss,Electronics,Power,Black,10000mAh,unit,380.0,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,479.0,True,True,True,4.4,🔋
+P230,Power Bank,Romoss,Electronics,Power,Black,10000mAh,unit,345.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,405.49,True,True,True,4.4,🔋
+P231,Power Bank,Romoss,Electronics,Power,Black,10000mAh,unit,303.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,368.49,True,True,True,4.4,🔋
+P232,Multi-Plug Adaptor,Ellies,Electronics,Power,White,4-way,unit,148.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,208.49,True,True,True,4.2,🔌
+P233,Multi-Plug Adaptor,Ellies,Electronics,Power,White,4-way,unit,135.0,ZAR,takealot,Takealot (online only),Online,,,,60.0,195.0,True,False,True,4.2,🔌
+P234,Multi-Plug Adaptor,Ellies,Electronics,Power,White,4-way,unit,130.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,195.49,True,True,True,4.2,🔌
+P235,Multi-Plug Adaptor,Ellies,Electronics,Power,White,4-way,unit,163.49,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,262.49,True,True,True,4.2,🔌
+P236,LED Desk Lamp,Eurolux,Electronics,Lighting,White,Small,unit,246.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,306.49,True,True,True,4.1,💡
+P237,LED Desk Lamp,Eurolux,Electronics,Lighting,White,Small,unit,224.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,284.49,True,False,True,4.1,💡
+P238,LED Desk Lamp,Eurolux,Electronics,Lighting,White,Small,unit,216.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,281.49,True,True,True,4.1,💡
+P239,Single Fitted Sheet,Sheraton,Homeware,Bedding,Grey,Single,unit,179.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,239.49,True,True,True,4.2,🛏️
+P240,Single Fitted Sheet,Sheraton,Homeware,Bedding,Grey,Single,unit,175.95,ZAR,takealot,Takealot (online only),Online,,,,60.0,235.95,True,False,True,4.2,🛏️
+P241,Single Fitted Sheet,Sheraton,Homeware,Bedding,Grey,Single,unit,160.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,225.95,True,True,True,4.2,🛏️
+P242,Bath Towel,Colibri,Homeware,Bathroom,Navy,Large,unit,141.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,201.49,True,True,True,4.4,🛁
+P243,Bath Towel,Colibri,Homeware,Bathroom,Navy,Large,unit,138.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,198.49,True,False,True,4.4,🛁
+P244,Bath Towel,Colibri,Homeware,Bathroom,Navy,Large,unit,126.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,191.95,True,True,True,4.4,🛁
+P245,Bath Towel,Colibri,Homeware,Bathroom,Navy,Large,unit,154.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,189.49,True,True,True,4.4,🛁
+P246,2-Plate Hotplate,Salton,Homeware,Kitchen,White,Compact,unit,425.95,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,485.95,True,True,True,4.0,🍳
+P247,2-Plate Hotplate,Salton,Homeware,Kitchen,White,Compact,unit,418.0,ZAR,takealot,Takealot (online only),Online,,,,60.0,478.0,True,False,True,4.0,🍳
+P248,2-Plate Hotplate,Salton,Homeware,Kitchen,White,Compact,unit,382.0,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,447.0,True,True,True,4.0,🍳
+P249,2-Plate Hotplate,Salton,Homeware,Kitchen,White,Compact,unit,523.49,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,622.49,True,True,True,4.0,🍳
+P250,Kettle,Russell Hobbs,Homeware,Kitchen,Silver,1.7L,unit,312.0,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,372.0,True,True,True,4.5,🫖
+P251,Kettle,Russell Hobbs,Homeware,Kitchen,Silver,1.7L,unit,306.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,366.49,True,False,True,4.5,🫖
+P252,Kettle,Russell Hobbs,Homeware,Kitchen,Silver,1.7L,unit,279.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,344.99,True,True,True,4.5,🫖
+P253,Kettle,Russell Hobbs,Homeware,Kitchen,Silver,1.7L,unit,383.49,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,482.49,True,True,True,4.5,🫖
+P254,Kettle,Russell Hobbs,Homeware,Kitchen,Silver,1.7L,unit,340.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,375.49,True,True,True,4.5,🫖
+P255,Storage Crate,Addis,Homeware,Storage,Clear,30L,unit,123.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,183.49,True,True,True,4.3,📦
+P256,Storage Crate,Addis,Homeware,Storage,Clear,30L,unit,121.0,ZAR,takealot,Takealot (online only),Online,,,,60.0,181.0,True,False,True,4.3,📦
+P257,Storage Crate,Addis,Homeware,Storage,Clear,30L,unit,110.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,175.49,True,True,True,4.3,📦

@@ -1,0 +1,26 @@
+{
+  "name": "mintly-budget-market",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "AI Shopping for Budgeting \u2014 helping NSFAS-funded DUT students budget and shop. SODM401/SFEN301.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext js,jsx",
+    "test:contract": "node tests/contract/run.mjs",
+    "seed:backend": "python3 docs/seed/build_backend_seed.py > docs/seed/seed_backend.sql"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.35.0",
+    "vite": "^5.4.8"
+  }
+}
