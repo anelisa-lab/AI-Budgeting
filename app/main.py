@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, profile, budgets, search
+from app.routers import auth, profile, budgets, search, recommendations
 
 app = FastAPI(title="AI Shopping for Student Budgeting — Backend")
 
@@ -22,4 +22,4 @@ app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(budgets.router)
 app.include_router(search.router)
-# Member 5/6 mount /recommendations, /true-cost, etc. here.
+app.include_router(recommendations.router)

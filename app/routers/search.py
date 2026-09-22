@@ -119,6 +119,7 @@ def search_offers(
                         o.id AS offer_id, p.id AS product_id, p.name AS product_name,
                         p.brand, p.category, p.colour, p.size, p.is_essential,
                         s.id AS store_id, s.name AS store_name, s.store_type,
+                        s.latitude AS store_latitude, s.longitude AS store_longitude,
                         o.price, o.shipping_cost, o.total_cost, o.currency,
                         o.availability_status, o.product_url
                     {base_from}
