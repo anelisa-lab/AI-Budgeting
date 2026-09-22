@@ -1,26 +1,101 @@
-"""Daily allowance calculation for recommendation budget-fit scoring."""
+"""
+Daily Budget Split — Member 6.
+
+Phase 1 spec: remaining allowance / days to next payout.
+
+This is the team's standout feature, so it's worth being precise about what
+the words mean:
+
+    remaining allowance = budgets.remaining_amount
+        Savings were already carved out of the total when the budget was
+        created (see Member 3's create_budget), so remaining_amount is money
+        the student may actually spend. The split never touches savings.
+
+    days to next payout = budgets.cycle_end_date, counted INCLUSIVELY from
+        today. If today is the 20th and payout is the 22nd, that is 3 days of
+        eating, not 2. Getting this off by one is the difference between a
+        student having lunch money on payout day and not.
+
+    daily limit = remaining / days, rounded DOWN to the cent.
+        Rounding down guarantees the sum of every day's limit never exceeds
+        what's in the budget. The few cents left over land on the last day.
+
+The split is recalculated on every read rather than stored once, because the
+answer changes the moment a transaction is recorded — that's the whole point.
+budget_daily_limits then keeps a per-day record so the dashboard can show
+"you were R12 under yesterday".
+
+Survival mode: when remaining_amount drops to or below the budget's
+survival_threshold, the student is in trouble and the app should stop
+recommending non-essentials. The threshold is per-budget and optional; this
+module reports the mode and the router persists it to budgets.budget_mode.
+
+Pure Python — no database, no FastAPI — so every number below is unit-tested
+in tests/test_budget_split.py without a Postgres connection.
+"""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, Optional
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from typing import Dict, List, Optional
 
 ZERO = Decimal("0.00")
+
 MODE_NORMAL = "normal"
 MODE_SURVIVAL = "survival"
 
+# A daily limit below this is effectively nothing, and the UI should say so
+# rather than pretending R3.40 a day is a plan.
+CRITICAL_DAILY_LIMIT = Decimal("20.00")
+
 
 def _money(value) -> Decimal:
-    return (Decimal("0") if value is None else Decimal(str(value))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if value is None:
+        return ZERO
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def days_remaining(as_of: date, cycle_end: date) -> int:
-    return max((cycle_end - as_of).days + 1, 1)
+def _money_down(value) -> Decimal:
+    """Round down — used for the daily limit so the days never over-allocate."""
+    if value is None:
+        return ZERO
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
+    return value.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
 
-def daily_allowance(remaining: Decimal, cycle_start: date, cycle_end: date) -> Decimal:
-    days = days_remaining(cycle_start, cycle_end)
-    return (Decimal(remaining) / days).quantize(Decimal("0.01"), rounding="ROUND_DOWN")
+# ---------------------------------------------------------------------------
+# Core arithmetic
+# ---------------------------------------------------------------------------
+
+
+def days_remaining(as_of: date, cycle_end_date: date) -> int:
+    """
+    Days left in the cycle, counting today and payout day. Never less than 1.
+
+    A cycle that has already ended returns 1: the student is living on what's
+    left until the next payout lands, and dividing by zero helps nobody.
+    """
+    delta = (cycle_end_date - as_of).days + 1
+    return max(delta, 1)
+
+
+def daily_allowance(remaining_amount, as_of: date, cycle_end_date: date) -> Decimal:
+    """remaining / days, rounded down to the cent. The headline number."""
+    remaining = _money(remaining_amount)
+    if remaining <= 0:
+        return ZERO
+    days = days_remaining(as_of, cycle_end_date)
+    return _money_down(remaining / Decimal(days))
+
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -30,6 +105,15 @@ class DaySplit:
     spent_amount: Decimal
     remaining_limit: Decimal
     is_today: bool = False
+
+    def as_dict(self) -> dict:
+        return {
+            "limit_date": self.limit_date,
+            "planned_limit": self.planned_limit,
+            "spent_amount": self.spent_amount,
+            "remaining_limit": self.remaining_limit,
+            "is_today": self.is_today,
+        }
 
 
 @dataclass
@@ -46,62 +130,209 @@ class BudgetSplit:
     mode: str
     survival_threshold: Optional[Decimal]
     message: str
-    days: list = field(default_factory=list)
+    days: List[DaySplit] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "budget_id": self.budget_id,
+            "currency": self.currency,
+            "as_of": self.as_of,
+            "next_payout_date": self.next_payout_date,
+            "days_remaining": self.days_remaining,
+            "remaining_amount": self.remaining_amount,
+            "daily_limit": self.daily_limit,
+            "spent_today": self.spent_today,
+            "remaining_today": self.remaining_today,
+            "mode": self.mode,
+            "survival_threshold": self.survival_threshold,
+            "message": self.message,
+            "days": [d.as_dict() for d in self.days],
+        }
 
 
-def build_split(budget: dict, as_of: Optional[date] = None,
-                spent_by_date: Optional[Dict[date, Decimal]] = None,
-                horizon_days: int = 14) -> BudgetSplit:
+# ---------------------------------------------------------------------------
+# The algorithm
+# ---------------------------------------------------------------------------
+
+
+def _build_message(
+    remaining: Decimal,
+    daily_limit: Decimal,
+    remaining_today: Decimal,
+    days: int,
+    mode: str,
+    cycle_ended: bool,
+) -> str:
+    if remaining <= 0:
+        return (
+            "Your allowance for this cycle is finished. Nothing left to split — "
+            "hold out until your next payout."
+        )
+    if cycle_ended:
+        return (
+            f"Your payout date has passed with R{remaining} left. Treat it as "
+            "today's budget until the next one lands."
+        )
+    if mode == MODE_SURVIVAL:
+        return (
+            f"Survival mode: R{remaining} must last {days} more days, so you have "
+            f"R{daily_limit} a day. Essentials only — the app will stop suggesting "
+            "anything else."
+        )
+    if daily_limit < CRITICAL_DAILY_LIMIT:
+        return (
+            f"R{remaining} over {days} days is only R{daily_limit} a day. That's "
+            "very tight — stick to essentials and look for cheaper stores."
+        )
+    return (
+        f"R{remaining} over {days} days gives you R{daily_limit} a day. "
+        f"You have R{remaining_today} left to spend today."
+    )
+
+
+def build_split(
+    budget: dict,
+    as_of: Optional[date] = None,
+    spent_by_date: Optional[Dict[date, Decimal]] = None,
+    horizon_days: int = 14,
+) -> BudgetSplit:
+    """
+    Work out the Daily Budget Split for one budget.
+
+    Args:
+        budget:         a budgets row (dict-like) — needs id, currency,
+                        remaining_amount, cycle_start_date, cycle_end_date and
+                        optionally survival_threshold.
+        as_of:          the day being planned; defaults to today.
+        spent_by_date:  {date: amount} of transactions already recorded, used
+                        to fill in spent_amount per day. Days not in the map
+                        count as zero spend.
+        horizon_days:   how many days of the schedule to return. The dashboard
+                        shows a fortnight; the maths is unaffected.
+
+    Returns:
+        BudgetSplit — the headline daily limit plus a day-by-day schedule.
+    """
     as_of = as_of or date.today()
     spent_by_date = spent_by_date or {}
+
+    cycle_end = budget["cycle_end_date"]
     remaining = _money(budget.get("remaining_amount"))
-    end = budget["cycle_end_date"]
-    days = days_remaining(as_of, end)
-    daily = daily_allowance(remaining, as_of, end)
-    spent_today = _money(spent_by_date.get(as_of, ZERO))
-    remaining_today = max(_money(daily - spent_today), ZERO)
     threshold = budget.get("survival_threshold")
     threshold = _money(threshold) if threshold is not None else None
-    mode = MODE_SURVIVAL if budget.get("budget_mode") == MODE_SURVIVAL or (
-        threshold is not None and daily <= threshold
-    ) else MODE_NORMAL
-    schedule = []
-    for index in range(min(max(horizon_days, 0), days)):
-        day = as_of + timedelta(days=index)
-        spent = _money(spent_by_date.get(day, ZERO))
-        planned = daily if index < days - 1 else _money(remaining - daily * (days - 1))
-        schedule.append(DaySplit(day, planned, spent, max(_money(planned - spent), ZERO), index == 0))
-    message = (
-        "Your allowance for this cycle is finished." if remaining <= 0 else
-        f"Survival mode: R{remaining} over {days} days gives you R{daily} a day."
-        if mode == MODE_SURVIVAL else f"R{remaining} over {days} days gives you R{daily} a day."
+
+    days = days_remaining(as_of, cycle_end)
+    cycle_ended = cycle_end < as_of
+    limit = daily_allowance(remaining, as_of, cycle_end)
+
+    spent_today = _money(spent_by_date.get(as_of, ZERO))
+    remaining_today = max(_money(limit - spent_today), ZERO)
+
+    mode = MODE_SURVIVAL if (threshold is not None and remaining <= threshold) else MODE_NORMAL
+
+    # Day-by-day schedule. Past days keep whatever was actually spent; future
+    # days all carry the same planned limit, because the split is recalculated
+    # from scratch every time anyway.
+    schedule: List[DaySplit] = []
+    last_day = min(cycle_end, as_of + timedelta(days=horizon_days - 1))
+    if last_day < as_of:
+        last_day = as_of
+
+    cursor_date = as_of
+    while cursor_date <= last_day:
+        spent = _money(spent_by_date.get(cursor_date, ZERO))
+        schedule.append(
+            DaySplit(
+                limit_date=cursor_date,
+                planned_limit=limit,
+                spent_amount=spent,
+                remaining_limit=max(_money(limit - spent), ZERO),
+                is_today=(cursor_date == as_of),
+            )
+        )
+        cursor_date += timedelta(days=1)
+
+    return BudgetSplit(
+        budget_id=budget["id"],
+        currency=budget.get("currency") or "ZAR",
+        as_of=as_of,
+        next_payout_date=cycle_end,
+        days_remaining=days,
+        remaining_amount=remaining,
+        daily_limit=limit,
+        spent_today=spent_today,
+        remaining_today=remaining_today,
+        mode=mode,
+        survival_threshold=threshold,
+        message=_build_message(remaining, limit, remaining_today, days, mode, cycle_ended),
+        days=schedule,
     )
-    return BudgetSplit(budget["id"], budget.get("currency", "ZAR"), as_of, end, days,
-                       remaining, daily, spent_today, remaining_today, mode, threshold, message, schedule)
 
 
 @dataclass
-class Affordability:
+class AffordabilityVerdict:
     amount: Decimal
     affordable_today: bool
     affordable_this_cycle: bool
     remaining_today: Decimal
     remaining_amount: Decimal
-    days_of_budget: Optional[Decimal]
+    days_of_budget: Optional[Decimal]   # how many days' allowance this purchase eats
     message: str
 
+    def as_dict(self) -> dict:
+        return {
+            "amount": self.amount,
+            "affordable_today": self.affordable_today,
+            "affordable_this_cycle": self.affordable_this_cycle,
+            "remaining_today": self.remaining_today,
+            "remaining_amount": self.remaining_amount,
+            "days_of_budget": self.days_of_budget,
+            "message": self.message,
+        }
 
-def check_affordability(split: BudgetSplit, amount: Decimal) -> Affordability:
+
+def check_affordability(split: BudgetSplit, amount) -> AffordabilityVerdict:
+    """
+    "Can I buy this today?" — answered against the split, not just the balance.
+
+    The honest answer is usually "yes, but it costs you two days of food",
+    which is exactly what days_of_budget says. Member 5's recommender uses
+    the same idea to score budget fit.
+    """
     amount = _money(amount)
+
     affordable_today = amount <= split.remaining_today
     affordable_cycle = amount <= split.remaining_amount
-    days = (amount / split.daily_limit).quantize(Decimal("0.1")) if split.daily_limit else None
+
+    days_of_budget = None
+    if split.daily_limit > 0:
+        days_of_budget = (amount / split.daily_limit).quantize(
+            Decimal("0.1"), rounding=ROUND_HALF_UP
+        )
+
     if not affordable_cycle:
-        message = "This purchase would cause an overspend."
-    elif not affordable_today:
-        message = "This purchase fits the cycle, but would make today's budget tighter."
+        over_by = _money(amount - split.remaining_amount)
+        message = (
+            f"R{amount} is R{over_by} more than you have left for the whole cycle. "
+            "This one would put you into overspend."
+        )
+    elif affordable_today:
+        message = (
+            f"R{amount} fits inside today's R{split.remaining_today} allowance."
+        )
     else:
-        message = "This purchase fits today's allowance."
-    return Affordability(amount, affordable_today, affordable_cycle,
-                         max(_money(split.remaining_today - amount), ZERO),
-                         max(_money(split.remaining_amount - amount), ZERO), days, message)
+        message = (
+            f"R{amount} is over today's R{split.remaining_today}, but you can "
+            f"afford it this cycle — it uses about {days_of_budget} days of your "
+            "allowance, so the next few days get tighter."
+        )
+
+    return AffordabilityVerdict(
+        amount=amount,
+        affordable_today=affordable_today,
+        affordable_this_cycle=affordable_cycle,
+        remaining_today=split.remaining_today,
+        remaining_amount=split.remaining_amount,
+        days_of_budget=days_of_budget,
+        message=message,
+    )
