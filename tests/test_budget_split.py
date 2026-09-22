@@ -65,9 +65,12 @@ def test_zero_remaining_gives_zero_limit():
 
 
 def test_spent_today_reduces_todays_allowance():
+    # R1000 at the start of the day, R40 spent: budgets.remaining_amount is
+    # already R960 by the time the split is read (the transaction handler
+    # subtracts it), so that's what the router passes in.
     today = date(2026, 9, 10)
     split = build_split(
-        budget(remaining="1000.00", end="2026-09-19"),
+        budget(remaining="960.00", end="2026-09-19"),
         as_of=today,
         spent_by_date={today: D("40.00")},
     )
@@ -77,14 +80,68 @@ def test_spent_today_reduces_todays_allowance():
     assert split.remaining_today == D("60.00")
 
 
+def test_todays_spend_is_not_counted_twice():
+    # Regression: dividing the post-purchase balance and then subtracting
+    # today's spend again gave R40.50 left instead of R45.
+    today = date(2026, 9, 10)
+    split = build_split(
+        budget(remaining="855.00", end="2026-09-19"),
+        as_of=today,
+        spent_by_date={today: D("45.00")},
+    )
+    assert split.daily_limit == D("90.00")
+    assert split.remaining_today == D("45.00")
+
+
 def test_overspending_today_floors_at_zero_never_negative():
     today = date(2026, 9, 10)
     split = build_split(
-        budget(remaining="1000.00", end="2026-09-19"),
+        budget(remaining="750.00", end="2026-09-19"),
         as_of=today,
         spent_by_date={today: D("250.00")},
     )
     assert split.remaining_today == D("0.00")
+
+
+def test_overspending_today_tightens_tomorrow():
+    # R1000 over 10 days is R100/day; spending R250 today leaves R750 for
+    # the other 9 days -> R83.33 from tomorrow.
+    today = date(2026, 9, 10)
+    split = build_split(
+        budget(remaining="750.00", end="2026-09-19"),
+        as_of=today,
+        spent_by_date={today: D("250.00")},
+    )
+    assert split.daily_limit == D("100.00")
+    assert split.tomorrow_limit == D("83.33")
+    assert split.days[1].planned_limit == D("83.33")
+    assert "over today's" in split.message
+
+
+def test_no_spend_keeps_tomorrow_in_line_with_today():
+    today = date(2026, 9, 10)
+    split = build_split(budget(remaining="1000.00", end="2026-09-19"), as_of=today)
+    assert split.daily_limit == D("100.00")
+    assert split.tomorrow_limit == D("100.00")
+
+
+def test_used_up_budget_gets_no_allowance_even_after_spending_today():
+    # remaining_amount is floored at 0 on overspend; adding today's spend back
+    # would invent an allowance out of money that never existed.
+    today = date(2026, 9, 10)
+    split = build_split(
+        budget(remaining="0.00", end="2026-09-19"),
+        as_of=today,
+        spent_by_date={today: D("5000.00")},
+    )
+    assert split.daily_limit == D("0.00")
+    assert split.remaining_today == D("0.00")
+
+
+def test_payout_day_has_no_tomorrow():
+    today = date(2026, 9, 19)
+    split = build_split(budget(remaining="100.00", end="2026-09-19"), as_of=today)
+    assert split.tomorrow_limit is None
 
 
 def test_schedule_starts_today_and_respects_the_horizon():

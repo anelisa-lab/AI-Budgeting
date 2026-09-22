@@ -153,3 +153,12 @@ def test_unparseable_query_still_returns_keywords():
     parsed = parse_query("something completely unexpected")
     assert parsed.category is None
     assert "unexpected" in parsed.keywords
+
+
+def test_intent_words_are_not_left_as_keywords():
+    # Regression: "rated" stayed in keywords, so /search required it in the
+    # product name and "best rated bread" found nothing.
+    parsed = parse_query("best rated bread")
+    assert parsed.sort_hint == "rating_desc"
+    assert parsed.keywords == ["bread"]
+    assert parse_query("affordable essentials soap").keywords == ["soap"]

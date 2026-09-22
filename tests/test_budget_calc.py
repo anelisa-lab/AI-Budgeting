@@ -9,7 +9,11 @@ from decimal import Decimal
 
 import pytest
 
-from app.budget_calc import calculate_transaction_impact, calculate_budget_update
+from app.budget_calc import (
+    calculate_budget_health,
+    calculate_budget_update,
+    calculate_transaction_impact,
+)
 
 
 class TestCalculateTransactionImpact:
@@ -136,3 +140,71 @@ class TestCalculateBudgetUpdate:
         )
         assert total == Decimal("1000.00")
         assert remaining == Decimal("400.00")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — calculate_budget_health (dashboard warning display)
+# ---------------------------------------------------------------------------
+
+
+def test_health_ok_when_little_spent():
+    h = calculate_budget_health(Decimal("1000"), Decimal("900"), Decimal("0"))
+    assert h.warning_level == "ok"
+    assert h.spent_amount == Decimal("100.00")
+    assert h.spent_percentage == Decimal("10.0")
+    assert h.warnings == []
+
+
+def test_health_excludes_savings_from_spendable():
+    # R1000 total, R100 saved, R900 still remaining -> nothing spent yet
+    h = calculate_budget_health(Decimal("1000"), Decimal("900"), Decimal("100"))
+    assert h.spendable_amount == Decimal("900.00")
+    assert h.spent_amount == Decimal("0.00")
+    assert h.warning_level == "ok"
+
+
+def test_health_caution_at_75_percent():
+    h = calculate_budget_health(Decimal("1000"), Decimal("250"), Decimal("0"))
+    assert h.warning_level == "caution"
+    assert h.spent_percentage == Decimal("75.0")
+
+
+def test_health_danger_at_90_percent():
+    h = calculate_budget_health(Decimal("1000"), Decimal("100"), Decimal("0"))
+    assert h.warning_level == "danger"
+
+
+def test_health_exhausted_at_zero_remaining():
+    h = calculate_budget_health(Decimal("1000"), Decimal("0"), Decimal("0"))
+    assert h.warning_level == "exhausted"
+    assert h.warnings
+
+
+def test_health_survival_mode_is_danger_even_when_little_spent():
+    h = calculate_budget_health(Decimal("1000"), Decimal("900"), Decimal("0"), mode="survival")
+    assert h.warning_level == "danger"
+    assert "Survival mode" in h.warnings[0]
+
+
+def test_health_over_daily_limit_is_caution():
+    h = calculate_budget_health(
+        Decimal("1000"), Decimal("900"), Decimal("0"),
+        spent_today=Decimal("60"), daily_limit=Decimal("40"),
+    )
+    assert h.warning_level == "caution"
+    assert h.over_daily_limit_by == Decimal("20.00")
+    assert any("over today's allowance" in w for w in h.warnings)
+
+
+def test_health_exactly_at_daily_limit_is_not_a_warning():
+    h = calculate_budget_health(
+        Decimal("1000"), Decimal("900"), Decimal("0"),
+        spent_today=Decimal("40"), daily_limit=Decimal("40"),
+    )
+    assert h.warning_level == "ok"
+    assert h.over_daily_limit_by == Decimal("0.00")
+
+
+def test_health_rejects_negative_remaining():
+    with pytest.raises(ValueError):
+        calculate_budget_health(Decimal("1000"), Decimal("-1"), Decimal("0"))

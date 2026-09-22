@@ -69,3 +69,109 @@ def calculate_budget_update(
     delta = new_total - current_total
     new_remaining = max(current_remaining + delta, Decimal("0"))
     return new_total, new_remaining
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — dashboard health / warning display
+# ---------------------------------------------------------------------------
+
+LEVEL_OK = "ok"
+LEVEL_CAUTION = "caution"
+LEVEL_DANGER = "danger"
+LEVEL_EXHAUSTED = "exhausted"
+
+CAUTION_PERCENT = Decimal("75")
+DANGER_PERCENT = Decimal("90")
+
+
+@dataclass
+class BudgetHealth:
+    warning_level: str          # ok | caution | danger | exhausted
+    spendable_amount: Decimal   # total minus savings — what the student may spend
+    spent_amount: Decimal       # spendable minus remaining
+    spent_percentage: Decimal   # 0..100, one decimal place
+    over_daily_limit_by: Decimal
+    warnings: list
+
+    def as_dict(self) -> dict:
+        return {
+            "warning_level": self.warning_level,
+            "spendable_amount": self.spendable_amount,
+            "spent_amount": self.spent_amount,
+            "spent_percentage": self.spent_percentage,
+            "over_daily_limit_by": self.over_daily_limit_by,
+            "warnings": list(self.warnings),
+        }
+
+
+def calculate_budget_health(
+    total_amount: Decimal,
+    remaining_amount: Decimal,
+    savings_amount: Decimal,
+    spent_today: Decimal = Decimal("0"),
+    daily_limit: Decimal | None = None,
+    mode: str = "normal",
+) -> BudgetHealth:
+    """
+    What the budget dashboard's warning banner shows.
+
+    Levels, most severe first:
+        exhausted  remaining_amount is 0 — nothing left this cycle
+        danger     90%+ of the spendable amount is gone, or survival mode
+        caution    75%+ spent, or today's spend is over today's allowance
+        ok         everything else
+
+    `spendable_amount` excludes savings, because savings were carved out when
+    the budget was created and were never available to spend.
+    """
+    total = Decimal(total_amount)
+    remaining = Decimal(remaining_amount)
+    savings = Decimal(savings_amount or 0)
+    spent_today = Decimal(spent_today or 0)
+
+    if remaining < 0 or total <= 0:
+        raise ValueError("total_amount must be positive and remaining_amount non-negative")
+
+    spendable = max(total - savings, Decimal("0"))
+    spent = max(spendable - remaining, Decimal("0"))
+    percent = (
+        (spent / spendable * 100).quantize(Decimal("0.1"))
+        if spendable > 0
+        else Decimal("100.0")
+    )
+
+    over_daily = Decimal("0.00")
+    if daily_limit is not None and spent_today > Decimal(daily_limit):
+        over_daily = (spent_today - Decimal(daily_limit)).quantize(Decimal("0.01"))
+
+    warnings = []
+    if remaining == 0:
+        level = LEVEL_EXHAUSTED
+        warnings.append("Your budget for this cycle is used up. Only record essentials until your next payout.")
+    elif mode == "survival" or percent >= DANGER_PERCENT:
+        level = LEVEL_DANGER
+        if mode == "survival":
+            warnings.append(f"Survival mode: only R{remaining:.2f} left. Essentials only.")
+        else:
+            warnings.append(f"You've used {percent}% of this cycle's budget — R{remaining:.2f} left.")
+    elif percent >= CAUTION_PERCENT or over_daily > 0:
+        level = LEVEL_CAUTION
+        if percent >= CAUTION_PERCENT:
+            warnings.append(f"You've used {percent}% of this cycle's budget.")
+    else:
+        level = LEVEL_OK
+
+    if over_daily > 0:
+        warnings.append(
+            f"You've spent R{spent_today:.2f} today — R{over_daily:.2f} over today's allowance, "
+            "so the next few days get tighter."
+        )
+
+    return BudgetHealth(
+        warning_level=level,
+        spendable_amount=spendable.quantize(Decimal("0.01")),
+        spent_amount=spent.quantize(Decimal("0.01")),
+        spent_percentage=percent,
+        over_daily_limit_by=over_daily,
+        warnings=warnings,
+    )

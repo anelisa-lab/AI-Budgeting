@@ -24,7 +24,6 @@ keeps its score and its explanation.
 
 from decimal import Decimal
 from time import perf_counter
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from psycopg2.extras import Json
@@ -35,6 +34,7 @@ from app.dependencies import get_current_user_id
 from app.geo import distance_between, fetch_user_location
 from app.query_parser import ParsedQuery, parse_query
 from app.recommender import Candidate, ScoredOffer, UserContext, recommend
+from app.routers.budget_split import spent_by_date
 from app.schemas import (
     BudgetContextOut,
     ChargeLineOut,
@@ -202,15 +202,7 @@ def get_recommendations(
 
             split = None
             if budget:
-                cur.execute(
-                    """SELECT transaction_date::date AS day, SUM(amount) AS total
-                       FROM transactions
-                       WHERE budget_id = %s AND transaction_status <> 'voided'
-                       GROUP BY 1""",
-                    (budget["id"],),
-                )
-                spent = {row["day"]: Decimal(row["total"]) for row in cur.fetchall()}
-                split = build_split(budget, spent_by_date=spent)
+                split = build_split(budget, spent_by_date=spent_by_date(cur, budget["id"]))
 
             cur.execute(
                 """SELECT preferred_categories, preferred_stores, preferred_brands,
