@@ -228,6 +228,8 @@ export function BudgetProvider({ children }) {
       dailyAllowance: Number(Math.max(0, dailyAllowance).toFixed(2)),
       dailyAllowanceIsFromServer,
       weeklyAllowance: Number(Math.max(0, dailyAllowance * 7).toFixed(2)),
+      remainingToday: Number(Math.max(0, split?.remaining_today ?? dailyAllowance).toFixed(2)),
+      budgetMode: split?.mode || 'normal',
       onPace: Number(onPace.toFixed(2)),
       health,
       byCategory,

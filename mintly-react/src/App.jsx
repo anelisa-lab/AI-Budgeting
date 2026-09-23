@@ -9,6 +9,7 @@
  *   /dashboard       private  budget dashboard         (Member 8)
  *   /budget          private  budget entry / edit      (Member 8)
  *   /search          private  search + results         (Member 9)
+ *   /recommendations private  ranked picks              (Member 7, Phase 2)
  *   /compare         private  basket comparison        (Member 9)
  *   *                         not found
  *
@@ -28,6 +29,7 @@ import Register from './screens/Register.jsx';
 import Dashboard from './screens/Dashboard.jsx';
 import BudgetEntry from './screens/BudgetEntry.jsx';
 import Search from './screens/Search.jsx';
+import Recommendations from './screens/Recommendations.jsx';
 import Compare from './screens/Compare.jsx';
 import NotFound from './screens/NotFound.jsx';
 
@@ -61,6 +63,10 @@ export default function App() {
       <Route
         path="/search"
         element={<ProtectedRoute><AppShell><Search /></AppShell></ProtectedRoute>}
+      />
+      <Route
+        path="/recommendations"
+        element={<ProtectedRoute><AppShell><Recommendations /></AppShell></ProtectedRoute>}
       />
       <Route
         path="/compare"

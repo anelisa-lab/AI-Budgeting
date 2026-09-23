@@ -326,6 +326,7 @@ export function recommendationFromApi(r) {
     hidden_cost: num(cb.hidden_cost),
     distance_km: numOrNull(r.distance_km),
     rating: numOrNull(r.rating),
+    rating_count: num(r.rating_count, 0),
     score: num(r.score),
     component_scores: r.component_scores || {},
     meets_budget: Boolean(r.meets_budget),
