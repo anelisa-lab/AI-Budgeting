@@ -29,10 +29,19 @@ Two honest notes, both visible in the generated SQL:
     GET /search?essential_only=true has to filter on something. If the team
     wants a different rule, change ESSENTIAL_CATEGORIES below — not the SQL.
 
-  * The dataset's `distance_km` and `rating` have nowhere to go: the schema has
-    latitude/longitude on `stores` but no distance, and no rating column at
-    all. Distance is therefore dropped here, which is exactly why the Search
-    screen shows its radius filter as unavailable.
+  * `distance_km` has nowhere to go: the schema keeps latitude/longitude on
+    `stores` and computes distance per user, which is the right place for it
+    (a fixed distance in a seed file is only true for one student). That is
+    why the Search screen shows its radius filter as unavailable.
+
+  * `subcategory` and `rating` DO have a home as of Phase 2 — see
+    sql/002_phase2_recommender.sql, which added products.subcategory and
+    product_offers.rating / rating_count. They are written below. Earlier
+    versions of this script dropped them, and the effect was not cosmetic:
+    two of the recommender's seven scoring components were constant across
+    the entire catalogue, so 27% of the ranking weight did nothing at all.
+    rating_count stays 0 — the dataset has ratings but no review counts, and
+    inventing counts would be inventing evidence.
 """
 
 import json
@@ -61,7 +70,14 @@ def main():
     out(f"-- Source: {data['meta']['dataset']} v{data['meta']['version']}, "
         f"{data['meta']['distinct_products']} products / {data['meta']['listing_count']} listings\n")
     out("-- Prices are indicative South African retail, Durban, September 2026.\n")
-    out("-- Safe to re-run: it is wrapped in a transaction and keyed on external ids.\n\n")
+    out("-- Safe to re-run: every statement is keyed on an external id.\n")
+    out("--\n")
+    out("-- If you ran an EARLIER version of this file more than once, your stores\n")
+    out("-- table is duplicated (that version's ON CONFLICT DO NOTHING had no unique\n")
+    out("-- key to fire on). Check with:\n")
+    out("--   SELECT count(*), count(DISTINCT external_store_id) FROM stores;\n")
+    out("-- If those two numbers differ, drop and recreate the database, then run\n")
+    out("-- schema.sql and this file once each.\n\n")
     out("BEGIN;\n\n")
 
     # ---- retailer source ------------------------------------------------
@@ -76,16 +92,23 @@ def main():
         ");\n\n")
 
     # ---- stores ---------------------------------------------------------
-    out("-- stores: external_store_id keeps the team's slug so re-running is idempotent.\n")
+    # `ON CONFLICT DO NOTHING` was used here and did nothing at all: it only
+    # suppresses a constraint violation, and `stores` has no unique key on
+    # external_store_id. Every re-run therefore inserted 10 more stores, and
+    # the offers below attached to the new rows — doubling the whole catalogue
+    # and showing every shop twice on the comparison screen. WHERE NOT EXISTS
+    # keys on the slug explicitly, which is what the comment always claimed.
+    out("-- stores: keyed on external_store_id so re-running really is idempotent.\n")
     for s in stores:
         store_type = "online" if s["online_only"] else "physical"
         lat = "NULL" if s["online_only"] or s.get("lat") is None else s["lat"]
         lng = "NULL" if s["online_only"] or s.get("lng") is None else s["lng"]
         out(
             "INSERT INTO stores (name, store_type, address, latitude, longitude, external_store_id)\n"
-            f"VALUES ({sql_str(s['store_name'])}, '{store_type}', {sql_str(s.get('suburb'))}, "
-            f"{lat}, {lng}, {sql_str(s['store_id'])})\n"
-            "ON CONFLICT DO NOTHING;\n"
+            f"SELECT {sql_str(s['store_name'])}, '{store_type}', {sql_str(s.get('suburb'))}, "
+            f"{lat}, {lng}, {sql_str(s['store_id'])}\n"
+            "WHERE NOT EXISTS (SELECT 1 FROM stores WHERE external_store_id = "
+            f"{sql_str(s['store_id'])});\n"
         )
     out("\n")
 
@@ -101,8 +124,9 @@ def main():
         colour = row["colour"] if row["colour"] and row["colour"] != "n/a" else None
         essential = "TRUE" if row["category"] in ESSENTIAL_CATEGORIES else "FALSE"
         out(
-            "INSERT INTO products (name, brand, category, colour, size, is_essential)\n"
+            "INSERT INTO products (name, brand, category, subcategory, colour, size, is_essential)\n"
             f"SELECT {sql_str(name)}, {sql_str(brand)}, {sql_str(row['category'])}, "
+            f"{sql_str(row.get('subcategory'))}, "
             f"{sql_str(colour)}, {sql_str(size)}, {essential}\n"
             "WHERE NOT EXISTS (SELECT 1 FROM products WHERE name = "
             f"{sql_str(name)} AND COALESCE(brand,'') = COALESCE({sql_str(brand)},'') "
@@ -110,17 +134,40 @@ def main():
         )
     out("\n")
 
+    # The inserts above skip rows that already exist, so a database seeded
+    # before subcategory was added would keep its NULLs. One bulk UPDATE
+    # backfills them; it is a no-op on a fresh database.
+    out("-- Backfill subcategory on products that were seeded before it existed.\n")
+    out("UPDATE products p SET subcategory = v.subcategory\n")
+    out("FROM (VALUES\n")
+    rows_sql = [
+        f"  ({sql_str(name)}, {sql_str(brand)}, {sql_str(size)}, {sql_str(row.get('subcategory'))})"
+        for (name, brand, size), row in products.items()
+        if row.get("subcategory")
+    ]
+    out(",\n".join(rows_sql))
+    out("\n) AS v(name, brand, size, subcategory)\n")
+    out("WHERE p.name = v.name\n"
+        "  AND COALESCE(p.brand,'') = COALESCE(v.brand,'')\n"
+        "  AND COALESCE(p.size,'')  = COALESCE(v.size,'')\n"
+        "  AND p.subcategory IS DISTINCT FROM v.subcategory;\n\n")
+
     # ---- offers ---------------------------------------------------------
     out(f"-- product_offers: {len(listings)} listings — the same item at several stores,\n")
     out("-- which is what makes the comparison screen worth anything.\n")
     out("-- total_cost is a GENERATED column, so it is never inserted here.\n")
     for row in listings:
         availability = "available" if row["in_stock"] else "out_of_stock"
+        # rating_count is left at its default 0: the dataset has no counts, and
+        # app/recommender.py reads 0 as "not recorded" rather than "no reviews".
+        rating = "NULL" if row.get("rating") is None else f"{float(row['rating']):.1f}"
         out(
             "INSERT INTO product_offers\n"
-            "  (product_id, store_id, external_product_id, price, shipping_cost, currency, availability_status)\n"
+            "  (product_id, store_id, external_product_id, price, shipping_cost, currency,\n"
+            "   availability_status, rating)\n"
             "SELECT p.id, s.id, "
-            f"{sql_str(row['id'])}, {row['price']:.2f}, {row['shipping_fee']:.2f}, 'ZAR', '{availability}'\n"
+            f"{sql_str(row['id'])}, {row['price']:.2f}, {row['shipping_fee']:.2f}, 'ZAR', "
+            f"'{availability}', {rating}\n"
             f"FROM products p, stores s\n"
             f"WHERE p.name = {sql_str(row['name'])}\n"
             f"  AND COALESCE(p.brand,'') = COALESCE({sql_str(row['brand'])},'')\n"
@@ -130,6 +177,7 @@ def main():
             "  SET price = EXCLUDED.price,\n"
             "      shipping_cost = EXCLUDED.shipping_cost,\n"
             "      availability_status = EXCLUDED.availability_status,\n"
+            "      rating = EXCLUDED.rating,\n"
             "      last_checked_at = NOW();\n"
         )
 

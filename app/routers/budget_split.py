@@ -75,10 +75,10 @@ def spent_by_date(cur, budget_id: int) -> Dict[date, Decimal]:
     """
     Daily spend for this budget.
 
-    transaction_date is a TIMESTAMPTZ, so ::date buckets it in the database
-    server's timezone. Set the dev database to Africa/Johannesburg (or run
-    `SET TIME ZONE 'Africa/Johannesburg';`) or a late-evening purchase can
-    land on the wrong day.
+    transaction_date is a TIMESTAMPTZ, so ::date buckets it in the session
+    timezone — which get_connection() pins to APP_TIMEZONE, the same zone
+    app/clock.py uses for "today". A late-evening purchase therefore lands on
+    the right day even when the database host runs on UTC.
     """
     cur.execute(
         """SELECT transaction_date::date AS day, SUM(amount) AS total

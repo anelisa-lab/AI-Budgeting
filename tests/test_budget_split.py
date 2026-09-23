@@ -203,3 +203,125 @@ def test_purchase_over_the_whole_cycle_is_an_overspend():
     verdict = check_affordability(split, D("250.00"))
     assert verdict.affordable_this_cycle is False
     assert "overspend" in verdict.message
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — invariants that must hold as a student spends through a day
+#
+# These were written after walking a whole month through build_split(). They
+# all describe the same property from different angles: the headline number
+# must be stable and honest while money is being spent.
+# ---------------------------------------------------------------------------
+
+def _after_spending(start_of_day, spent, threshold=None, end="2026-10-08",
+                    as_of=date(2026, 9, 23)):
+    """
+    A student who began today with `start_of_day` and has spent `spent`.
+
+    remaining = max(start - spent, 0) is exactly what Member 3's transaction
+    handler stores, including the floor at zero. Building the row this way
+    keeps the test from describing states that cannot occur — a budget cannot
+    show R1200 remaining after R2000 has been spent out of it.
+    """
+    return build_split(
+        budget(
+            remaining=str(max(D(start_of_day) - D(spent), D("0.00"))),
+            end=end,
+            survival_threshold=D(threshold) if threshold else None,
+        ),
+        as_of=as_of,
+        spent_by_date={as_of: D(spent)},
+    )
+
+
+def test_daily_limit_does_not_move_as_the_student_spends():
+    """
+    The headline number is fixed at the start of the day. If it drifted with
+    every purchase, the dashboard would tell a student their allowance had
+    changed when only their spending had.
+    """
+    limits = {_after_spending("1200.00", s).daily_limit
+              for s in ["0.00", "10.00", "50.00", "75.00", "120.00"]}
+    assert limits == {D("75.00")}          # 1200 / 16 days
+
+
+def test_remaining_today_falls_as_the_student_spends():
+    assert _after_spending("1200.00", "0.00").remaining_today == D("75.00")
+    assert _after_spending("1200.00", "50.00").remaining_today == D("25.00")
+    assert _after_spending("1200.00", "75.00").remaining_today == D("0.00")
+    assert _after_spending("1200.00", "200.00").remaining_today == D("0.00")
+
+
+def test_tomorrow_drops_further_the_more_is_overspent():
+    """
+    Companion to test_overspending_today_tightens_tomorrow above, which pins
+    the exact figures. This one pins the direction: the more you overspend,
+    the less there is per day afterwards.
+    """
+    on_plan = _after_spending("1200.00", "75.00")
+    overspent = _after_spending("1200.00", "200.00")
+    worse = _after_spending("1200.00", "400.00")
+    assert worse.tomorrow_limit < overspent.tomorrow_limit < on_plan.tomorrow_limit
+    assert "over today's" in overspent.message
+
+
+def test_spending_the_whole_balance_leaves_nothing_to_split():
+    for spent in ["1200.00", "1500.00"]:
+        split = _after_spending("1200.00", spent)
+        assert split.remaining_amount == D("0.00")
+        assert split.daily_limit == D("0.00")
+        assert "finished" in split.message
+
+
+def test_forward_allocation_never_exceeds_the_balance():
+    """
+    What the student may still spend — today's remainder plus every later
+    day's limit — must not add up to more money than they have.
+    """
+    for spent in ["0.00", "50.00", "200.00"]:
+        split = _after_spending("1200.00", spent)
+        allocated = (
+            split.remaining_today
+            + (split.tomorrow_limit or D("0")) * (split.days_remaining - 1)
+        )
+        assert allocated <= split.remaining_amount
+
+
+def test_survival_message_agrees_with_its_own_numbers():
+    """
+    Regression: the survival message paired the CURRENT balance with
+    daily_limit, which is a start-of-day figure. A student with R80 left was
+    told "R80.00 must last 16 more days, so you have R12.50 a day".
+    """
+    split = _after_spending("200.00", "120.00", threshold="150.00")
+    assert split.mode == MODE_SURVIVAL
+    assert split.remaining_amount == D("80.00")
+    assert f"R{split.remaining_amount} must last" in split.message
+    assert f"R{split.tomorrow_limit} a day" in split.message
+    assert f"R{split.daily_limit} a day" not in split.message
+
+
+def test_a_student_who_spends_exactly_the_limit_lands_on_zero_at_payout():
+    """A week simulated end to end: the plan must actually work."""
+    from datetime import timedelta
+
+    start, end = date(2026, 9, 23), date(2026, 9, 30)
+    remaining = D("700.00")
+    spent_by_date = {}
+    day = start
+    seen_limits = set()
+
+    while day <= end:
+        split = build_split(
+            budget(remaining=str(remaining), end=end.isoformat()),
+            as_of=day,
+            spent_by_date=dict(spent_by_date),
+        )
+        seen_limits.add(split.daily_limit)
+        spend = split.remaining_today
+        spent_by_date[day] = spend
+        remaining = max(remaining - spend, D("0.00"))
+        day += timedelta(days=1)
+
+    assert seen_limits == {D("87.50")}     # 700 / 8 days, steady all week
+    assert remaining == D("0.00")          # and nothing left over at payout

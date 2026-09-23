@@ -2,21 +2,34 @@
 Rule-based recommendation engine — Member 5.
 
 Phase 1 spec: score by budget fit, category match and distance.
-Phase 2/3 implementation: six weighted components, scored 0–1 each and
+Phase 3 implementation: seven weighted components, scored 0–1 each and
 combined into a single 0–1 score.
 
     component          weight   what it rewards
     ---------------------------------------------------------------
-    budget_fit          0.35    fits today's allowance, then the cycle
-    price_value         0.20    cheap relative to the other candidates
-    preference_match    0.20    matches saved preferences and the query
-    proximity           0.15    close enough to actually go and get
-    rating              0.07    other people rated it well
-    freshness           0.03    the price was checked recently
+    relevance           0.22    matches the words the student typed
+    budget_fit          0.30    fits today's allowance, then the cycle
+    price_value         0.16    cheap relative to the other candidates
+    preference_match    0.13    matches saved preferences and the query
+    proximity           0.12    close enough to actually go and get
+    rating              0.05    other people rated it well
+    freshness           0.02    the price was checked recently
                         ----
                         1.00
 
-Two things make this more than a sort-by-price:
+`relevance` is new in Phase 3 and it fixed a bad bug. Phase 2 left keyword
+matching entirely to the SQL, so within the rows SQL returned, the ranker had
+no idea what had been searched for. Run against Member 9's real catalogue,
+"maize meal" ranked Baked Beans first and "sanitary pads" ranked soap first:
+both are cheap groceries near the student, and cheap-and-near was all the
+scorer could see. Relevance both ranks and gates — an offer matching none of
+the student's words is dropped rather than ranked low.
+
+budget_fit keeps the largest single weight, because this is a budgeting app
+before it is a search engine: among things that genuinely match, what you can
+afford today should come first.
+
+Two more things make this more than a sort-by-price:
 
 1.  It ranks on TRUE cost (Member 6's store_true_cost), not sticker price. A
     R199 item with a R60 delivery fee loses to a R240 item with free
@@ -41,6 +54,7 @@ the SQL and hands rows in here. Tests: tests/test_recommender.py.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -53,13 +67,24 @@ from app.true_cost import Offer, TrueCostBreakdown, money, store_true_cost
 ZERO = Decimal("0.00")
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "budget_fit": 0.35,
-    "price_value": 0.20,
-    "preference_match": 0.20,
-    "proximity": 0.15,
-    "rating": 0.07,
-    "freshness": 0.03,
+    "relevance": 0.22,
+    "budget_fit": 0.30,
+    "price_value": 0.16,
+    "preference_match": 0.13,
+    "proximity": 0.12,
+    "rating": 0.05,
+    "freshness": 0.02,
 }
+
+# How much each field a keyword can hit is worth. A hit on the product name is
+# what the student actually meant; a hit on the category is the weakest kind of
+# match ("groceries" matching 142 items tells you almost nothing).
+RELEVANCE_FIELD_WEIGHTS = (
+    ("product_name", 1.0),
+    ("brand", 0.7),
+    ("subcategory", 0.6),
+    ("category", 0.5),
+)
 
 # A price older than this scores zero for freshness.
 FRESHNESS_HORIZON_DAYS = 30.0
@@ -178,6 +203,10 @@ class ScoredOffer:
     distance_km: Optional[float] = None
     explanation: str = ""
     reasons: List[str] = field(default_factory=list)
+    # False when this came from the category fallback — the student's words
+    # matched nothing, so this is the nearest aisle rather than the thing asked
+    # for. The UI should label these differently.
+    matched_query: bool = True
 
     @property
     def true_cost(self) -> Decimal:
@@ -300,19 +329,79 @@ def preference_match_score(
     return round(matched / applicable, 4), reasons
 
 
+def _contains_word(haystack: str, needle: str) -> bool:
+    """
+    Whole-word match, not a bare substring.
+
+    "phone" must not match "Wired Earphones" — with plain `in`, a search for
+    "phone charger" ranked earphones first on the real catalogue, because
+    "earphones" contains "phone". The catalogue has no charger at all, so the
+    honest answer is no keyword match, which then hands over to the category
+    fallback in recommend().
+    """
+    if not haystack or not needle:
+        return False
+    return re.search(rf"\b{re.escape(needle.lower())}\b", haystack) is not None
+
+
+def relevance_score(candidate: Candidate, parsed: Optional[ParsedQuery] = None) -> float:
+    """
+    How well this offer matches the words the student actually typed.
+
+    Scored per keyword against the best field it hits (name beats brand beats
+    subcategory beats category), then averaged. A query with no keywords left
+    after parsing scores a neutral 0.5 for everybody, so browsing is ranked on
+    budget and price alone.
+
+    This is the component that was missing in Phase 2, and its absence was not
+    subtle: with a catalogue of 142 grocery offers, a search for "maize meal"
+    ranked Baked Beans first, because nothing in the scoring function had any
+    idea what the student had asked for. The SQL was filtering on the keywords
+    and the ranker was not, so the ranker could only sort by price and
+    distance — which is exactly what it did.
+    """
+    if not parsed or not parsed.keywords:
+        return 0.5
+
+    fields = {
+        "product_name": (candidate.product_name or "").lower(),
+        "brand": (candidate.brand or "").lower(),
+        "subcategory": (candidate.subcategory or "").lower(),
+        "category": (candidate.category or "").lower(),
+    }
+
+    total = 0.0
+    for keyword in parsed.keywords:
+        best = 0.0
+        for field, weight in RELEVANCE_FIELD_WEIGHTS:
+            if _contains_word(fields[field], keyword):
+                best = weight
+                break
+        total += best
+
+    return round(total / len(parsed.keywords), 4)
+
+
 def rating_score(rating: Optional[Decimal], rating_count: int = 0) -> float:
     """
     Rating out of 5, normalised. An unrated offer scores a neutral 0.5 rather
     than 0 — no reviews is not the same as bad reviews.
 
-    A rating backed by fewer than 3 reviews is pulled halfway towards neutral,
+    A rating backed by 1 or 2 reviews is pulled halfway towards neutral,
     because one enthusiastic review is not evidence.
+
+    `rating_count == 0` means the review count was never recorded, which is
+    different from "nobody reviewed it" — Member 9's dataset carries a rating
+    for every listing but no counts at all. Dampening those would quietly
+    flatten the component to a constant across the whole catalogue, so a
+    missing count is treated as no information about evidence strength rather
+    than as weak evidence.
     """
     if rating is None:
         return 0.5
     base = float(rating) / 5.0
     base = max(0.0, min(1.0, base))
-    if rating_count < 3:
+    if 0 < rating_count < 3:
         base = (base + 0.5) / 2
     return round(base, 4)
 
@@ -354,6 +443,7 @@ def passes_hard_filters(
     context: UserContext,
     parsed: Optional[ParsedQuery] = None,
     distance_km: Optional[float] = None,
+    require_keyword_match: bool = True,
 ) -> bool:
     """
     The rules that are not negotiable, applied before anything is scored.
@@ -381,15 +471,32 @@ def passes_hard_filters(
     # the SQL keeps the candidate pool small, and these keep recommend() correct
     # on its own, so the ranking can't drift from the query that fed it. A
     # candidate with the attribute missing is dropped too, exactly as
-    # `p.colour ILIKE 'black'` drops NULLs. Subcategory is deliberately NOT
-    # here — seed data has gaps, and the SQL lets NULLs through as well.
+    # `p.colour ILIKE 'black'` drops NULLs.
+    #
+    # Category is the exception, and it is a deliberate reversal of the Phase 2
+    # behaviour. A GUESSED category is not something the student said — the
+    # parser infers it, and on the real catalogue it guesses wrong often enough
+    # to matter: the seed files Auto Washing Powder under Toiletries, while the
+    # Phase 2 vocabulary mapped "washing powder" to "household", so the filter
+    # threw away every row and the search returned nothing. An inferred
+    # category now only nudges the ranking (through preference_match); an
+    # EXPLICIT one from the API caller still filters. Subcategory never
+    # filters — the seed has gaps and the SQL lets NULLs through too.
     if parsed:
         for wanted, value in (
-            (parsed.category, candidate.category),
+            (parsed.category if parsed.category_is_explicit else None, candidate.category),
             (parsed.colour, candidate.colour),
             (parsed.size, candidate.size),
         ):
             if wanted and (not value or str(value).strip().lower() != str(wanted).strip().lower()):
+                return False
+
+        # Nothing the student typed appears anywhere on this offer. Showing it
+        # is worse than showing nothing — it reads as the app not listening.
+        # recommend() relaxes this (require_keyword_match=False) only when it
+        # would otherwise return an empty screen.
+        if require_keyword_match and parsed.keywords:
+            if relevance_score(candidate, parsed) == 0.0:
                 return False
 
     if candidate.store_type != "online":
@@ -410,7 +517,19 @@ def _default_pricer(candidate: Candidate, context: UserContext) -> TrueCostBreak
 def _explain(scored_reasons: List[str], breakdown: TrueCostBreakdown, candidate: Candidate) -> str:
     """One sentence a student can act on."""
     head = f"R{breakdown.true_cost} all in at {candidate.store_name or 'this store'}"
-    if breakdown.hidden_cost > 0:
+
+    # Name the extra honestly. Calling a taxi fare "delivery and fees" is the
+    # kind of small lie that stops a student trusting the number.
+    if breakdown.travel_cost > 0:
+        other = breakdown.hidden_cost - breakdown.travel_cost
+        if other > 0:
+            head += (
+                f" (R{breakdown.travel_cost} of that is getting there and back, "
+                f"plus R{other} in fees)"
+            )
+        else:
+            head += f" (R{breakdown.travel_cost} of that is getting there and back)"
+    elif breakdown.hidden_cost > 0:
         head += f" (R{breakdown.hidden_cost} of that is delivery and fees)"
     if scored_reasons:
         return head + " — " + "; ".join(scored_reasons[:4]) + "."
@@ -454,16 +573,42 @@ def recommend(
     now = now or datetime.now(timezone.utc)
 
     # Pass 1 — filter, and price whatever survives.
-    priced: List[tuple] = []
-    for candidate in candidates:
-        distance_km = _distance_for(candidate, context)
-        if not passes_hard_filters(candidate, context, parsed, distance_km):
-            continue
-        breakdown = pricer(candidate, context)
-        if not include_unaffordable and context.remaining_amount is not None:
-            if breakdown.true_cost > money(context.remaining_amount):
+    def collect(require_keyword_match: bool) -> List[tuple]:
+        kept: List[tuple] = []
+        for candidate in candidates:
+            distance_km = _distance_for(candidate, context)
+            if not passes_hard_filters(
+                candidate, context, parsed, distance_km, require_keyword_match
+            ):
                 continue
-        priced.append((candidate, breakdown, distance_km))
+            if not require_keyword_match:
+                # Fallback pass: the student's words matched nothing, so the
+                # parser's inferred category is all we have to go on. Without
+                # this the category would be ignored entirely here and the
+                # fallback would return the whole catalogue.
+                wanted = parsed.category if parsed else None
+                if not wanted:
+                    continue
+                if (candidate.category or "").strip().lower() != wanted.strip().lower():
+                    continue
+            breakdown = pricer(candidate, context)
+            if not include_unaffordable and context.remaining_amount is not None:
+                if breakdown.true_cost > money(context.remaining_amount):
+                    continue
+            kept.append((candidate, breakdown, distance_km))
+        return kept
+
+    priced = collect(require_keyword_match=True)
+
+    # Nothing matched the student's actual words. Rather than an empty screen,
+    # fall back to the category those words imply: the catalogue calls it an
+    # "A4 Feint & Margin Book", the student typed "notebook", and Stationery is
+    # a better answer than nothing. Results from this pass are flagged
+    # matched_query=False so the UI can say so honestly.
+    matched_query = True
+    if not priced and parsed and parsed.keywords and parsed.category:
+        priced = collect(require_keyword_match=False)
+        matched_query = False
 
     if not priced:
         return []
@@ -482,6 +627,7 @@ def recommend(
             prox = proximity_score(distance_km, context.max_distance_km)
 
         components = {
+            "relevance": relevance_score(candidate, parsed),
             "budget_fit": budget_fit_score(
                 breakdown.true_cost, context.remaining_amount, context.daily_limit
             ),
@@ -508,6 +654,11 @@ def recommend(
             over_by = money(breakdown.true_cost - money(context.remaining_amount))
             headline.append(f"R{over_by} over your remaining budget")
 
+        if not matched_query:
+            headline.append(
+                f"closest match in {candidate.category}"
+                if candidate.category else "closest match we could find"
+            )
         headline.extend(reasons)
         if breakdown.true_cost == cheapest and len(priced) > 1:
             headline.append("cheapest true cost of everything found")
@@ -527,6 +678,7 @@ def recommend(
                 distance_km=round(distance_km, 2) if distance_km is not None else None,
                 reasons=headline,
                 explanation=_explain(headline, breakdown, candidate),
+                matched_query=matched_query,
             )
         )
 

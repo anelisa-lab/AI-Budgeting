@@ -23,6 +23,11 @@
  *
  * Filters still live in the URL, so a search can be shared and survives a
  * refresh.
+ *
+ * PHASE 3: "Recommended for you" above the results is Member 5's recommender
+ * (POST /recommendations). It ranks on TRUE cost against today's allowance,
+ * explains every pick, and in survival mode returns essentials only. It runs
+ * whenever there is a search word or a category to recommend for.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -57,6 +62,12 @@ export default function Search() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  /** The backend's own wording when nothing matched. */
+  const [emptyMessage, setEmptyMessage] = useState(null);
+
+  const [recs, setRecs] = useState(null);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recsError, setRecsError] = useState(null);
 
   // Local draft for the free-text boxes so typing does not fire a request per
   // keystroke; they commit to the URL on submit or blur.
@@ -90,10 +101,12 @@ export default function Search() {
       if (id !== requestId.current) return; // a newer search has started
       setOffers(page.results);
       setCount(page.count);
+      setEmptyMessage(page.message);
     } catch (err) {
       if (id !== requestId.current) return;
       setOffers([]);
       setCount(0);
+      setEmptyMessage(null);
       setError(err.message || 'Could not search right now.');
     } finally {
       if (id === requestId.current) setLoading(false);
@@ -102,6 +115,36 @@ export default function Search() {
 
   useEffect(() => { setLimit(PAGE_SIZE); }, [params]);
   useEffect(() => { runSearch(filters, limit); }, [runSearch, filters, limit]);
+
+  /* ----------------------------------------------------- recommendations */
+
+  const recsId = useRef(0);
+  useEffect(() => {
+    const query = filters.q.trim();
+    const category = filters.category.trim();
+    if (!token || (!query && !category)) {
+      setRecs(null);
+      setRecsError(null);
+      return;
+    }
+    const id = ++recsId.current;
+    setRecsLoading(true);
+    setRecsError(null);
+    api.recommendations
+      .get(token, {
+        query: query || undefined,
+        category: category || undefined,
+        max_price: Number(filters.maxPrice) || undefined,
+        limit: 3,
+      })
+      .then((result) => { if (id === recsId.current) setRecs(result); })
+      .catch((err) => {
+        if (id !== recsId.current) return;
+        setRecs(null);
+        setRecsError(err.message || 'Recommendations are unavailable right now.');
+      })
+      .finally(() => { if (id === recsId.current) setRecsLoading(false); });
+  }, [token, filters.q, filters.category, filters.maxPrice]);
 
   /* ------------------------------------------------------------- filters */
 
@@ -310,6 +353,14 @@ export default function Search() {
 
         {/* --------------------------------------------------- results */}
         <div>
+          <Recommendations
+            recs={recs}
+            loading={recsLoading}
+            error={recsError}
+            qtyOf={qtyOf}
+            onAdd={handleAdd}
+          />
+
           <div className="results-head">
             <p className="results-count">
               {loading
@@ -342,6 +393,7 @@ export default function Search() {
                   ? <Button onClick={clearAll}>Clear all filters</Button>
                   : undefined}
               >
+                {emptyMessage ? `${emptyMessage} ` : ''}
                 Try raising your budget, searching for a more general word — “soap”
                 rather than a brand name — or allowing out-of-stock results.
               </EmptyState>
@@ -394,6 +446,96 @@ export default function Search() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------- recommendations */
+
+/**
+ * Member 5's recommender, top three. Every pick shows its TRUE cost (item +
+ * delivery + fees) and the backend's plain-English reason — the presentation
+ * promises "justification provided for recommendations wherever possible".
+ */
+function Recommendations({ recs, loading, error, qtyOf, onAdd }) {
+  if (loading && !recs) {
+    return <Skeleton height={140} radius="var(--r-lg)" />;
+  }
+  if (error) {
+    return (
+      <Alert tone="warning" title="Recommendations unavailable">
+        {error} The search results below still work.
+      </Alert>
+    );
+  }
+  if (!recs) return null;
+
+  const survival = recs.budget.mode === 'survival';
+  const closestOnly = recs.results.length > 0 && recs.results.every((r) => !r.matched_query);
+
+  return (
+    <Card className="stack" style={{ marginBottom: 'var(--s-5)' }}>
+      <div className="row row--between">
+        <h2 style={{ fontSize: 'var(--t-md)', fontFamily: 'var(--font-sans)', fontWeight: 'var(--fw-extra)' }}>
+          <span aria-hidden="true">✦</span> Recommended for you
+        </h2>
+        {survival && <Badge tone="danger">Survival mode · essentials only</Badge>}
+      </div>
+
+      {survival && recs.budget.message && (
+        <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>{recs.budget.message}</p>
+      )}
+      {closestOnly && (
+        <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>
+          Nothing is listed under those exact words, so these are the closest matches.
+        </p>
+      )}
+
+      {recs.results.length === 0 ? (
+        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)' }}>
+          {recs.message || 'No recommendation for this search.'}
+        </p>
+      ) : (
+        <div className="stack stack--tight">
+          {recs.results.map((r) => {
+            const qty = qtyOf(r.offer_id);
+            return (
+              <article className={r.rank === 1 ? 'result result--best' : 'result'} key={r.offer_id}>
+                <div className="result__icon" aria-hidden="true">{r.rank}</div>
+                <div>
+                  <h3 className="result__name">{r.product_name}</h3>
+                  <p className="result__meta">
+                    {[r.brand, r.store_name, r.distance_km != null ? `${r.distance_km} km` : null]
+                      .filter(Boolean).join(' · ')}
+                  </p>
+                  <div className="result__tags">
+                    {r.meets_budget
+                      ? <Badge tone="success">Fits your budget</Badge>
+                      : <Badge tone="danger">Over your budget</Badge>}
+                    {r.is_essential && <Badge tone="accent">Essential</Badge>}
+                  </div>
+                  <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)', marginTop: 'var(--s-2)' }}>
+                    {r.explanation}
+                  </p>
+                </div>
+                <div className="result__right">
+                  <div>
+                    <div className="result__price num">{money(r.true_cost)}</div>
+                    <p className="result__ship">
+                      {r.hidden_cost > 0
+                        ? `${money(r.price)} + ${money(r.hidden_cost)} fees`
+                        : 'true cost'}
+                    </p>
+                  </div>
+                  <Button size="sm" variant={qty > 0 ? 'secondary' : 'primary'} onClick={() => onAdd(r)}>
+                    {qty > 0 ? `In list (${qty}) · Add another` : 'Add to list'}
+                  </Button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </Card>
   );
 }
 

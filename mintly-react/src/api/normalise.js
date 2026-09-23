@@ -86,12 +86,9 @@ export function budgetFromApi(b) {
     created_at: b.created_at || null,
     updated_at: b.updated_at || null,
 
-    // `budgets.daily_limit` EXISTS in sql/schema.sql but BudgetOut does not
-    // expose it yet — that is Member 6's Daily Budget Split work. We read it
-    // anyway so that the day it appears in the response, the dashboard uses
-    // the backend's number instead of the interim client-side one.
-    // See derived.js `dailyAllowance`.
+    // Written back by the Daily Budget Split on every read (Member 6).
     daily_limit: numOrNull(b.daily_limit),
+    budget_mode: b.budget_mode || 'normal',
   };
 }
 
@@ -146,8 +143,7 @@ export function budgetUpdateToApi({ amount, payoutDate, periodDays }, existing) 
 
 /**
  * BudgetSplitOut (app/routers/budget_split.py) with every Decimal coerced.
- * `days` (the per-day schedule) is included for a future breakdown view but
- * is not read by the dashboard today.
+ * See docs/BUDGET_SPLIT_CONTRACT.md for which field goes where on screen.
  */
 export function budgetSplitFromApi(s) {
   if (!s) return null;
@@ -161,6 +157,8 @@ export function budgetSplitFromApi(s) {
     daily_limit: num(s.daily_limit),
     spent_today: num(s.spent_today),
     remaining_today: num(s.remaining_today),
+    // numOrNull, not num: it is legitimately null on payout day.
+    tomorrow_limit: numOrNull(s.tomorrow_limit),
     mode: s.mode || 'normal',
     survival_threshold: numOrNull(s.survival_threshold),
     message: s.message || null,
@@ -202,7 +200,7 @@ export function transactionToApi({ description, amount, category, isEssential } 
   };
 }
 
-/** TransactionResult (transaction + budget + overspend flags). */
+/** TransactionResult (transaction + budget + overspend flags + fresh split). */
 export function transactionResultFromApi(result) {
   if (!result) return null;
   return {
@@ -210,6 +208,48 @@ export function transactionResultFromApi(result) {
     budget: budgetFromApi(result.budget),
     overspend_warning: Boolean(result.overspend_warning),
     warning_message: result.warning_message || null,
+    daily_limit_warning: Boolean(result.daily_limit_warning),
+    daily_limit_message: result.daily_limit_message || null,
+    daily_split: budgetSplitFromApi(result.daily_split),
+  };
+}
+
+/** BudgetHealthOut — Member 3's warning block for the dashboard. */
+export function budgetHealthFromApi(h) {
+  if (!h) return null;
+  return {
+    warning_level: h.warning_level || 'ok', // ok | caution | danger | exhausted
+    spendable_amount: num(h.spendable_amount),
+    spent_amount: num(h.spent_amount),
+    spent_percentage: num(h.spent_percentage),
+    over_daily_limit_by: num(h.over_daily_limit_by),
+    warnings: Array.isArray(h.warnings) ? h.warnings : [],
+  };
+}
+
+/** BudgetDashboardOut — GET /budgets/dashboard. */
+export function dashboardFromApi(d) {
+  if (!d) return null;
+  return {
+    budget: budgetFromApi(d.budget),
+    split: budgetSplitFromApi(d.daily_split),
+    health: budgetHealthFromApi(d.health),
+    recent_transactions: Array.isArray(d.recent_transactions)
+      ? d.recent_transactions.map(transactionFromApi) : [],
+  };
+}
+
+/** AffordabilityOut — POST /budget-split/check. */
+export function affordabilityFromApi(a) {
+  if (!a) return null;
+  return {
+    amount: num(a.amount),
+    affordable_today: Boolean(a.affordable_today),
+    affordable_this_cycle: Boolean(a.affordable_this_cycle),
+    remaining_today: num(a.remaining_today),
+    remaining_amount: num(a.remaining_amount),
+    days_of_budget: numOrNull(a.days_of_budget),
+    message: a.message || '',
   };
 }
 
@@ -248,13 +288,78 @@ export function offerFromApi(r) {
   };
 }
 
-/** SearchResponse { results, count, limit, offset }. */
+/** SearchResponse { results, count, limit, offset, page, total_pages, has_more, message }. */
 export function searchResponseFromApi(payload) {
   return {
     results: Array.isArray(payload?.results) ? payload.results.map(offerFromApi) : [],
     count: num(payload?.count, 0),
     limit: num(payload?.limit, 20),
     offset: num(payload?.offset, 0),
+    page: num(payload?.page, 1),
+    total_pages: num(payload?.total_pages, 0),
+    has_more: Boolean(payload?.has_more),
+    // The backend's own wording for "no results" and "past the last page".
+    message: payload?.message || null,
+  };
+}
+
+/* -------------------------------------------------------- recommendations */
+
+/** RecommendedOffer — one ranked result from POST /recommendations. */
+export function recommendationFromApi(r) {
+  if (!r) return null;
+  const cb = r.cost_breakdown || {};
+  return {
+    rank: num(r.rank, 0),
+    offer_id: r.offer_id,
+    product_id: r.product_id,
+    product_name: r.product_name,
+    brand: r.brand || null,
+    category: r.category || null,
+    size: r.size || null,
+    is_essential: Boolean(r.is_essential),
+    store_id: r.store_id,
+    store_name: r.store_name,
+    store_type: r.store_type,
+    price: num(r.price),
+    true_cost: num(r.true_cost),
+    hidden_cost: num(cb.hidden_cost),
+    distance_km: numOrNull(r.distance_km),
+    rating: numOrNull(r.rating),
+    score: num(r.score),
+    component_scores: r.component_scores || {},
+    meets_budget: Boolean(r.meets_budget),
+    meets_preferences: Boolean(r.meets_preferences),
+    // false = none of the student's words matched; this is a closest match.
+    matched_query: r.matched_query !== false,
+    explanation: r.explanation || '',
+    currency: r.currency || 'ZAR',
+    // Enough of the SearchResultItem shape for "add to list" to reuse it.
+    shipping_cost: num(cb.shipping),
+    total_cost: num(r.price) + num(cb.shipping),
+    availability_status: 'available',
+    product_url: r.product_url || null,
+  };
+}
+
+/** RecommendationResponse. */
+export function recommendationsFromApi(payload) {
+  const b = payload?.budget || {};
+  return {
+    run_id: payload?.run_id ?? null,
+    results: Array.isArray(payload?.results) ? payload.results.map(recommendationFromApi) : [],
+    count: num(payload?.count, 0),
+    candidates_considered: num(payload?.candidates_considered, 0),
+    response_time_ms: num(payload?.response_time_ms, 0),
+    message: payload?.message || null,
+    budget: {
+      budget_id: b.budget_id ?? null,
+      remaining_amount: numOrNull(b.remaining_amount),
+      daily_limit: numOrNull(b.daily_limit),
+      days_remaining: b.days_remaining ?? null,
+      mode: b.mode || 'normal',
+      message: b.message || null,
+    },
   };
 }
 

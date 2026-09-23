@@ -141,6 +141,24 @@ export function getCurrentBudget(token, opts = {}) {
 }
 
 /**
+ * GET /budgets/dashboard?recent=N  ->  BudgetDashboardOut {
+ *   budget: BudgetOut,
+ *   daily_split: BudgetSplitOut,
+ *   health: BudgetHealthOut {
+ *     warning_level: 'ok' | 'caution' | 'danger' | 'exhausted',
+ *     spendable_amount, spent_amount, spent_percentage, over_daily_limit_by,
+ *     warnings: string[]               <- ready to show, written for students
+ *   },
+ *   recent_transactions: TransactionOut[]
+ * }
+ * Member 3's one-call dashboard. 404 "No active budget" like /budgets/current.
+ */
+export function getBudgetDashboard(token, { recent } = {}, opts = {}) {
+  const query = recent === undefined ? undefined : { recent };
+  return request('/budgets/dashboard', { token, query, ...opts });
+}
+
+/**
  * PUT /budgets/{budget_id}  ->  BudgetOut
  * Body: BudgetUpdateRequest { total_amount?: Decimal > 0, cycle_end_date?: date }
  *
@@ -163,7 +181,10 @@ export function updateBudget(token, budgetId, patch, opts = {}) {
  *   transaction: TransactionOut,
  *   budget: BudgetOut,              <- authoritative new remaining_amount
  *   overspend_warning: boolean,
- *   warning_message: string | null
+ *   warning_message: string | null,
+ *   daily_limit_warning: boolean,    <- fits the cycle, but not what is left today
+ *   daily_limit_message: string | null,
+ *   daily_split: BudgetSplitOut | null   <- already recalculated; no re-fetch needed
  * }
  * Body: TransactionCreateRequest {
  *   item_name: str, amount: Decimal > 0,
@@ -220,7 +241,7 @@ export function search(token, params = {}, opts = {}) {
 /**
  * GET /budget-split  ->  BudgetSplitOut {
  *   budget_id, currency, as_of, next_payout_date, days_remaining,
- *   remaining_amount, daily_limit, spent_today, remaining_today,
+ *   remaining_amount, daily_limit, spent_today, remaining_today, tomorrow_limit,
  *   mode: 'normal' | 'survival', survival_threshold, message, days: DaySplitOut[]
  * }
  * Today's allowance for the user's active budget. 404 "No active budget"
@@ -232,6 +253,46 @@ export function search(token, params = {}, opts = {}) {
  */
 export function getBudgetSplit(token, opts = {}) {
   return request('/budget-split', { token, ...opts });
+}
+
+/**
+ * POST /budget-split/check  ->  AffordabilityOut {
+ *   amount, affordable_today, affordable_this_cycle,
+ *   remaining_today, remaining_amount, days_of_budget, message
+ * }
+ * Body: AffordabilityRequest { amount: Decimal > 0 }
+ */
+export function checkAffordability(token, { amount }, opts = {}) {
+  return request('/budget-split/check', { method: 'POST', body: { amount }, token, ...opts });
+}
+
+/* =======================================================================
+ * RECOMMENDATIONS  —  app/routers/recommendations.py   (prefix "/recommendations")
+ * =====================================================================*/
+
+/**
+ * POST /recommendations  ->  RecommendationResponse {
+ *   run_id, search_id, query, parsed: ParsedQueryOut,
+ *   budget: { budget_id, remaining_amount, daily_limit, days_remaining, mode, message },
+ *   results: RecommendedOffer[]  (rank, offer_id, product_name, store_name, price,
+ *            true_cost, cost_breakdown, score, component_scores, meets_budget,
+ *            matched_query, explanation, ...),
+ *   count, candidates_considered, response_time_ms, message
+ * }
+ * Body: RecommendationRequest — every key optional:
+ *   query, category, max_price, fulfilment ('delivery' | 'collection'),
+ *   limit 1..50, include_unaffordable, candidate_pool 10..200
+ */
+export function getRecommendations(token, body = {}, opts = {}) {
+  const allowed = [
+    'query', 'category', 'max_price', 'fulfilment', 'limit',
+    'include_unaffordable', 'candidate_pool',
+  ];
+  const clean = {};
+  for (const key of allowed) {
+    if (body[key] !== undefined && body[key] !== null && body[key] !== '') clean[key] = body[key];
+  }
+  return request('/recommendations', { method: 'POST', body: clean, token, ...opts });
 }
 
 /* =======================================================================

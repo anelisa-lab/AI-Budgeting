@@ -42,72 +42,122 @@ COLOURS = [
     "purple", "green", "olive", "yellow", "orange", "khaki", "denim",
 ]
 
-# keyword -> (category, subcategory). The category names must match whatever
-# Member 9 uses in products.category, so keep this list and the seed data in
-# step.
+# keyword -> (category, subcategory)
+#
+# These names are taken FROM Member 9's dataset, not invented here: they are
+# the exact strings in products.category / products.subcategory
+# (mintly-react/docs/seed/products.json). Guessing them is what made the
+# Phase 2 version return nothing for "kettle" — it mapped to "household"
+# while the catalogue calls it "Homeware".
+#
+# Matching is case-insensitive, so the capitalisation below is only for
+# readability. Keep this table in step with the seed data: when Member 9 adds
+# a category, add its words here.
+#
+# A category guessed here is a HINT, not a filter — see the note on
+# category_is_explicit below.
 CATEGORY_KEYWORDS: Dict[str, tuple] = {
-    # food and groceries
-    "groceries": ("groceries", None),
-    "grocery": ("groceries", None),
-    "food": ("groceries", None),
-    "maize": ("groceries", "staples"),
-    "pap": ("groceries", "staples"),
-    "rice": ("groceries", "staples"),
-    "mealie": ("groceries", "staples"),
-    "bread": ("groceries", "staples"),
-    "milk": ("groceries", "dairy"),
-    "eggs": ("groceries", "dairy"),
-    "chicken": ("groceries", "protein"),
-    "beans": ("groceries", "protein"),
-    "oil": ("groceries", "staples"),
-    "sugar": ("groceries", "staples"),
-    # toiletries
-    "toiletries": ("toiletries", None),
-    "soap": ("toiletries", "bath"),
-    "shampoo": ("toiletries", "haircare"),
-    "toothpaste": ("toiletries", "oral"),
-    "deodorant": ("toiletries", "bath"),
-    "sanitary": ("toiletries", "sanitary"),
-    "pads": ("toiletries", "sanitary"),
-    "tampons": ("toiletries", "sanitary"),
-    # stationery and study
-    "stationery": ("stationery", None),
-    "notebook": ("stationery", "paper"),
-    "pens": ("stationery", "writing"),
-    "pen": ("stationery", "writing"),
-    "calculator": ("stationery", "equipment"),
-    "textbook": ("stationery", "books"),
-    "textbooks": ("stationery", "books"),
-    "printing": ("stationery", "printing"),
-    # electronics
-    "electronics": ("electronics", None),
-    "laptop": ("electronics", "computing"),
-    "charger": ("electronics", "accessories"),
-    "cable": ("electronics", "accessories"),
-    "earphones": ("electronics", "audio"),
-    "headphones": ("electronics", "audio"),
-    "phone": ("electronics", "mobile"),
-    "airtime": ("electronics", "mobile"),
-    "data": ("electronics", "mobile"),
-    # clothing
-    "clothing": ("clothing", None),
-    "clothes": ("clothing", None),
-    "sneakers": ("clothing", "footwear"),
-    "takkies": ("clothing", "footwear"),
-    "shoes": ("clothing", "footwear"),
-    "jacket": ("clothing", "outerwear"),
-    "hoodie": ("clothing", "outerwear"),
-    "jeans": ("clothing", "bottoms"),
-    "shirt": ("clothing", "tops"),
-    "tshirt": ("clothing", "tops"),
-    # household
-    "household": ("household", None),
-    "detergent": ("household", "cleaning"),
-    "washing": ("household", "cleaning"),
-    "bedding": ("household", "bedroom"),
-    "blanket": ("household", "bedroom"),
-    "kettle": ("household", "appliances"),
-    "iron": ("household", "appliances"),
+    # ---- Groceries ----
+    "groceries": ("Groceries", None),
+    "grocery": ("Groceries", None),
+    "food": ("Groceries", None),
+    "maize": ("Groceries", "Staples"),
+    "mealie": ("Groceries", "Staples"),
+    "pap": ("Groceries", "Staples"),
+    "rice": ("Groceries", "Staples"),
+    "samp": ("Groceries", "Staples"),
+    "oats": ("Groceries", "Staples"),
+    "flour": ("Groceries", "Staples"),
+    "beans": ("Groceries", "Staples"),
+    "bread": ("Groceries", "Bakery"),
+    "milk": ("Groceries", "Dairy"),
+    "eggs": ("Groceries", "Dairy"),
+    "margarine": ("Groceries", "Dairy"),
+    "butter": ("Groceries", "Dairy"),
+    "chicken": ("Groceries", "Meat"),
+    "meat": ("Groceries", "Meat"),
+    "polony": ("Groceries", "Meat"),
+    "vegetables": ("Groceries", "Fresh Produce"),
+    "veggies": ("Groceries", "Fresh Produce"),
+    "fruit": ("Groceries", "Fresh Produce"),
+    "potatoes": ("Groceries", "Fresh Produce"),
+    "onions": ("Groceries", "Fresh Produce"),
+    "tomatoes": ("Groceries", "Fresh Produce"),
+    "cabbage": ("Groceries", "Fresh Produce"),
+    "bananas": ("Groceries", "Fresh Produce"),
+    "noodles": ("Groceries", "Pantry"),
+    "oil": ("Groceries", "Pantry"),
+    "sugar": ("Groceries", "Pantry"),
+    "tea": ("Groceries", "Pantry"),
+    "teabags": ("Groceries", "Pantry"),
+    "coffee": ("Groceries", "Pantry"),
+    "tinned": ("Groceries", "Canned"),
+    "canned": ("Groceries", "Canned"),
+    "pilchards": ("Groceries", "Canned"),
+    "fish": ("Groceries", "Canned"),
+
+    # ---- Toiletries ----
+    "toiletries": ("Toiletries", None),
+    "soap": ("Toiletries", "Body"),
+    "deodorant": ("Toiletries", "Body"),
+    "roll-on": ("Toiletries", "Body"),
+    "shampoo": ("Toiletries", "Hair"),
+    "conditioner": ("Toiletries", "Hair"),
+    "toothpaste": ("Toiletries", "Oral Care"),
+    "toothbrush": ("Toiletries", "Oral Care"),
+    "pads": ("Toiletries", "Feminine Care"),
+    "sanitary": ("Toiletries", "Feminine Care"),
+    "tampons": ("Toiletries", "Feminine Care"),
+    "washing": ("Toiletries", "Laundry"),
+    "detergent": ("Toiletries", "Laundry"),
+    "laundry": ("Toiletries", "Laundry"),
+    "dishwashing": ("Toiletries", "Household"),
+    "toilet": ("Toiletries", "Household"),
+    "vaseline": ("Toiletries", "Skin"),
+    "lotion": ("Toiletries", "Skin"),
+
+    # ---- Homeware ----
+    "homeware": ("Homeware", None),
+    "household": ("Homeware", None),
+    "kettle": ("Homeware", "Kitchen"),
+    "hotplate": ("Homeware", "Kitchen"),
+    "stove": ("Homeware", "Kitchen"),
+    "pot": ("Homeware", "Kitchen"),
+    "pan": ("Homeware", "Kitchen"),
+    "towel": ("Homeware", "Bathroom"),
+    "sheet": ("Homeware", "Bedding"),
+    "sheets": ("Homeware", "Bedding"),
+    "bedding": ("Homeware", "Bedding"),
+    "blanket": ("Homeware", "Bedding"),
+    "duvet": ("Homeware", "Bedding"),
+    "crate": ("Homeware", "Storage"),
+
+    # ---- Stationery ----
+    "stationery": ("Stationery", None),
+    "notebook": ("Stationery", "Books"),
+    "textbook": ("Stationery", "Books"),
+    "textbooks": ("Stationery", "Books"),
+    "paper": ("Stationery", "Paper"),
+    "printing": ("Stationery", "Paper"),
+    "pen": ("Stationery", "Writing"),
+    "pens": ("Stationery", "Writing"),
+    "ballpoint": ("Stationery", "Writing"),
+    "calculator": ("Stationery", "Calculators"),
+
+    # ---- Electronics ----
+    "electronics": ("Electronics", None),
+    "earphones": ("Electronics", "Audio"),
+    "headphones": ("Electronics", "Audio"),
+    "earbuds": ("Electronics", "Audio"),
+    "lamp": ("Electronics", "Lighting"),
+    "globe": ("Electronics", "Lighting"),
+    "charger": ("Electronics", "Power"),
+    "adaptor": ("Electronics", "Power"),
+    "adapter": ("Electronics", "Power"),
+    "powerbank": ("Electronics", "Power"),
+    "battery": ("Electronics", "Power"),
+    "usb": ("Electronics", "Storage"),
+    "flash": ("Electronics", "Storage"),
 }
 
 ESSENTIAL_WORDS = {"essential", "essentials", "basics", "necessity", "necessities", "need"}
@@ -207,6 +257,17 @@ class ParsedQuery:
     prefer_collection: bool = False
     sort_hint: Optional[str] = None          # 'price_asc' | 'rating_desc'
 
+    # False when `category` was GUESSED from a keyword, True when the caller
+    # passed it as an explicit filter (POST /recommendations {"category": ...}).
+    #
+    # This distinction is the difference between a search that works and one
+    # that returns nothing. A student saying "black" has stated a colour — a
+    # blue item is wrong. A student saying "washing powder" has stated no
+    # category at all; this parser *infers* one, and it can be wrong (the seed
+    # files Auto Washing Powder under Toiletries, not Homeware). So an inferred
+    # category only nudges the ranking, while an explicit one filters.
+    category_is_explicit: bool = False
+
     @property
     def search_text(self) -> str:
         """What's left to match against product name/brand — may be empty."""
@@ -233,6 +294,7 @@ class ParsedQuery:
             "free_delivery_only": self.free_delivery_only,
             "prefer_collection": self.prefer_collection,
             "sort_hint": self.sort_hint,
+            "category_is_explicit": self.category_is_explicit,
         }
 
 

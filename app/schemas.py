@@ -295,6 +295,7 @@ class ParsedQueryOut(BaseModel):
     free_delivery_only: bool = False
     prefer_collection: bool = False
     sort_hint: Optional[str] = None
+    category_is_explicit: bool = False
 
 
 class RecommendedOffer(BaseModel):
@@ -322,6 +323,9 @@ class RecommendedOffer(BaseModel):
     component_scores: dict = {}
     meets_budget: bool
     meets_preferences: bool
+    # False when none of the student's words matched and this is a closest
+    # match from the inferred category — the UI should say so.
+    matched_query: bool = True
     explanation: str
     cost_breakdown: TrueCostOut
 

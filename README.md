@@ -33,8 +33,22 @@ source venv/bin/activate          # macOS/Linux — use venv\Scripts\activate on
 pip install -r requirements.txt
 cp .env.example .env              # then fill in your local DATABASE_URL and JWT_SECRET
 psql -U <user> -d <dbname> -f sql/schema.sql
+psql -U <user> -d <dbname> -f mintly-react/docs/seed/seed_backend.sql   # catalogue: 10 stores / 49 products / 257 offers
+psql -U <user> -d <dbname> -f sql/seed_store_charges.sql               # AFTER the catalogue — it matches stores by name
 uvicorn app.main:app --reload --port 4000
 ```
+
+Then the frontend, in a second terminal:
+
+```bash
+cd mintly-react
+npm install
+npm run dev                       # http://localhost:5173, talks to the API on :4000
+```
+
+`APP_TIMEZONE` (default `Africa/Johannesburg`) decides what "today" means for
+the Daily Budget Split, for both Python and the Postgres session, so a
+late-evening purchase lands on the right day even on a UTC database host.
 
 Server runs on `http://localhost:4000`. `GET /health` should return
 `{"status":"ok"}` once it's up. FastAPI also gives you free interactive docs
@@ -150,16 +164,17 @@ changed; no filters or behaviour were touched.
 
 ## For Member 5 (recommender) — done, see `app/recommender.py`
 
-`POST /recommendations` ranks offers with six weighted components:
+`POST /recommendations` ranks offers with seven weighted components:
 
 | component | weight | rewards |
 |-----------|--------|---------|
-| budget_fit | 0.35 | fits today's allowance, then the cycle |
-| price_value | 0.20 | cheap relative to the other candidates |
-| preference_match | 0.20 | matches saved preferences and the query |
-| proximity | 0.15 | close enough to actually go and get |
-| rating | 0.07 | other people rated it well |
-| freshness | 0.03 | the price was checked recently |
+| relevance | 0.22 | matches the words the student typed |
+| budget_fit | 0.30 | fits today's allowance, then the cycle |
+| price_value | 0.16 | cheap relative to the other candidates |
+| preference_match | 0.13 | matches saved preferences and the query |
+| proximity | 0.12 | close enough to actually go and get |
+| rating | 0.05 | other people rated it well |
+| freshness | 0.02 | the price was checked recently |
 
 Two things make it more than a sort-by-price. It ranks on **true cost**
 (Member 6's `store_true_cost`), so a R199 item with a R60 delivery fee loses
@@ -175,16 +190,47 @@ Free-text queries go through `app/query_parser.py` — rule-based keyword
 parsing, no model and no API key, as agreed with Member 4 in Phase 1:
 
 ```
-"cheap black sneakers under R500 near me size 9"
-  -> colour=black, size=9, max_price=500, category=clothing,
-     subcategory=footwear, nearby_only=True, sort_hint=price_asc,
-     keywords=["sneakers"]
+"cheap washing powder under R100 near me"
+  -> max_price=100, category=Toiletries, subcategory=Laundry,
+     nearby_only=True, sort_hint=price_asc, keywords=["washing","powder"]
 ```
 
-Attributes the student names explicitly (category, colour, size) are
-**requirements**, not preferences — the ranker drops mismatches rather than
-showing a blue hoodie to someone who asked for black. Tuning the weights is
-one dict: `DEFAULT_WEIGHTS` in `app/recommender.py`.
+Attributes the student **states** (colour, size) are requirements: the ranker
+drops mismatches rather than showing blue to someone who asked for black. A
+category the parser **infers** is only a hint — see below. Tuning the weights
+is one dict: `DEFAULT_WEIGHTS` in `app/recommender.py`.
+
+### What Phase 3 changed, and why
+
+Running the recommender against Member 9's real catalogue for the first time
+broke it in three ways that the Phase 2 tests could not see, because those
+tests used invented candidates with tidy names and categories:
+
+1. **Searches returned the wrong products.** "maize meal" ranked Baked Beans
+   first, "sanitary pads" ranked soap. Keyword matching lived entirely in the
+   SQL, so the ranker had no idea what had been searched for and could only
+   sort by price and distance. Fixed by the new `relevance` component, which
+   both ranks and gates — an offer matching none of the student's words is
+   dropped rather than ranked low.
+2. **Some searches returned nothing at all.** The parser guessed "household"
+   for a kettle; the catalogue calls it "Homeware", and the guess was applied
+   as a hard filter, so the result was an empty screen. The category
+   vocabulary now comes from the dataset, and an *inferred* category can only
+   nudge the ranking. Only an explicit `category` on the request filters.
+3. **"bread and milk" returned nothing**, because the SQL required every
+   keyword to match one row. Keywords are OR-ed now, and ordered by how many
+   matched, so the pool cap keeps the most relevant rows rather than the
+   cheapest.
+
+Two smaller ones: `"phone"` matched `"Wired Earphones"` (substring matching is
+now whole-word), and a word the catalogue doesn't use — a student types
+"notebook", the shelf says "A4 Feint & Margin Book" — now falls back to the
+inferred category instead of an empty screen, flagged `matched_query: false`
+so the UI can say so.
+
+`tests/test_scenarios.py` runs the whole pipeline over the real catalogue for
+four students — broke, payday, survival mode, off-campus — so these regress
+loudly next time.
 
 ## For Member 6 (true cost, Daily Budget Split) — done
 
@@ -219,6 +265,21 @@ Member 3: `build_split()` is importable, so Phase 3's "fold Daily Budget
 Split into the budget response" needs no HTTP hop — call it directly from
 `budgets.py` with the budget row and a `{date: amount}` map of spend.
 
+**Phase 3 additions.** `tomorrow_limit` is now returned alongside
+`daily_limit`: today's allowance is fixed at the start of the day so the
+headline number doesn't wobble with every purchase, and `tomorrow_limit` is
+the rate from tomorrow, which is what drops when today goes over.
+`POST /budget-split/check` answers "can I afford this today?" against the
+daily allowance rather than the balance, and reports how many days of
+allowance a purchase would eat.
+
+**Member 8 — the response format is documented in
+[`mintly-react/docs/BUDGET_SPLIT_CONTRACT.md`](mintly-react/docs/BUDGET_SPLIT_CONTRACT.md)**:
+every field, the five states the UI has to render (normal, overspent,
+survival, exhausted, payout day) with real payloads for each, and the three
+traps — chiefly that `daily_limit` must not be recomputed in the UI, and that
+summing `planned_limit` across `days` is not the balance.
+
 ## Schema additions for Phase 2 (Member 6)
 
 Three things were added to `sql/schema.sql`:
@@ -241,17 +302,65 @@ psql -U <user> -d <dbname> -f sql/seed_store_charges.sql       # demo fees
 fees matched by store name, so `/true-cost` has something to add up before
 Member 9's real figures land.
 
+### Phase 3 seed fixes (Member 5, in Member 9's generator)
+
+`docs/seed/build_backend_seed.py` was written before the Phase 2 columns
+existed and dropped `subcategory` and `rating` on the floor. The effect was
+not cosmetic: two of the recommender's seven scoring components were constant
+across all 257 offers, so 27% of the ranking weight did nothing. The generator
+now writes both, and `seed_backend.sql` has been regenerated.
+
+It also **was not idempotent**, despite the header saying it was. The stores
+insert used `ON CONFLICT DO NOTHING` with no unique key for it to fire on, so
+every re-run added 10 more stores and re-attached the whole catalogue to them.
+Running it twice gave 514 offers and every shop listed twice. It is now keyed
+on `external_store_id` with `WHERE NOT EXISTS`, and loading it three times in
+a row leaves 10 stores / 49 products / 257 offers.
+
+**If you ran the old file more than once**, your database is already
+duplicated. Check with:
+
+```sql
+SELECT count(*), count(DISTINCT external_store_id) FROM stores;
+```
+
+If those two numbers differ, drop the database and reload `schema.sql` plus
+the seed once each.
+
+## Phase 3 frontend wiring
+
+The React app now uses the Phase 3 endpoints rather than only the Phase 2 ones:
+
+- **Dashboard**: loads from `GET /budgets/dashboard` in one call. The status
+  banner shows the server's `health.warnings`, and "Safe to spend" renders the
+  Daily Budget Split the way `mintly-react/docs/BUDGET_SPLIT_CONTRACT.md`
+  describes: the message verbatim, a "left today" bar, the "from tomorrow" rate,
+  survival mode, and the allowance-exhausted state. After a purchase it takes
+  `daily_split` from the transaction response and shows `daily_limit_message`.
+- **Search**: a "Recommended for you" panel calls `POST /recommendations`. It
+  shows the true cost, the plain-English explanation, a closest-match notice
+  when `matched_query` is false, and survival mode.
+- `npm run test:contract` covers the new calls (36 checks).
+
 ## Tests
 
 ```bash
-pytest
+pytest                            # backend, no database needed
+cd mintly-react && npm run lint && npm run test:contract && npm run build
 ```
 
-115 tests covering the recommender, true-cost, budget-split, geo, query
-parser and budget arithmetic (`budget_calc`). They are all pure functions, so **no database or `.env` is needed** —
-useful for Member 10's QA checklist and for CI. `tests/test_recommender.py`
-holds the four whole scenarios from the Phase 3 task (broke student,
-true-cost-beats-sticker-price, survival mode, distance).
+126 tests covering the recommender, true-cost, budget-split, geo, query
+parser and budget arithmetic (`budget_calc`). They are all pure functions, so
+**no database or `.env` is needed** — useful for Member 10's QA checklist and
+for CI.
+
+`tests/test_scenarios.py` is the Phase 3 deliverable for Member 5: the whole
+pipeline — parse, filter, true cost, budget fit, rank — run against **Member
+9's real catalogue** (read straight from
+`mintly-react/docs/seed/products.json`) for four students in different
+situations: broke with three days to payout, payday with a full allowance,
+survival mode, and living off-campus. Every Phase 3 bug came from real data
+rather than invented rows, which is why these tests use the real thing.
 
 ## Project structure
 

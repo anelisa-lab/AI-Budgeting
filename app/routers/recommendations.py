@@ -33,7 +33,7 @@ from app.database import get_connection
 from app.dependencies import get_current_user_id
 from app.geo import distance_between, fetch_user_location
 from app.query_parser import ParsedQuery, parse_query
-from app.recommender import Candidate, ScoredOffer, UserContext, recommend
+from app.recommender import Candidate, ScoredOffer, UserContext, recommend, relevance_score
 from app.routers.budget_split import spent_by_date
 from app.schemas import (
     BudgetContextOut,
@@ -71,21 +71,24 @@ def _candidate_sql(payload: RecommendationRequest, parsed: ParsedQuery) -> tuple
     Build the candidate-pool query from the parsed query plus any explicit
     filters on the request.
 
-    This is a wide net on purpose: the SQL only removes rows that could never
-    be recommended (wrong category, out of stock, far over budget). Ranking
-    happens in Python, where true cost and the student's daily allowance are
+    This is a wide net on purpose. The SQL only removes rows that could never
+    be recommended — out of stock, far over the stated ceiling, or matching
+    none of the student's words — and orders what is left by how many of those
+    words it matches, so the pool cap keeps the most relevant rows. Ranking
+    proper happens in Python, where true cost and the daily allowance are
     available and SQL can't help.
     """
     conditions = ["o.availability_status = 'available'"]
     params: list = []
 
-    category = payload.category or parsed.category
-    if category:
+    # Only an EXPLICIT category filters. A category the parser inferred from a
+    # keyword is a hint: it is fed to the ranker, which uses it to boost
+    # matching rows, but it must not decide what the student is allowed to see.
+    # Filtering on a guess here is what made "kettle" and "washing powder"
+    # return zero rows against the real catalogue.
+    if parsed.category_is_explicit and parsed.category:
         conditions.append("p.category ILIKE %s")
-        params.append(category)
-    if parsed.subcategory:
-        conditions.append("(p.subcategory ILIKE %s OR p.subcategory IS NULL)")
-        params.append(parsed.subcategory)
+        params.append(parsed.category)
     if parsed.colour:
         conditions.append("p.colour ILIKE %s")
         params.append(parsed.colour)
@@ -108,15 +111,58 @@ def _candidate_sql(payload: RecommendationRequest, parsed: ParsedQuery) -> tuple
     if parsed.free_delivery_only:
         conditions.append("o.shipping_cost = 0")
 
-    for token in parsed.keywords:
-        conditions.append(
-            "(p.name ILIKE %s OR p.brand ILIKE %s OR p.category ILIKE %s OR p.subcategory ILIKE %s)"
-        )
-        like = f"%{token}%"
-        params.extend([like, like, like, like])
+    # Keywords are OR-ed, not AND-ed. Requiring every token to appear on one
+    # row looks stricter but is simply wrong for how students type: "bread and
+    # milk" returned nothing at all, because no single product is both. OR-ing
+    # them returns the bread and the milk, and the ranker's relevance component
+    # sorts the ones matching more of the query above the ones matching fewer.
+    order_terms = ["o.total_cost ASC"]
+    order_params: list = []
+
+    if parsed.keywords:
+        token_clauses = []
+        match_terms = []
+        for token in parsed.keywords:
+            like = f"%{token}%"
+            clause = (
+                "(p.name ILIKE %s OR p.brand ILIKE %s OR p.category ILIKE %s "
+                "OR p.subcategory ILIKE %s)"
+            )
+            token_clauses.append(clause)
+            params.extend([like] * 4)
+            # Same shape again for the ORDER BY, so the pool cap keeps the most
+            # relevant rows rather than simply the cheapest ones. Without this,
+            # `LIMIT candidate_pool` over 142 grocery offers would hand the
+            # ranker the 60 cheapest items and never show it the thing that was
+            # actually searched for.
+            match_terms.append(f"(CASE WHEN {clause} THEN 1 ELSE 0 END)")
+            order_params.extend([like] * 4)
+
+        # The inferred category joins the OR as a last resort, so the pool is
+        # not empty when none of the student's words appear in the catalogue.
+        # recommend() has a fallback for exactly that case ("notebook" ->
+        # Stationery, because the catalogue calls it an A4 Feint & Margin
+        # Book), but it can only fall back to rows the SQL actually returned —
+        # without this the pool was empty and the fallback never ran.
+        #
+        # This does widen the pool, but only harmlessly: the ORDER BY puts
+        # keyword matches first, so the category rows are the ones that get cut
+        # by the pool cap whenever real matches exist.
+        if parsed.category and not parsed.category_is_explicit:
+            token_clauses.append("p.category ILIKE %s")
+            params.append(parsed.category)
+
+        conditions.append("(" + " OR ".join(token_clauses) + ")")
+        order_terms.insert(0, "(" + " + ".join(match_terms) + ") DESC")
 
     where_clause = "WHERE " + " AND ".join(conditions)
-    sql = f"{_CANDIDATE_SELECT} {where_clause} ORDER BY o.total_cost ASC LIMIT %s"
+    sql = (
+        f"{_CANDIDATE_SELECT} {where_clause} "
+        f"ORDER BY {', '.join(order_terms)} LIMIT %s"
+    )
+    # Parameter order must follow the SQL text: WHERE first, then ORDER BY,
+    # then LIMIT.
+    params.extend(order_params)
     params.append(payload.candidate_pool)
     return sql, params
 
@@ -151,6 +197,7 @@ def _to_out(scored: ScoredOffer) -> RecommendedOffer:
         component_scores=scored.components,
         meets_budget=scored.meets_budget,
         meets_preferences=scored.meets_preferences,
+        matched_query=scored.matched_query,
         explanation=scored.explanation,
         cost_breakdown=TrueCostOut(
             **breakdown,
@@ -176,19 +223,20 @@ def get_recommendations(
         include_unaffordable keep over-budget options, ranked last (default true)
         candidate_pool       how many offers to consider before ranking (default 60)
 
-    Every result carries `true_cost`, a full `cost_breakdown`, the six
+    Every result carries `true_cost`, a full `cost_breakdown`, the seven
     `component_scores` and a plain-English `explanation`.
     """
     started = perf_counter()
     parsed = parse_query(payload.query)
 
     # An explicit category on the request beats whatever the parser guessed,
-    # and must win in the ranker too — recommend() treats parsed.category as a
-    # requirement, so leaving the guess in place would filter out the very rows
-    # the SQL just selected.
+    # and must win in the ranker too — leaving the guess in place would filter
+    # out the very rows the SQL just selected. Flagging it explicit is what
+    # promotes it from a ranking hint to a hard filter (see ParsedQuery).
     if payload.category:
         parsed.category = payload.category
         parsed.subcategory = None
+        parsed.category_is_explicit = True
 
     conn = get_connection()
     try:
@@ -346,6 +394,15 @@ def get_recommendations(
     message = None
     if not candidates:
         message = "Nothing in the catalogue matched that search. Try fewer words or a higher price."
+    elif not ranked and parsed.keywords and not any(
+        relevance_score(c, parsed) > 0 for c in candidates
+    ):
+        # The SQL's substring match found rows ("phone" -> "Wired Earphones")
+        # but none of them contain the student's words as whole words.
+        message = (
+            "Nothing in the catalogue matched those words closely enough. "
+            "Try a different word for the item."
+        )
     elif not ranked:
         message = (
             "Everything that matched was filtered out — usually out of stock, too far "

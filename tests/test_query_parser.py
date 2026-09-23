@@ -20,15 +20,29 @@ def test_empty_query_is_harmless():
 
 
 def test_the_headline_example():
-    parsed = parse_query("cheap black sneakers under R500 near me size 9")
-    assert parsed.colour == "black"
-    assert parsed.size == "9"
-    assert parsed.max_price == D("500")
-    assert parsed.category == "clothing"
-    assert parsed.subcategory == "footwear"
+    """
+    Category names come from Member 9's catalogue, not from this parser's
+    imagination — see CATEGORY_KEYWORDS. Phase 2 guessed "household" for
+    washing powder; the seed files it under Toiletries/Laundry, and the
+    mismatch made the search return nothing at all.
+    """
+    parsed = parse_query("cheap washing powder under R100 near me")
+    assert parsed.max_price == D("100")
+    assert parsed.category == "Toiletries"
+    assert parsed.subcategory == "Laundry"
     assert parsed.nearby_only is True
     assert parsed.sort_hint == "price_asc"
-    assert parsed.keywords == ["sneakers"]
+    assert parsed.keywords == ["washing", "powder"]
+    # Inferred, so it may only nudge the ranking — never filter.
+    assert parsed.category_is_explicit is False
+
+
+def test_colour_and_size_are_still_extracted():
+    parsed = parse_query("black bath towel size L")
+    assert parsed.colour == "black"
+    assert parsed.size == "L"
+    assert parsed.category == "Homeware"
+    assert parsed.subcategory == "Bathroom"
 
 
 def test_size_is_not_mistaken_for_a_price():
@@ -101,13 +115,13 @@ def test_gray_normalises_to_grey():
 def test_essentials_flag():
     parsed = parse_query("essential groceries for the week")
     assert parsed.essential_only is True
-    assert parsed.category == "groceries"
+    assert parsed.category == "Groceries"
 
 
 def test_free_delivery_phrase():
     parsed = parse_query("kettle with free delivery")
     assert parsed.free_delivery_only is True
-    assert parsed.category == "household"
+    assert parsed.category == "Homeware"
 
 
 def test_collection_phrase():
@@ -126,12 +140,16 @@ def test_clothing_sizes():
 
 
 def test_category_mapping_covers_student_staples():
+    """Every pair here exists in mintly-react/docs/seed/products.json."""
     cases = {
-        "maize meal": ("groceries", "staples"),
-        "sanitary pads": ("toiletries", "sanitary"),
-        "a calculator for stats": ("stationery", "equipment"),
-        "phone charger": ("electronics", "accessories"),
-        "washing powder": ("household", "cleaning"),
+        "maize meal": ("Groceries", "Staples"),
+        "sanitary pads": ("Toiletries", "Feminine Care"),
+        "a calculator for stats": ("Stationery", "Calculators"),
+        "phone charger": ("Electronics", "Power"),
+        "washing powder": ("Toiletries", "Laundry"),
+        "kettle": ("Homeware", "Kitchen"),
+        "brown bread": ("Groceries", "Bakery"),
+        "toothpaste": ("Toiletries", "Oral Care"),
     }
     for query, (category, subcategory) in cases.items():
         parsed = parse_query(query)

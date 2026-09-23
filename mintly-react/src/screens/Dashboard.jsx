@@ -8,7 +8,10 @@
  * WHERE THE NUMBERS COME FROM
  * ---------------------------
  * "Left to spend" is `budget.remaining_amount` as returned by
- * GET /budgets/current — the backend's figure, not a subtraction done here.
+ * GET /budgets/dashboard — the backend's figure, not a subtraction done here.
+ * "Safe to spend" is Member 6's Daily Budget Split, rendered the way
+ * docs/BUDGET_SPLIT_CONTRACT.md specifies, and the status banner uses the
+ * server's `health.warnings` whenever it has something to warn about.
  * Recording a spend POSTs to /budgets/{id}/transactions and the response
  * carries the recalculated budget AND the server's overspend decision, both of
  * which are used verbatim. See BudgetContext for the full reasoning.
@@ -78,6 +81,20 @@ function healthCopy(health, d) {
   }
 }
 
+/** GET /budgets/dashboard `health` -> the status banner, when it has a warning. */
+const SERVER_HEALTH = {
+  caution: { tone: 'warning', title: 'Careful — you are ahead of plan' },
+  danger: { tone: 'danger', title: 'Your budget is running low' },
+  exhausted: { tone: 'danger', title: 'You have nothing left this period' },
+};
+
+function serverStatus(serverHealth) {
+  if (!serverHealth || serverHealth.warning_level === 'ok') return null;
+  const base = SERVER_HEALTH[serverHealth.warning_level];
+  if (!base || serverHealth.warnings.length === 0) return null;
+  return { ...base, body: serverHealth.warnings.join(' ') };
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const budgetCtx = useBudget();
@@ -86,7 +103,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const {
-    budget, transactions, loading, error, supports,
+    budget, transactions, loading, error, supports, split, serverHealth, survival, overToday,
     savings, spendable, spent, remaining, ratio,
     daysLeft, dailyAllowance, dailyAllowanceIsFromServer, health, byCategory,
     addTransaction,
@@ -99,13 +116,17 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false);
   /** The server's own overspend verdict from the last POST. */
   const [overspend, setOverspend] = useState(null);
+  /** "More than today's allowance" — fits the cycle, but not today. */
+  const [dailyWarning, setDailyWarning] = useState(null);
 
   const topCategories = useMemo(
     () => Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4),
     [byCategory],
   );
 
-  const status = healthCopy(health, budgetCtx);
+  const status = serverStatus(serverHealth) || healthCopy(health, budgetCtx);
+  // Allowance exhausted: detect on the balance, not on `mode` (contract §4).
+  const exhausted = Boolean(budget) && remaining <= 0;
   const progressTone = health === 'over' ? 'danger' : health === 'good' ? 'brand' : 'warning';
 
   async function submitTransaction(event) {
@@ -120,6 +141,7 @@ export default function Dashboard() {
 
     setSaving(true);
     setOverspend(null);
+    setDailyWarning(null);
     try {
       // The backend records the spend even when it takes the student over, so
       // the log stays accurate; it flags the overspend in the response.
@@ -135,6 +157,9 @@ export default function Dashboard() {
       if (result.overspend_warning) {
         setOverspend(result.warning_message || 'That purchase took you over your remaining budget.');
         toast.error('Spend recorded — it took you over budget.');
+      } else if (result.daily_limit_warning) {
+        setDailyWarning(result.daily_limit_message);
+        toast.success('Spend recorded — over today\'s allowance.');
       } else {
         toast.success('Spend recorded.');
       }
@@ -210,6 +235,12 @@ export default function Dashboard() {
         </Alert>
       )}
 
+      {dailyWarning && (
+        <Alert tone="warning" title="That was more than today's allowance">
+          {dailyWarning}
+        </Alert>
+      )}
+
       {/* Headline numbers */}
       <div className="dash-hero">
         <Card tone="forest">
@@ -240,13 +271,52 @@ export default function Dashboard() {
         </Card>
 
         <Card tone="butter">
-          <p className="dash-label">Safe to spend</p>
-          <div className="dash-amount num" style={{ marginTop: 'var(--s-3)' }}>
-            {money(dailyAllowance)}
+          <div className="row row--between">
+            <p className="dash-label">Safe to spend</p>
+            {survival && <Badge tone="danger">Survival mode</Badge>}
           </div>
-          <p className="dash-sub dash-sub--on-butter">
-            per day, for the rest of the period
-          </p>
+          {exhausted ? (
+            // Contract §4 "Allowance exhausted": hide the daily figure.
+            <p className="dash-sub dash-sub--on-butter" style={{ marginTop: 'var(--s-3)' }}>
+              {plural(daysLeft, 'day')} until your next payout.
+            </p>
+          ) : (
+            <>
+              <div className="dash-amount num" style={{ marginTop: 'var(--s-3)' }}>
+                {/* Survival mode leads with the rate from tomorrow (contract §4). */}
+                {money(survival && split?.tomorrow_limit != null ? split.tomorrow_limit : dailyAllowance)}
+              </div>
+              <p className="dash-sub dash-sub--on-butter">
+                {survival ? 'a day from tomorrow — essentials only' : 'per day, for the rest of the period'}
+              </p>
+              {split && (
+                <div style={{ marginTop: 'var(--s-4)' }}>
+                  <Progress
+                    value={split.daily_limit > 0 ? Math.min(1, split.spent_today / split.daily_limit) : 1}
+                    tone={overToday ? 'danger' : 'brand'}
+                    surface="butter"
+                    label={`${money(split.remaining_today)} left to spend today`}
+                  />
+                  <p className="dash-sub dash-sub--on-butter" style={{ marginTop: 'var(--s-2)' }}>
+                    {money(split.remaining_today)} left today
+                    {overToday && ` · ${money(split.spent_today - split.daily_limit)} over`}
+                    {split.tomorrow_limit != null && !survival
+                      && split.tomorrow_limit !== split.daily_limit
+                      && ` · from tomorrow ${money(split.tomorrow_limit)} a day`}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+          {split?.message && (
+            // Written for students by the backend — rendered verbatim.
+            <p
+              className="dash-sub dash-sub--on-butter"
+              style={{ fontSize: 'var(--t-xs)', marginTop: 'var(--s-3)' }}
+            >
+              {split.message}
+            </p>
+          )}
           {!dailyAllowanceIsFromServer && (
             <p
               className="dash-sub dash-sub--on-butter"

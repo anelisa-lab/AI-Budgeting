@@ -14,6 +14,8 @@
  *   app/routers/profile.py /profile/, /profile/preferences
  *   app/routers/budgets.py /budgets, /budgets/current, /budgets/{id}, …
  *   app/routers/search.py  /search and its query parameters
+ *   app/routers/budget_split.py      /budget-split, /budget-split/check
+ *   app/routers/recommendations.py   /recommendations
  *   app/schemas.py         every request and response model
  *
  * The responses it produces deliberately serialise Decimal as a STRING, the
@@ -89,9 +91,14 @@ export const ROUTES = [
     method: 'GET', pattern: /^\/budgets\/current$/, auth: true,
   },
   {
+    name: 'getBudgetDashboard',
+    method: 'GET', pattern: /^\/budgets\/dashboard$/, auth: true,
+    query: ['recent'],
+  },
+  {
     name: 'updateBudget',
     method: 'PUT', pattern: /^\/budgets\/\d+$/, auth: true,
-    body: ['total_amount', 'cycle_end_date'], requiredBody: [],
+    body: ['total_amount', 'cycle_end_date', 'survival_threshold'], requiredBody: [],
   },
   {
     name: 'createTransaction',
@@ -109,8 +116,26 @@ export const ROUTES = [
     query: [
       'q', 'category', 'brand', 'colour', 'size', 'store',
       'min_price', 'max_price', 'max_shipping_cost',
-      'availability', 'essential_only', 'sort', 'limit', 'offset',
+      'availability', 'essential_only', 'sort', 'limit', 'offset', 'page',
     ],
+  },
+  {
+    name: 'getBudgetSplit',
+    method: 'GET', pattern: /^\/budget-split$/, auth: true,
+  },
+  {
+    name: 'checkAffordability',
+    method: 'POST', pattern: /^\/budget-split\/check$/, auth: true,
+    body: ['amount'], requiredBody: ['amount'],
+  },
+  {
+    name: 'getRecommendations',
+    method: 'POST', pattern: /^\/recommendations$/, auth: true,
+    body: [
+      'query', 'category', 'max_price', 'fulfilment', 'limit',
+      'include_unaffordable', 'candidate_pool',
+    ],
+    requiredBody: [],
   },
 ];
 
@@ -176,3 +201,16 @@ export const validationError = (...fields) => ({
     type: 'value_error', loc: ['body', field], msg, input: null,
   })),
 });
+
+/** BudgetSplitOut, serialised the way FastAPI does. */
+export function budgetSplitOut(over = {}) {
+  return {
+    budget_id: 7, currency: 'ZAR', as_of: '2026-09-23', next_payout_date: '2026-10-08',
+    days_remaining: 16, remaining_amount: dec(1200), daily_limit: dec(78.62),
+    spent_today: dec(57.99), remaining_today: dec(20.63), tomorrow_limit: dec(78.62),
+    mode: 'normal', survival_threshold: null,
+    message: 'R1257.99 over 16 days gives you R78.62 a day. You have R20.63 left to spend today.',
+    days: [],
+    ...over,
+  };
+}

@@ -52,6 +52,8 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from typing import Dict, List, Optional
 
+from app.clock import local_today
+
 ZERO = Decimal("0.00")
 
 MODE_NORMAL = "normal"
@@ -168,6 +170,11 @@ class BudgetSplit:
 # ---------------------------------------------------------------------------
 
 
+def _plural_days(count: int) -> str:
+    """"1 day" / "16 days" — the messages are shown to students, not to us."""
+    return "1 day" if count == 1 else f"{count} days"
+
+
 def _build_message(
     remaining: Decimal,
     daily_limit: Decimal,
@@ -193,18 +200,30 @@ def _build_message(
             "today's budget until the next one lands."
         )
     if mode == MODE_SURVIVAL:
+        # Use remaining_today and tomorrow_limit here, not daily_limit.
+        # daily_limit is today's allowance fixed at the START of today, so
+        # pairing it with the CURRENT balance produced a sentence that
+        # contradicted itself: a student with R80 left who had already spent
+        # R120 was told "R80.00 must last 16 more days, so you have R12.50 a
+        # day" — R80 over 16 days is R5, not R12.50. In survival mode the
+        # forward-looking rate is the only number that matters anyway.
+        tail = (
+            f" You have R{remaining_today} left today, then about "
+            f"R{tomorrow_limit} a day."
+            if tomorrow_limit is not None
+            else f" You have R{remaining_today} left for today."
+        )
         return (
-            f"Survival mode: R{remaining} must last {days} more days, so you have "
-            f"R{daily_limit} a day. Essentials only — the app will stop suggesting "
-            "anything else."
+            f"Survival mode: R{remaining} must last {_plural_days(days)} more.{tail} "
+            "Essentials only — the app will stop suggesting anything else."
         )
     if daily_limit < CRITICAL_DAILY_LIMIT:
         return (
-            f"R{remaining} over {days} days is only R{daily_limit} a day. That's "
+            f"R{remaining} over {_plural_days(days)} is only R{daily_limit} a day. That's "
             "very tight — stick to essentials and look for cheaper stores."
         )
     return (
-        f"R{_money(remaining + spent_today)} over {days} days gives you R{daily_limit} a day. "
+        f"R{_money(remaining + spent_today)} over {_plural_days(days)} gives you R{daily_limit} a day. "
         f"You have R{remaining_today} left to spend today."
     )
 
@@ -232,7 +251,7 @@ def build_split(
     Returns:
         BudgetSplit — the headline daily limit plus a day-by-day schedule.
     """
-    as_of = as_of or date.today()
+    as_of = as_of or local_today()
     spent_by_date = spent_by_date or {}
 
     cycle_end = budget["cycle_end_date"]
