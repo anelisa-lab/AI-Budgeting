@@ -25,11 +25,14 @@ import * as endpoints from './endpoints.js';
 import * as localList from './localList.js';
 import { API_BASE_URL, ApiError, setUnauthorizedHandler } from './http.js';
 import {
+  affordabilityFromApi,
   budgetFromApi,
   budgetSplitFromApi,
   budgetToApi,
   budgetUpdateToApi,
+  dashboardFromApi,
   preferencesFromApi,
+  recommendationsFromApi,
   searchResponseFromApi,
   transactionFromApi,
   transactionResultFromApi,
@@ -111,6 +114,19 @@ export const budgets = {
     }
   },
 
+  /**
+   * GET /budgets/dashboard — budget, Daily Budget Split, health warnings and
+   * the latest transactions in one call. Same 404-means-null rule as above.
+   */
+  async getDashboard(token, { recent } = {}) {
+    try {
+      return dashboardFromApi(await endpoints.getBudgetDashboard(token, { recent }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  },
+
   async list(token) {
     const rows = await endpoints.listBudgets(token);
     return Array.isArray(rows) ? rows.map(budgetFromApi) : [];
@@ -150,6 +166,23 @@ export const budgetSplit = {
       throw err;
     }
   },
+
+  /** "Can I afford this today?" — POST /budget-split/check. */
+  async check(token, amount) {
+    return affordabilityFromApi(await endpoints.checkAffordability(token, { amount }));
+  },
+};
+
+/* --------------------------------------------------------- recommendations */
+
+/**
+ * Member 5's recommender — POST /recommendations. Ranks on true cost against
+ * today's allowance, and in survival mode returns essentials only.
+ */
+export const recommendations = {
+  async get(token, body) {
+    return recommendationsFromApi(await endpoints.getRecommendations(token, body));
+  },
 };
 
 /* ------------------------------------------------------------ transactions */
@@ -162,7 +195,8 @@ export const transactions = {
   },
 
   /**
-   * Returns { transaction, budget, overspend_warning, warning_message }.
+   * Returns { transaction, budget, overspend_warning, warning_message,
+   *           daily_limit_warning, daily_limit_message, daily_split }.
    *
    * The `budget` in that response is the authoritative post-spend state — the
    * caller MUST use it rather than subtracting the amount itself, because the
@@ -250,7 +284,8 @@ export const system = {
 
 /** Grouped default export, for `import { api } from '../api/client.js'`. */
 export const api = {
-  auth, profile, budgets, budgetSplit, transactions, search, shoppingList, system,
+  auth, profile, budgets, budgetSplit, recommendations, transactions, search, shoppingList,
+  system,
 };
 
 export default api;

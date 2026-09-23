@@ -18,15 +18,11 @@
  *
  * WHAT IS STILL COMPUTED HERE, AND WHY
  * ------------------------------------
- * `dailyAllowance` (the "safe to spend per day" figure). Member 6's Daily
- * Budget Split now exists as its own endpoint, GET /budget-split
- * (app/routers/budget_split.py) — it is NOT a field on BudgetOut, so we fetch
- * it alongside the budget and prefer `split.daily_limit` the moment it is
- * available. If that call fails for any reason (network hiccup, or simply no
- * active budget yet), we fall back to the exact formula the backend README
- * specifies, `remaining_amount / days until cycle_end_date`, computed here.
- * Either way the number is labelled on screen so nobody mistakes one for the
- * other.
+ * Nothing money-related. The dashboard loads from GET /budgets/dashboard
+ * (Member 3), which carries the budget, Member 6's Daily Budget Split and a
+ * `health` block with ready-to-show warnings in one call. `dailyAllowance`
+ * falls back to `remaining / days left` only if the split is missing, and the
+ * screen labels it when it does.
  */
 
 import {
@@ -54,7 +50,7 @@ export const NSFAS = {
 export const BACKEND_SUPPORTS = {
   deleteBudget: false,
   deleteTransaction: false,
-  serverDailyLimit: true, // GET /budget-split is live — see BudgetProvider.refresh
+  serverDailyLimit: true, // GET /budgets/dashboard carries the split — see refresh
 };
 
 const BudgetContext = createContext(null);
@@ -65,6 +61,8 @@ export function BudgetProvider({ children }) {
   const [budget, setBudget] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [split, setSplit] = useState(null);
+  /** BudgetHealthOut from GET /budgets/dashboard — the server's warnings. */
+  const [serverHealth, setServerHealth] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -76,6 +74,7 @@ export function BudgetProvider({ children }) {
       setBudget(null);
       setTransactions([]);
       setSplit(null);
+      setServerHealth(null);
       setLoaded(false);
       return;
     }
@@ -83,28 +82,19 @@ export function BudgetProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
-      // Fetching the budget is sequential on purpose: both transactions and
-      // the split hang off a budget id, so there is nothing to fetch in
-      // parallel until we know whether a budget exists at all.
-      const current = await api.budgets.getCurrent(token); // null when 404
-      setBudget(current);
+      // One call for the budget, its Daily Budget Split and the health
+      // warnings (null when there is no active budget). The full transaction
+      // list is fetched afterwards because the dashboard payload only carries
+      // the most recent few, and the category breakdown needs all of them.
+      const dash = await api.budgets.getDashboard(token);
+      setBudget(dash?.budget ?? null);
+      setSplit(dash?.split ?? null);
+      setServerHealth(dash?.health ?? null);
 
-      if (current) {
-        // Transactions and the split are independent of each other, so they
-        // go out together. The split is an enhancement, not core data: if it
-        // fails for any reason we still want the transaction list and the
-        // budget itself, so its failure is swallowed here rather than
-        // surfaced as a page-level error — `derived` below falls back to a
-        // local calculation the instant `split` is null.
-        const [rows, splitResult] = await Promise.all([
-          api.transactions.list(token, current.id),
-          api.budgetSplit.get(token).catch(() => null),
-        ]);
-        setTransactions(rows);
-        setSplit(splitResult);
+      if (dash?.budget) {
+        setTransactions(await api.transactions.list(token, dash.budget.id));
       } else {
         setTransactions([]);
-        setSplit(null);
       }
       setLoaded(true);
     } catch (err) {
@@ -120,9 +110,21 @@ export function BudgetProvider({ children }) {
       setBudget(null);
       setTransactions([]);
       setSplit(null);
+      setServerHealth(null);
       setLoaded(false);
     }
   }, [isAuthenticated, refresh]);
+
+  /** Health warnings are server-computed, so re-read them after a change. */
+  const refreshHealth = useCallback(() => {
+    api.budgets.getDashboard(token, { recent: 0 })
+      .then((dash) => {
+        if (!dash) return;
+        setSplit(dash.split);
+        setServerHealth(dash.health);
+      })
+      .catch(() => setServerHealth(null));
+  }, [token]);
 
   /* ------------------------------------------------------------ mutations */
 
@@ -140,11 +142,10 @@ export function BudgetProvider({ children }) {
     // A brand-new budget has no transactions; an edited one keeps its own.
     if (!budget) setTransactions([]);
     setLoaded(true);
-    // total_amount or the cycle length changing both shift daily_limit — best
-    // effort, same reasoning as in refresh() above.
-    api.budgetSplit.get(token).then(setSplit).catch(() => setSplit(null));
+    // total_amount or the cycle length changing both shift daily_limit.
+    refreshHealth();
     return saved;
-  }, [budget, token]);
+  }, [budget, token, refreshHealth]);
 
   /**
    * POST /budgets/{id}/transactions.
@@ -158,11 +159,12 @@ export function BudgetProvider({ children }) {
     const result = await api.transactions.create(token, budget.id, formValues);
     setTransactions((list) => [result.transaction, ...list]);
     setBudget(result.budget);
-    // Today's spend changes spent_today/remaining_today/daily_limit — best
-    // effort, same reasoning as in refresh() above.
-    api.budgetSplit.get(token).then(setSplit).catch(() => setSplit(null));
+    // The response already carries the recalculated split (see
+    // docs/BUDGET_SPLIT_CONTRACT.md), so there is nothing to re-fetch for it.
+    if (result.daily_split) setSplit(result.daily_split);
+    refreshHealth();
     return result;
-  }, [budget, token]);
+  }, [budget, token, refreshHealth]);
 
   /* -------------------------------------------------------------- derived */
 
@@ -230,6 +232,8 @@ export function BudgetProvider({ children }) {
       health,
       byCategory,
       splitMessage: split?.message ?? null,
+      survival: split?.mode === 'survival',
+      overToday: split ? split.spent_today > split.daily_limit : false,
     };
   }, [budget, transactions, split]);
 
@@ -237,6 +241,7 @@ export function BudgetProvider({ children }) {
     budget,
     transactions,
     split,
+    serverHealth,
     loading,
     loaded,
     error,
@@ -245,8 +250,8 @@ export function BudgetProvider({ children }) {
     addTransaction,
     supports: BACKEND_SUPPORTS,
     ...derived,
-  }), [budget, transactions, split, loading, loaded, error, refresh, saveBudget,
-       addTransaction, derived]);
+  }), [budget, transactions, split, serverHealth, loading, loaded, error, refresh,
+       saveBudget, addTransaction, derived]);
 
   return <BudgetContext.Provider value={value}>{children}</BudgetContext.Provider>;
 }

@@ -308,27 +308,13 @@ def test_out_of_stock_offers_are_dropped():
     assert [r.candidate.offer_id for r in results] == [2]
 
 
-def test_explicit_query_attributes_are_requirements_not_preferences():
+def test_stated_colour_is_a_requirement_not_a_preference():
     """A student who asked for black must not be shown blue, however cheap."""
-    parsed = parse_query("black hoodie")
+    parsed = parse_query("black bath towel")
     results = recommend(
         [
-            candidate(1, "50.00", category="clothing", colour="blue", essential=False),
-            candidate(2, "300.00", category="clothing", colour="black", essential=False),
-        ],
-        UserContext(remaining_amount=D("1000.00")),
-        parsed,
-        now=NOW,
-    )
-    assert [r.candidate.offer_id for r in results] == [2]
-
-
-def test_wrong_category_is_filtered_out():
-    parsed = parse_query("calculator")
-    results = recommend(
-        [
-            candidate(1, "20.00", category="groceries", name="Bread"),
-            candidate(2, "249.00", category="stationery", name="Casio FX-82"),
+            candidate(1, "50.00", name="Bath Towel", category="Homeware", colour="blue"),
+            candidate(2, "300.00", name="Bath Towel", category="Homeware", colour="black"),
         ],
         UserContext(remaining_amount=D("1000.00")),
         parsed,
@@ -340,9 +326,39 @@ def test_wrong_category_is_filtered_out():
 def test_missing_attribute_is_a_mismatch_not_a_free_pass():
     """Matches the SQL: `p.colour ILIKE 'black'` drops rows with a NULL colour."""
     results = recommend(
-        [candidate(1, "50.00", category="clothing", colour=None, essential=False)],
+        [candidate(1, "50.00", name="Bath Towel", category="Homeware", colour=None)],
         UserContext(remaining_amount=D("1000.00")),
-        parse_query("black hoodie"),
+        parse_query("black bath towel"),
+        now=NOW,
+    )
+    assert results == []
+
+
+def test_inferred_category_does_not_filter():
+    """
+    The Phase 3 reversal. The parser files washing powder under Toiletries;
+    if the catalogue disagrees, the student should still get their result.
+    Phase 2 hard-filtered on this guess and returned an empty screen.
+    """
+    parsed = parse_query("washing powder")
+    assert parsed.category == "Toiletries" and parsed.category_is_explicit is False
+    results = recommend(
+        [candidate(1, "95.99", name="Auto Washing Powder", category="Homeware")],
+        UserContext(remaining_amount=D("1000.00")),
+        parsed,
+        now=NOW,
+    )
+    assert len(results) == 1
+
+
+def test_explicit_category_still_filters():
+    parsed = parse_query("bread")
+    parsed.category = "Stationery"
+    parsed.category_is_explicit = True
+    results = recommend(
+        [candidate(1, "21.45", name="Brown Bread", category="Groceries")],
+        UserContext(remaining_amount=D("1000.00")),
+        parsed,
         now=NOW,
     )
     assert results == []
@@ -351,9 +367,9 @@ def test_missing_attribute_is_a_mismatch_not_a_free_pass():
 def test_subcategory_gaps_do_not_filter_rows_out():
     """Seed data has NULL subcategories; the SQL lets them through, so must we."""
     parsed = parse_query("sanitary pads")
-    assert parsed.subcategory == "sanitary"
+    assert parsed.subcategory == "Feminine Care"
     results = recommend(
-        [candidate(1, "35.00", category="toiletries", subcategory=None)],
+        [candidate(1, "35.00", name="Sanitary Pads", category="Toiletries", subcategory=None)],
         UserContext(remaining_amount=D("1000.00")),
         parsed,
         now=NOW,
@@ -362,12 +378,14 @@ def test_subcategory_gaps_do_not_filter_rows_out():
 
 
 def test_query_matches_raise_preference_scores():
-    parsed = parse_query("black hoodie")
+    parsed = parse_query("black bath towel")
     context = UserContext(remaining_amount=D("1000.00"), daily_limit=D("500.00"))
     results = recommend(
         [
-            candidate(1, "300.00", category="clothing", subcategory="outerwear", colour="blue"),
-            candidate(2, "300.00", category="clothing", subcategory="outerwear", colour="black"),
+            candidate(1, "300.00", name="Bath Towel", category="Homeware",
+                      subcategory="Bathroom", colour="blue"),
+            candidate(2, "300.00", name="Bath Towel", category="Homeware",
+                      subcategory="Bathroom", colour="black"),
         ],
         context,
         parsed,

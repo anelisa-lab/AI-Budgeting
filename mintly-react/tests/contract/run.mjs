@@ -24,13 +24,15 @@ import { strict as assert } from 'node:assert';
 
 import {
   ROUTES, SORT_VALUES, AVAILABILITY_VALUES, dec,
-  userOut, budgetOut, transactionOut, searchResultItem,
+  userOut, budgetOut, transactionOut, searchResultItem, budgetSplitOut,
   httpError, validationError,
 } from './backend-routes.mjs';
 
 // The frontend under test. Plain JS, no JSX, no React — importable as-is.
 process.env.VITE_API_BASE_URL = 'http://localhost:4000';
-const { auth, profile, budgets, transactions, search } = await import('../../src/api/client.js');
+const {
+  auth, profile, budgets, budgetSplit, recommendations, transactions, search,
+} = await import('../../src/api/client.js');
 const { ApiError } = await import('../../src/api/http.js');
 const {
   buildSearchParams, filtersFromUrl, filtersToUrl, rank,
@@ -533,6 +535,104 @@ await test('the split-shop total buys each line wherever it is cheapest', () => 
   const [group] = comparableGroups(lines, offersByProduct);
   assert.equal(group.saving, 9);
   assert.equal(group.cheapest.store_name, 'B');
+});
+
+/* ========================================================= PHASE 3 ===== */
+
+console.log('\nPhase 3 — dashboard, Daily Budget Split, recommendations');
+
+await test('GET /budgets/dashboard is coerced into budget, split and health', async () => {
+  installFetch(() => ({
+    body: {
+      budget: budgetOut({ daily_limit: dec(78.62), budget_mode: 'normal' }),
+      daily_split: budgetSplitOut(),
+      health: {
+        warning_level: 'caution', spendable_amount: dec(1650), spent_amount: dec(450),
+        spent_percentage: '27.3', over_daily_limit_by: dec(0), warnings: ['Careful.'],
+      },
+      recent_transactions: [transactionOut()],
+    },
+  }));
+  const dash = await budgets.getDashboard(TOKEN);
+  assert.equal(lastRequest().path, '/budgets/dashboard');
+  assert.equal(dash.budget.remaining_amount, 1650);
+  assert.equal(dash.split.daily_limit, 78.62);
+  assert.equal(dash.split.tomorrow_limit, 78.62);
+  assert.equal(dash.health.warning_level, 'caution');
+  assert.equal(dash.health.spent_percentage, 27.3);
+  assert.deepEqual(dash.health.warnings, ['Careful.']);
+  assert.equal(dash.recent_transactions[0].amount, 85.5);
+});
+
+await test('a 404 from GET /budgets/dashboard is the empty state, not an error', async () => {
+  installFetch(() => ({ status: 404, body: httpError('No active budget') }));
+  assert.equal(await budgets.getDashboard(TOKEN), null);
+});
+
+await test('tomorrow_limit stays null on payout day instead of becoming 0', async () => {
+  installFetch(() => ({ body: budgetSplitOut({ tomorrow_limit: null, days_remaining: 1 }) }));
+  const split = await budgetSplit.get(TOKEN);
+  assert.equal(split.tomorrow_limit, null);
+});
+
+await test('a transaction result carries the daily warning and the fresh split', async () => {
+  installFetch(() => ({
+    status: 201,
+    body: {
+      transaction: transactionOut(), budget: budgetOut({ remaining_amount: dec(1100) }),
+      overspend_warning: false, warning_message: null,
+      daily_limit_warning: true, daily_limit_message: 'More than today.',
+      daily_split: budgetSplitOut({ remaining_today: dec(0) }),
+    },
+  }));
+  const result = await transactions.create(TOKEN, 7, { description: 'Shoes', amount: 150 });
+  assert.equal(result.daily_limit_warning, true);
+  assert.equal(result.daily_limit_message, 'More than today.');
+  assert.equal(result.daily_split.remaining_today, 0);
+});
+
+await test('POST /budget-split/check sends only { amount }', async () => {
+  installFetch(() => ({
+    body: {
+      amount: dec(250), affordable_today: false, affordable_this_cycle: true,
+      remaining_today: dec(20.63), remaining_amount: dec(1200), days_of_budget: '3.2',
+      message: 'R250.00 is over today\'s R20.63.',
+    },
+  }));
+  const verdict = await budgetSplit.check(TOKEN, 250);
+  assert.deepEqual(lastRequest().body, { amount: 250 });
+  assert.equal(verdict.days_of_budget, 3.2);
+  assert.equal(verdict.affordable_this_cycle, true);
+});
+
+await test('POST /recommendations drops empty keys and coerces every result', async () => {
+  installFetch(() => ({
+    body: {
+      run_id: 3, search_id: 4, query: 'bread',
+      parsed: { keywords: ['bread'] },
+      budget: {
+        budget_id: 7, remaining_amount: dec(1200), daily_limit: dec(78.62),
+        days_remaining: 16, mode: 'survival', message: 'Survival mode.',
+      },
+      results: [{
+        rank: 1, offer_id: 11, product_id: 2, product_name: 'Brown Bread',
+        store_name: 'Shoprite', store_type: 'physical', price: dec(17.95),
+        true_cost: dec(21.45), currency: 'ZAR', distance_km: 1.2, score: 0.83,
+        component_scores: { relevance: 1 }, meets_budget: true, meets_preferences: true,
+        matched_query: false, explanation: 'Cheapest.', is_essential: true,
+        cost_breakdown: { shipping: dec(3.5), hidden_cost: dec(3.5) },
+      }],
+      count: 1, candidates_considered: 9, response_time_ms: 12, message: null,
+    },
+  }));
+  const recs = await recommendations.get(TOKEN, { query: 'bread', category: '', max_price: undefined, limit: 3 });
+  assert.deepEqual(lastRequest().body, { query: 'bread', limit: 3 });
+  assert.equal(recs.budget.mode, 'survival');
+  const [top] = recs.results;
+  assert.equal(top.true_cost, 21.45);
+  assert.equal(top.hidden_cost, 3.5);
+  assert.equal(top.matched_query, false);
+  assert.equal(top.explanation, 'Cheapest.');
 });
 
 /* ==================================================== NETWORK FAULTS ===== */

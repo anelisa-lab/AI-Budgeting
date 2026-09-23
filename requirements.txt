@@ -10,3 +10,6 @@ pydantic[email]==2.9.2
 # Testing. The recommender, true-cost and budget-split logic is pure Python
 # with no database, so `pytest` from the repo root runs the whole suite.
 pytest==8.3.3
+
+# zoneinfo needs this on Windows, which ships no timezone database
+tzdata>=2024.1
