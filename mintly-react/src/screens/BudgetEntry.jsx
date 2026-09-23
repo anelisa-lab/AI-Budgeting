@@ -31,7 +31,7 @@ import {
 import { useBudget, NSFAS } from '../context/BudgetContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { budgetToFormValues } from '../api/normalise.js';
-import { money } from '../lib/format.js';
+import { money, todayIso } from '../lib/format.js';
 import * as v from '../lib/validation.js';
 
 const PERIODS = [
@@ -51,11 +51,11 @@ const RULES = {
   payoutDate: (value) => v.futureOrTodayDate(value, 'Payout date'),
   periodDays: (value) => v.required(value, 'Budget period'),
   savingsPercentage: (value) => v.percentage(value, 'Savings'),
+  survivalThreshold: (value) => (String(value ?? '').trim() === ''
+    ? null
+    : v.amount(value, { min: 0, max: 50000, fieldName: 'Survival threshold' })),
 };
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default function BudgetEntry() {
   const { budget, saveBudget, supports } = useBudget();
@@ -64,7 +64,8 @@ export default function BudgetEntry() {
   const formRef = useRef(null);
 
   const [values, setValues] = useState({
-    amount: '', payoutDate: today(), periodDays: '30', savingsPercentage: '0',
+    amount: '', payoutDate: todayIso(), periodDays: '30', savingsPercentage: '0',
+    survivalThreshold: '',
   });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -136,6 +137,7 @@ export default function BudgetEntry() {
         payoutDate: values.payoutDate,
         periodDays: Number(values.periodDays),
         savingsPercentage: Number(values.savingsPercentage) || 0,
+        survivalThreshold: values.survivalThreshold,
       });
       toast.success(isEditing ? 'Budget updated.' : 'Budget set. Let’s go shopping.');
       navigate('/dashboard');
@@ -286,6 +288,32 @@ export default function BudgetEntry() {
                 )}
               </Field>
             )}
+
+            {/* budgets.survival_threshold — the deck's "Broke Week Mode". When
+                remaining_amount drops to this, the Daily Budget Split switches
+                to survival mode and recommendations become essentials only. */}
+            <Field
+              id="survivalThreshold"
+              label="Switch to survival mode below"
+              hint={isEditing
+                ? 'When what is left drops to this, Mintly recommends essentials only. Set 0 to turn it off.'
+                : 'Optional. When what is left drops to this, Mintly recommends essentials only.'}
+              error={errors.survivalThreshold}
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  inputMode="decimal"
+                  prefix="R"
+                  placeholder="e.g. 200"
+                  value={values.survivalThreshold}
+                  invalid={invalid}
+                  describedBy={describedBy}
+                  onChange={(e) => change('survivalThreshold', e.target.value.replace(/[^\d.]/g, ''))}
+                  onBlur={() => blur('survivalThreshold')}
+                />
+              )}
+            </Field>
 
             {/* Live preview — the payoff for filling the form in. */}
             {preview && (

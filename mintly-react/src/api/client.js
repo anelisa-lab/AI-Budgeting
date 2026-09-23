@@ -37,6 +37,7 @@ import {
   transactionFromApi,
   transactionResultFromApi,
   transactionToApi,
+  trueCostResponseFromApi,
   userFromApi,
 } from './normalise.js';
 
@@ -185,6 +186,25 @@ export const recommendations = {
   },
 };
 
+/* --------------------------------------------------------------- true cost */
+
+/**
+ * Member 6's calculator — POST /true-cost. Prices each offer as its own order
+ * (item + delivery + store charges + travel), so it compares ALTERNATIVES for
+ * one product. Compare's "Item by item" uses it; summing results is never a
+ * basket total.
+ */
+export const trueCost = {
+  async compare(token, offerIds, { quantity = 1, fulfilment = 'delivery' } = {}) {
+    if (!offerIds?.length) return { results: [], cheapest_offer_id: null, saving_vs_dearest: 0 };
+    return trueCostResponseFromApi(await endpoints.getTrueCost(token, {
+      offer_ids: offerIds.slice(0, 50),
+      quantity: Math.max(1, Math.min(99, Math.round(quantity))),
+      fulfilment,
+    }));
+  },
+};
+
 /* ------------------------------------------------------------ transactions */
 
 export const transactions = {
@@ -284,8 +304,8 @@ export const system = {
 
 /** Grouped default export, for `import { api } from '../api/client.js'`. */
 export const api = {
-  auth, profile, budgets, budgetSplit, recommendations, transactions, search, shoppingList,
-  system,
+  auth, profile, budgets, budgetSplit, recommendations, trueCost, transactions, search,
+  shoppingList, system,
 };
 
 export default api;

@@ -5,8 +5,8 @@
  * rating, and freshness. The screen keeps the natural-language query intact
  * so the server remains the single place that parses recommendation intent.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, Select, Skeleton,
 } from '../components/ui/index.js';
@@ -16,6 +16,20 @@ import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import { money } from '../lib/format.js';
+
+/**
+ * The categories the seed catalogue actually uses. An explicit category is a
+ * HARD filter on POST /recommendations, so a free-text box that let a student
+ * type "food" or "household" would return an empty screen.
+ */
+const CATEGORY_OPTIONS = [
+  { value: '', label: 'Any category' },
+  { value: 'Groceries', label: 'Groceries' },
+  { value: 'Toiletries', label: 'Toiletries' },
+  { value: 'Stationery', label: 'Stationery' },
+  { value: 'Electronics', label: 'Electronics' },
+  { value: 'Homeware', label: 'Homeware' },
+];
 
 const FULFILMENT_OPTIONS = [
   { value: 'delivery', label: 'Delivered to me' },
@@ -31,19 +45,27 @@ export default function Recommendations() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const [query, setQuery] = useState('');
+  // Search's "More picks →" hands its query over, so the list continues it.
+  const location = useLocation();
+  const [query, setQuery] = useState(location.state?.query || '');
   const [fulfilment, setFulfilment] = useState('delivery');
   const [includeUnaffordable, setIncludeUnaffordable] = useState(false);
   const [category, setCategory] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  /** What is in the box; committed to `maxPrice` on blur/submit, not per keystroke. */
+  const [maxPriceDraft, setMaxPriceDraft] = useState('');
   const [essentialOnly, setEssentialOnly] = useState(false);
   const [sort, setSort] = useState('recommended');
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // A slower, older request must not overwrite the answer to a newer one.
+  const requestId = useRef(0);
+
   const runSearch = useCallback(async (activeQuery) => {
     if (!token) return;
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
@@ -55,41 +77,47 @@ export default function Recommendations() {
         include_unaffordable: includeUnaffordable,
         limit: 12,
       });
+      if (id !== requestId.current) return;
       setResponse(result);
     } catch (err) {
+      if (id !== requestId.current) return;
       setError(err.message || 'Could not load recommendations right now.');
       setResponse(null);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [token, fulfilment, category, maxPrice, includeUnaffordable]);
 
-  useEffect(() => { runSearch(''); }, [token]);
+  // First load, and again whenever a filter that the BACKEND applies changes
+  // (the text query waits for "Find recommendations").
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  useEffect(() => { runSearch(queryRef.current); }, [runSearch]);
 
   function handleSubmit(event) {
     event.preventDefault();
-    runSearch(query);
+    if (maxPriceDraft !== maxPrice) setMaxPrice(maxPriceDraft); // the effect re-runs
+    else runSearch(query);
   }
 
-  function handleAdd(rec) {
-    const shippingEstimate = Math.max(0, Number((rec.true_cost - rec.price).toFixed(2)));
-    addOffer({
-      offer_id: rec.offer_id,
-      product_id: rec.product_id,
-      product_name: rec.product_name,
-      brand: rec.brand,
-      size: rec.size,
-      category: rec.category,
-      is_essential: rec.is_essential,
-      store_id: rec.store_id,
-      store_name: rec.store_name,
-      store_type: rec.store_type,
-      price: rec.price,
-      shipping_cost: shippingEstimate,
-      total_cost: rec.true_cost,
-    }, 1);
-    toast.success(`Added ${rec.product_name} to your list.`);
+  /**
+   * recommendationFromApi already carries the SearchResultItem fields a list
+   * line needs (price, shipping_cost, total_cost), so the offer goes in as-is —
+   * the same way Search adds one. Store fees and travel are NOT folded into the
+   * line's shipping: Compare works out delivery per store, once.
+   */
+  async function handleAdd(rec) {
+    try {
+      await addOffer(rec, 1);
+      toast.success(`Added ${rec.product_name} to your list.`);
+    } catch (err) {
+      toast.error(err.message || 'Could not add that item.');
+    }
   }
+
+  const survival = budgetMode === 'survival' || response?.budget?.mode === 'survival';
+  const closestOnly = (response?.results || []).length > 0
+    && response.results.every((r) => !r.matched_query);
 
   const results = (response?.results || [])
     .filter((rec) => !essentialOnly || rec.is_essential)
@@ -126,7 +154,7 @@ export default function Recommendations() {
         </Alert>
       )}
 
-      {budgetMode === 'survival' && (
+      {survival && (
         <Alert tone="warning" title="Survival mode — showing essentials only">
           Your balance is below the survival threshold on this budget. Non-essential
           items are held back until it clears.
@@ -148,10 +176,13 @@ export default function Recommendations() {
           <div className="row row--between">
             <div>
               <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)' }}>
-                Today&apos;s allowance
+                Left to spend today
               </p>
               <p className="num" style={{ fontSize: 'var(--t-xl)', fontWeight: 'var(--fw-extra)' }}>
-                {money(remainingToday ?? dailyAllowance)}
+                {money(remainingToday)}
+              </p>
+              <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>
+                of your {money(dailyAllowance)} daily allowance
               </p>
             </div>
             <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted-light)', maxWidth: '32ch' }}>
@@ -201,9 +232,9 @@ export default function Recommendations() {
             <div style={{ minWidth: 180 }}>
               <Field id="rec-category" label="Category">
                 {({ id, describedBy }) => (
-                  <Input
+                  <Select
                     id={id}
-                    placeholder="Groceries"
+                    options={CATEGORY_OPTIONS}
                     value={category}
                     describedBy={describedBy}
                     onChange={(e) => setCategory(e.target.value)}
@@ -219,9 +250,10 @@ export default function Recommendations() {
                     inputMode="decimal"
                     prefix="R"
                     placeholder="No limit"
-                    value={maxPrice}
+                    value={maxPriceDraft}
                     describedBy={describedBy}
-                    onChange={(e) => setMaxPrice(e.target.value.replace(/[^\d.]/g, ''))}
+                    onChange={(e) => setMaxPriceDraft(e.target.value.replace(/[^\d.]/g, ''))}
+                    onBlur={() => setMaxPrice(maxPriceDraft)}
                   />
                 )}
               </Field>
@@ -276,6 +308,12 @@ export default function Recommendations() {
         </Alert>
       )}
 
+      {closestOnly && !loading && (
+        <Alert tone="info" title="No exact match">
+          Nothing is listed under those exact words, so these are the closest matches.
+        </Alert>
+      )}
+
       {loading ? (
         <div className="stack stack--tight">
           {[0, 1, 2].map((i) => <Skeleton key={i} height={128} radius="var(--r-lg)" />)}
@@ -283,7 +321,8 @@ export default function Recommendations() {
       ) : results.length === 0 ? (
         <Card>
           <EmptyState icon="✨" title="Nothing ranked yet">
-            Try a broader search, or tick &ldquo;show things outside today&apos;s
+            {response?.message ? `${response.message} ` : ''}
+            Try a broader search, or tick &ldquo;Include items over today&apos;s
             allowance&rdquo; to see more.
           </EmptyState>
         </Card>
@@ -297,6 +336,14 @@ export default function Recommendations() {
               onAdd={() => handleAdd(rec)}
             />
           ))}
+          <div className="row row--between" style={{ marginTop: 'var(--s-4)' }}>
+            <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted-light)', maxWidth: '52ch' }}>
+              Want every store and filter? <Link to={`/search${query ? `?q=${encodeURIComponent(query)}` : ''}`}>Search the full catalogue</Link>.
+            </p>
+            <Button variant="ghost" onClick={() => navigate('/compare')}>
+              Compare my list →
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -326,7 +373,10 @@ function RecommendationCard({ rec, qty, onAdd }) {
             : <Badge tone="warning">Over today&apos;s allowance</Badge>}
           {rec.is_essential && <Badge tone="accent">Essential</Badge>}
           {rec.rating != null && (
-            <Badge tone="neutral">★ {rec.rating.toFixed(1)} ({rec.rating_count})</Badge>
+            // rating_count 0 means "not recorded", not "no reviews".
+            <Badge tone="neutral">
+              ★ {rec.rating.toFixed(1)}{rec.rating_count > 0 ? ` (${rec.rating_count})` : ''}
+            </Badge>
           )}
           {rec.distance_km != null && (
             <Badge tone="neutral">{rec.distance_km.toFixed(1)} km away</Badge>
@@ -341,7 +391,9 @@ function RecommendationCard({ rec, qty, onAdd }) {
         <div>
           <div className="result__price num">{money(rec.true_cost)}</div>
           <p className="result__ship">
-            {rec.true_cost !== rec.price ? `${money(rec.price)} sticker price` : 'true cost'}
+            {rec.hidden_cost > 0
+              ? `${money(rec.price)} + ${money(rec.hidden_cost)} delivery & fees`
+              : 'true cost'}
           </p>
         </div>
         <Button size="sm" variant={qty > 0 ? 'secondary' : 'primary'} onClick={onAdd}>

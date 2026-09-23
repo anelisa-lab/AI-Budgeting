@@ -180,3 +180,13 @@ def test_intent_words_are_not_left_as_keywords():
     assert parsed.sort_hint == "rating_desc"
     assert parsed.keywords == ["bread"]
     assert parse_query("affordable essentials soap").keywords == ["soap"]
+
+
+def test_r_ending_a_word_is_not_a_rand_amount():
+    # Regression: the "r" of "paper 2-ply" read as R2, so /search for the
+    # catalogue's own "Toilet Paper 2-Ply" was capped at R2 and found nothing.
+    parsed = parse_query("Toilet Paper 2-Ply")
+    assert parsed.max_price is None
+    assert "paper" in parsed.keywords
+    assert parse_query("soap R25").max_price == Decimal("25")
+

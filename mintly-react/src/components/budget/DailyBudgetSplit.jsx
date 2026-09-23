@@ -1,75 +1,120 @@
 /**
- * DailyBudgetSplit — presentation for the backend's live daily allowance.
+ * DailyBudgetSplit — Member 6's Daily Budget Split, on screen.
+ * Member 8 (Phase 3: "Build the Daily Budget Split display component").
+ *
+ * Renders a BudgetSplitOut exactly the way docs/BUDGET_SPLIT_CONTRACT.md
+ * describes, so every screen that shows the daily figure shows it the same:
+ *
+ *  - `daily_limit` is the headline and is NEVER recomputed here — the backend
+ *    rounds it down so the days can't allocate more than the budget holds.
+ *  - "left today" is `remaining_today`, with a bar of spent_today / daily_limit.
+ *  - `tomorrow_limit` is shown only when it differs, and hidden when null
+ *    (payout day — there is no tomorrow in this cycle).
+ *  - survival mode leads with the rate from tomorrow, essentials only.
+ *  - allowance exhausted is detected on the BALANCE, not on `mode` (§4), and
+ *    hides the daily figure entirely.
+ *  - `message` is written for students by the backend and rendered verbatim.
+ *
+ * If the split endpoint could not answer, `split` is null and the card falls
+ * back to `fallbackAllowance` (remaining ÷ days left), labelled as such.
  */
-import { Badge, Card, Progress } from '../ui/index.js';
-import { money, shortDate } from '../../lib/format.js';
+
+import { Badge, Progress } from '../ui/index.js';
+import { money, plural, shortDate } from '../../lib/format.js';
 
 export default function DailyBudgetSplit({
-  dailyAllowance = 0,
-  remainingToday = 0,
-  spentToday = 0,
-  mode = 'normal',
-  message = '',
-  days = [],
+  split,
+  fallbackAllowance = 0,
+  remaining = 0,
+  daysLeft = 0,
+  children,
 }) {
-  const usedRatio = dailyAllowance > 0
-    ? Math.min(1, Math.max(0, spentToday / dailyAllowance))
-    : 0;
+  const survival = split?.mode === 'survival';
+  const exhausted = remaining <= 0;
+  const overToday = split ? split.spent_today > split.daily_limit : false;
+  const headline = survival && split?.tomorrow_limit != null
+    ? split.tomorrow_limit
+    : (split?.daily_limit ?? fallbackAllowance);
+  const schedule = (split?.days || []).slice(0, 7);
 
   return (
-    <Card tone="butter">
-      <div className="row row--between" style={{ alignItems: 'flex-start' }}>
-        <div>
-          <p className="dash-label">Daily Budget Split</p>
-          <div className="dash-amount num" style={{ marginTop: 'var(--s-3)' }}>
-            {money(dailyAllowance)}
-          </div>
-          <p className="dash-sub dash-sub--on-butter">safe daily allowance</p>
-        </div>
-        {mode === 'survival' && <Badge tone="warning">Survival mode</Badge>}
+    <>
+      <div className="row row--between">
+        <p className="dash-label">Safe to spend</p>
+        {survival && <Badge tone="danger">Survival mode</Badge>}
       </div>
 
-      {message && (
-        <p style={{ marginTop: 'var(--s-4)', fontSize: 'var(--t-sm)', color: 'rgba(28,28,25,0.75)' }}>
-          {message}
+      {exhausted ? (
+        <p className="dash-sub dash-sub--on-butter" style={{ marginTop: 'var(--s-3)' }}>
+          {plural(split?.days_remaining ?? daysLeft, 'day')} until your next payout.
+        </p>
+      ) : (
+        <>
+          <div className="dash-amount num" style={{ marginTop: 'var(--s-3)' }}>
+            {money(headline)}
+          </div>
+          <p className="dash-sub dash-sub--on-butter">
+            {survival ? 'a day from tomorrow — essentials only' : 'per day, for the rest of the period'}
+          </p>
+          {split && (
+            <div style={{ marginTop: 'var(--s-4)' }}>
+              <Progress
+                value={split.daily_limit > 0 ? Math.min(1, split.spent_today / split.daily_limit) : 1}
+                tone={overToday ? 'danger' : 'brand'}
+                surface="butter"
+                label={`${money(split.remaining_today)} left to spend today`}
+              />
+              <p className="dash-sub dash-sub--on-butter" style={{ marginTop: 'var(--s-2)' }}>
+                {money(split.remaining_today)} left today
+                {overToday && ` · ${money(split.spent_today - split.daily_limit)} over`}
+                {split.tomorrow_limit != null && !survival
+                  && split.tomorrow_limit !== split.daily_limit
+                  && ` · from tomorrow ${money(split.tomorrow_limit)} a day`}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {split?.message && (
+        <p className="dash-sub dash-sub--on-butter" style={{ fontSize: 'var(--t-xs)', marginTop: 'var(--s-3)' }}>
+          {split.message}
         </p>
       )}
 
-      <div style={{ marginTop: 'var(--s-5)' }}>
-        <div className="row row--between" style={{ marginBottom: 'var(--s-2)' }}>
-          <span style={{ fontSize: 'var(--t-xs)', fontWeight: 'var(--fw-bold)' }}>Today</span>
-          <span className="num" style={{ fontSize: 'var(--t-xs)', fontWeight: 'var(--fw-extra)' }}>
-            {money(remainingToday)} left
-          </span>
-        </div>
-        <Progress
-          value={usedRatio}
-          tone={usedRatio >= 1 ? 'danger' : usedRatio >= 0.75 ? 'warning' : 'brand'}
-        />
-        <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>
-          {spentToday > 0 ? `${money(spentToday)} spent today.` : 'Nothing recorded today yet.'}
+      {!split && !exhausted && (
+        <p className="dash-sub dash-sub--on-butter" style={{ fontSize: 'var(--t-xs)', marginTop: 'var(--s-2)' }}>
+          Worked out in the app for now — remaining ÷ days left. It switches to the
+          backend&apos;s Daily Budget Split as soon as that endpoint answers.
         </p>
-      </div>
+      )}
 
-      {days.length > 0 && (
-        <details style={{ marginTop: 'var(--s-5)' }}>
+      {schedule.length > 1 && !exhausted && (
+        <details style={{ marginTop: 'var(--s-4)' }}>
           <summary style={{ cursor: 'pointer', fontSize: 'var(--t-xs)', fontWeight: 'var(--fw-bold)' }}>
-            View day-by-day split
+            The next {schedule.length} days
           </summary>
           <div className="stack stack--tight" style={{ marginTop: 'var(--s-3)' }}>
-            {days.slice(0, 7).map((day, index) => (
-              <div className="row row--between" key={day.date || day.day || index}>
-                <span style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>
-                  {day.date ? shortDate(day.date) : `Day ${day.day ?? index + 1}`}
+            {schedule.map((day) => (
+              <div className="row row--between" key={day.limit_date}>
+                <span style={{ fontSize: 'var(--t-xs)' }}>
+                  {day.is_today ? 'Today' : shortDate(day.limit_date)}
                 </span>
                 <span className="num" style={{ fontSize: 'var(--t-xs)', fontWeight: 'var(--fw-bold)' }}>
-                  {money(day.amount ?? day.daily_limit ?? 0)}
+                  {day.is_today && day.spent_amount > 0
+                    ? `${money(day.spent_amount)} of ${money(day.planned_limit)}`
+                    : money(day.planned_limit)}
                 </span>
               </div>
             ))}
           </div>
+          <p className="dash-sub dash-sub--on-butter" style={{ fontSize: 'var(--t-xs)', marginTop: 'var(--s-2)' }}>
+            Each day&apos;s share of what is left — not money to add up.
+          </p>
         </details>
       )}
-    </Card>
+
+      {children}
+    </>
   );
 }

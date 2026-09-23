@@ -205,7 +205,9 @@ export function BudgetProvider({ children }) {
     // ("mode: 'survival' turns the UI amber").
     let health = 'good';
     if (budget && remaining <= 0 && spendable > 0) health = 'over';
-    else if (spent > onPace * 1.15 && daysLeft > 0 && spent > 0) health = 'fast';
+    // Needs at least one full day behind it: on day 0 the pace is R0, so any
+    // spend at all used to read as "spending faster than planned".
+    else if (daysGone > 0 && spent > onPace * 1.15 && daysLeft > 0 && spent > 0) health = 'fast';
     else if (ratio >= 0.9) health = 'tight';
     else if (split?.mode === 'survival') health = 'tight';
 

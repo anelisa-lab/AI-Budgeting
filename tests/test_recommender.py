@@ -334,6 +334,22 @@ def test_missing_attribute_is_a_mismatch_not_a_free_pass():
     assert results == []
 
 
+def test_colour_word_in_the_product_name_counts_as_a_match():
+    """
+    Regression: "Brown Bread" and "Full Cream Milk" have no colour on record,
+    so reading "brown"/"cream" as a required colour dropped the exact product
+    the student typed — and broke Compare, which looks offers up by name.
+    """
+    for query, name in (("brown bread", "Brown Bread"), ("full cream milk", "Full Cream Milk")):
+        results = recommend(
+            [candidate(1, "20.00", name=name, colour=None)],
+            UserContext(remaining_amount=D("1000.00")),
+            parse_query(query),
+            now=NOW,
+        )
+        assert [r.candidate.offer_id for r in results] == [1], query
+
+
 def test_inferred_category_does_not_filter():
     """
     The Phase 3 reversal. The parser files washing powder under Toiletries;

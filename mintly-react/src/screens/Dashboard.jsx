@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
 import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import DailyBudgetSplit from '../components/budget/DailyBudgetSplit.jsx';
 import { money, plural, shortDate } from '../lib/format.js';
 import * as v from '../lib/validation.js';
 
@@ -103,9 +104,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const {
-    budget, transactions, loading, error, supports, split, serverHealth, survival, overToday,
+    budget, transactions, loading, error, supports, split, serverHealth,
     savings, spendable, spent, remaining, ratio,
-    daysLeft, dailyAllowance, dailyAllowanceIsFromServer, health, byCategory,
+    daysLeft, dailyAllowance, health, byCategory,
     addTransaction,
   } = budgetCtx;
 
@@ -125,8 +126,6 @@ export default function Dashboard() {
   );
 
   const status = serverStatus(serverHealth) || healthCopy(health, budgetCtx);
-  // Allowance exhausted: detect on the balance, not on `mode` (contract §4).
-  const exhausted = Boolean(budget) && remaining <= 0;
   const progressTone = health === 'over' ? 'danger' : health === 'good' ? 'brand' : 'warning';
 
   async function submitTransaction(event) {
@@ -271,64 +270,15 @@ export default function Dashboard() {
         </Card>
 
         <Card tone="butter">
-          <div className="row row--between">
-            <p className="dash-label">Safe to spend</p>
-            {survival && <Badge tone="danger">Survival mode</Badge>}
-          </div>
-          {exhausted ? (
-            // Contract §4 "Allowance exhausted": hide the daily figure.
-            <p className="dash-sub dash-sub--on-butter" style={{ marginTop: 'var(--s-3)' }}>
-              {plural(daysLeft, 'day')} until your next payout.
-            </p>
-          ) : (
-            <>
-              <div className="dash-amount num" style={{ marginTop: 'var(--s-3)' }}>
-                {/* Survival mode leads with the rate from tomorrow (contract §4). */}
-                {money(survival && split?.tomorrow_limit != null ? split.tomorrow_limit : dailyAllowance)}
-              </div>
-              <p className="dash-sub dash-sub--on-butter">
-                {survival ? 'a day from tomorrow — essentials only' : 'per day, for the rest of the period'}
-              </p>
-              {split && (
-                <div style={{ marginTop: 'var(--s-4)' }}>
-                  <Progress
-                    value={split.daily_limit > 0 ? Math.min(1, split.spent_today / split.daily_limit) : 1}
-                    tone={overToday ? 'danger' : 'brand'}
-                    surface="butter"
-                    label={`${money(split.remaining_today)} left to spend today`}
-                  />
-                  <p className="dash-sub dash-sub--on-butter" style={{ marginTop: 'var(--s-2)' }}>
-                    {money(split.remaining_today)} left today
-                    {overToday && ` · ${money(split.spent_today - split.daily_limit)} over`}
-                    {split.tomorrow_limit != null && !survival
-                      && split.tomorrow_limit !== split.daily_limit
-                      && ` · from tomorrow ${money(split.tomorrow_limit)} a day`}
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-          {split?.message && (
-            // Written for students by the backend — rendered verbatim.
-            <p
-              className="dash-sub dash-sub--on-butter"
-              style={{ fontSize: 'var(--t-xs)', marginTop: 'var(--s-3)' }}
-            >
-              {split.message}
-            </p>
-          )}
-          {!dailyAllowanceIsFromServer && (
-            <p
-              className="dash-sub dash-sub--on-butter"
-              style={{ fontSize: 'var(--t-xs)', marginTop: 'var(--s-2)' }}
-            >
-              Worked out in the app for now — remaining ÷ days left. It switches to the
-              backend&apos;s Daily Budget Split as soon as that endpoint returns one.
-            </p>
-          )}
+          <DailyBudgetSplit
+            split={split}
+            fallbackAllowance={dailyAllowance}
+            remaining={remaining}
+            daysLeft={daysLeft}
+          />
           <div style={{ marginTop: 'var(--s-5)' }}>
-            <Button variant="primary" size="sm" block onClick={() => navigate('/search')}>
-              Find something cheaper →
+            <Button variant="primary" size="sm" block onClick={() => navigate('/recommendations')}>
+              See what fits today →
             </Button>
           </div>
         </Card>

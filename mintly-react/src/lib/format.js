@@ -36,21 +36,42 @@ export function plural(count, singular, pluralForm) {
   return `${count} ${count === 1 ? singular : (pluralForm || `${singular}s`)}`;
 }
 
+/**
+ * `new Date('2026-10-13')` is midnight UTC, which is the 12th anywhere west of
+ * Greenwich. Date-only strings from the backend are calendar days, so they are
+ * read as LOCAL midnight instead.
+ */
+export function parseDate(value) {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date(value);
+}
+
+/** Today's calendar date, YYYY-MM-DD, in the student's own timezone. */
+export function todayIso() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function shortDate(value) {
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
 }
 
 export function longDate(value) {
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 /** Whole days from today until `value` (negative = in the past). */
 export function daysUntil(value) {
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return 0;
   const start = new Date();
   start.setHours(0, 0, 0, 0);

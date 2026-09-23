@@ -112,6 +112,7 @@ export function updatePreferences(token, patch, opts = {}) {
  *   cycle_end_date:   date (YYYY-MM-DD),
  *   budget_kind: "monthly" | "available"   (default "monthly")
  *   savings_percentage: Decimal 0..100     (default 0)
+ *   survival_threshold: Decimal >= 0 | null (survival mode below this balance)
  * }
  * 409 when the user already has an active budget (unique partial index
  * uq_one_active_budget_per_user).
@@ -160,9 +161,10 @@ export function getBudgetDashboard(token, { recent } = {}, opts = {}) {
 
 /**
  * PUT /budgets/{budget_id}  ->  BudgetOut
- * Body: BudgetUpdateRequest { total_amount?: Decimal > 0, cycle_end_date?: date }
+ * Body: BudgetUpdateRequest { total_amount?: Decimal > 0, cycle_end_date?: date,
+ *                             survival_threshold?: Decimal >= 0 }
  *
- * Only those two fields are updatable. Changing total_amount shifts
+ * Only those three fields are updatable. Changing total_amount shifts
  * remaining_amount by the same delta server-side, so spend already recorded is
  * preserved — the frontend must NOT try to recompute it.
  */
@@ -293,6 +295,33 @@ export function getRecommendations(token, body = {}, opts = {}) {
     if (body[key] !== undefined && body[key] !== null && body[key] !== '') clean[key] = body[key];
   }
   return request('/recommendations', { method: 'POST', body: clean, token, ...opts });
+}
+
+/* =======================================================================
+ * TRUE COST  —  app/routers/true_cost.py   (prefix "/true-cost")
+ * =====================================================================*/
+
+/**
+ * POST /true-cost  ->  TrueCostResponse {
+ *   results: TrueCostOut[] { offer_id, quantity, fulfilment, subtotal, shipping,
+ *            charges[], charges_total, travel_cost, true_cost, hidden_cost,
+ *            distance_km, notes[], product_name, store_name }  (cheapest first),
+ *   cheapest_offer_id, saving_vs_dearest
+ * }
+ * Body: TrueCostRequest { offer_ids: int[1..50], quantity 1..99,
+ *                         fulfilment 'delivery' | 'collection', use_my_location }
+ *
+ * Every offer is priced as its OWN order, so this answers "which of these
+ * alternatives is really cheapest" — the same product at several stores. It
+ * is not a basket total: summing results would charge delivery once per item.
+ */
+export function getTrueCost(token, { offer_ids, quantity = 1, fulfilment = 'delivery', use_my_location = true }, opts = {}) {
+  return request('/true-cost', {
+    method: 'POST',
+    body: { offer_ids, quantity, fulfilment, use_my_location },
+    token,
+    ...opts,
+  });
 }
 
 /* =======================================================================

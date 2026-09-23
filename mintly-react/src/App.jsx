@@ -9,8 +9,9 @@
  *   /dashboard       private  budget dashboard         (Member 8)
  *   /budget          private  budget entry / edit      (Member 8)
  *   /search          private  search + results         (Member 9)
- *   /recommendations private  ranked picks              (Member 7, Phase 2)
+ *   /recommendations private  ranked picks             (Member 7, Phase 3)
  *   /compare         private  basket comparison        (Member 9)
+ *   /profile         private  profile & preferences    (Member 8, Phase 3)
  *   *                         not found
  *
  * Private routes are wrapped in <ProtectedRoute>, which waits for the stored
@@ -31,15 +32,22 @@ import BudgetEntry from './screens/BudgetEntry.jsx';
 import Search from './screens/Search.jsx';
 import Recommendations from './screens/Recommendations.jsx';
 import Compare from './screens/Compare.jsx';
+import Profile from './screens/Profile.jsx';
 import NotFound from './screens/NotFound.jsx';
 
 import { useAuth } from './context/AuthContext.jsx';
 
-/** Signed-in students skip the marketing page and the auth screens. */
-function PublicOnly({ children }) {
+/**
+ * Signed-in students skip the marketing page and the auth screens.
+ *
+ * `to` exists for /register: the moment an account is created this guard
+ * re-renders as signed-in, and it can win the race against Register's own
+ * navigate('/budget') — so the register route names step 2 itself.
+ */
+function PublicOnly({ children, to = '/dashboard' }) {
   const { isAuthenticated, status } = useAuth();
   if (status === 'loading') return null;
-  return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
+  return isAuthenticated ? <Navigate to={to} replace /> : children;
 }
 
 export default function App() {
@@ -50,7 +58,7 @@ export default function App() {
         element={<PublicOnly><AppShell><Landing /></AppShell></PublicOnly>}
       />
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
-      <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
+      <Route path="/register" element={<PublicOnly to="/budget"><Register /></PublicOnly>} />
 
       <Route
         path="/dashboard"
@@ -71,6 +79,11 @@ export default function App() {
       <Route
         path="/compare"
         element={<ProtectedRoute><AppShell><Compare /></AppShell></ProtectedRoute>}
+      />
+
+      <Route
+        path="/profile"
+        element={<ProtectedRoute><AppShell><Profile /></AppShell></ProtectedRoute>}
       />
 
       <Route path="*" element={<AppShell><NotFound /></AppShell>} />

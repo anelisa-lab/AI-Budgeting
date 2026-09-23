@@ -16,6 +16,7 @@
  *   app/routers/search.py  /search and its query parameters
  *   app/routers/budget_split.py      /budget-split, /budget-split/check
  *   app/routers/recommendations.py   /recommendations
+ *   app/routers/true_cost.py         /true-cost
  *   app/schemas.py         every request and response model
  *
  * The responses it produces deliberately serialise Decimal as a STRING, the
@@ -79,7 +80,10 @@ export const ROUTES = [
   {
     name: 'createBudget',
     method: 'POST', pattern: /^\/budgets$/, auth: true,
-    body: ['total_amount', 'cycle_start_date', 'cycle_end_date', 'budget_kind', 'savings_percentage'],
+    body: [
+      'total_amount', 'cycle_start_date', 'cycle_end_date', 'budget_kind', 'savings_percentage',
+      'survival_threshold',
+    ],
     requiredBody: ['total_amount', 'cycle_start_date', 'cycle_end_date'],
   },
   {
@@ -136,6 +140,12 @@ export const ROUTES = [
       'include_unaffordable', 'candidate_pool',
     ],
     requiredBody: [],
+  },
+  {
+    name: 'getTrueCost',
+    method: 'POST', pattern: /^\/true-cost$/, auth: true,
+    body: ['offer_ids', 'quantity', 'fulfilment', 'use_my_location'],
+    requiredBody: ['offer_ids'],
   },
 ];
 

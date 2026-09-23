@@ -32,7 +32,7 @@ from app.budget_split import build_split
 from app.database import get_connection
 from app.dependencies import get_current_user_id
 from app.geo import distance_between, fetch_user_location
-from app.query_parser import ParsedQuery, parse_query
+from app.query_parser import ParsedQuery, parse_query, word_pattern
 from app.recommender import Candidate, ScoredOffer, UserContext, recommend, relevance_score
 from app.routers.budget_split import spent_by_date
 from app.schemas import (
@@ -89,12 +89,12 @@ def _candidate_sql(payload: RecommendationRequest, parsed: ParsedQuery) -> tuple
     if parsed.category_is_explicit and parsed.category:
         conditions.append("p.category ILIKE %s")
         params.append(parsed.category)
-    if parsed.colour:
-        conditions.append("p.colour ILIKE %s")
-        params.append(parsed.colour)
-    if parsed.size:
-        conditions.append("p.size ILIKE %s")
-        params.append(parsed.size)
+    # A parsed colour/size also matches the product name ("Brown Bread" has no
+    # colour on record) — see attribute_matches() in app/recommender.py.
+    for column, wanted in (("p.colour", parsed.colour), ("p.size", parsed.size)):
+        if wanted:
+            conditions.append(f"({column} ILIKE %s OR p.name ~* %s)")
+            params.extend([wanted, word_pattern(wanted)])
 
     max_price = payload.max_price or parsed.max_price
     if max_price is not None:
