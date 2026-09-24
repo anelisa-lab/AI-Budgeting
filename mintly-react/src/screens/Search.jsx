@@ -31,7 +31,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, Select, Skeleton,
 } from '../components/ui/index.js';
@@ -359,6 +359,7 @@ export default function Search() {
             error={recsError}
             qtyOf={qtyOf}
             onAdd={handleAdd}
+            query={filters.q}
           />
 
           <div className="results-head">
@@ -456,7 +457,7 @@ export default function Search() {
  * delivery + fees) and the backend's plain-English reason — the presentation
  * promises "justification provided for recommendations wherever possible".
  */
-function Recommendations({ recs, loading, error, qtyOf, onAdd }) {
+function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
   if (loading && !recs) {
     return <Skeleton height={140} radius="var(--r-lg)" />;
   }
@@ -478,7 +479,12 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd }) {
         <h2 style={{ fontSize: 'var(--t-md)', fontFamily: 'var(--font-sans)', fontWeight: 'var(--fw-extra)' }}>
           <span aria-hidden="true">✦</span> Recommended for you
         </h2>
-        {survival && <Badge tone="danger">Survival mode · essentials only</Badge>}
+        <div className="row" style={{ gap: 'var(--s-2)' }}>
+          {survival && <Badge tone="danger">Survival mode · essentials only</Badge>}
+          <Link to="/recommendations" state={{ query }} style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
+            More picks →
+          </Link>
+        </div>
       </div>
 
       {survival && recs.budget.message && (

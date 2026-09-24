@@ -15,9 +15,11 @@ import { API_BASE_URL } from '../../api/client.js';
 
 const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
+  { to: '/recommendations', label: 'For you' },
   { to: '/search', label: 'Search' },
   { to: '/compare', label: 'Compare' },
   { to: '/budget', label: 'Budget' },
+  { to: '/profile', label: 'Profile' },
 ];
 
 export default function NavBar() {
@@ -51,15 +53,21 @@ export default function NavBar() {
         )}
 
         <div className="nav__right">
-          <Badge tone="neutral" title={`Connected to the backend at ${API_BASE_URL}`}>
-            Live API
-          </Badge>
+          <span className="nav__api">
+            <Badge tone="neutral" title={`Connected to the backend at ${API_BASE_URL}`}>
+              Live API
+            </Badge>
+          </span>
 
           {isAuthenticated ? (
             <>
-              <span className="badge badge--accent" title={user?.email}>
+              <NavLink
+                to="/profile"
+                className="badge badge--accent"
+                title={`${user?.email || ''} — profile & preferences`}
+              >
                 {user?.name?.split(' ')[0] || 'Student'}
-              </span>
+              </NavLink>
               <Button variant="ghost" size="sm" onClick={handleLogout}>
                 Sign out
               </Button>

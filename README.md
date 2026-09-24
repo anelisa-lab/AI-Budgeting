@@ -57,7 +57,7 @@ the live API contract and test endpoints without Postman/Thunder Client.
 
 ## Running in VS Code (macOS)
 
-1. Open the `budget-backend-python` folder in VS Code
+1. Open the `AI-Budgeting` repository folder in VS Code
 2. Open the integrated terminal (`` Cmd+` ``) and run the setup commands above
 3. Install the **Python** extension (by Microsoft) if you haven't — VS Code
    will prompt you to select the `venv` interpreter; choose it so imports resolve
@@ -339,8 +339,33 @@ The React app now uses the Phase 3 endpoints rather than only the Phase 2 ones:
   `daily_split` from the transaction response and shows `daily_limit_message`.
 - **Search**: a "Recommended for you" panel calls `POST /recommendations`. It
   shows the true cost, the plain-English explanation, a closest-match notice
-  when `matched_query` is false, and survival mode.
-- `npm run test:contract` covers the new calls (36 checks).
+  when `matched_query` is false, and survival mode, and links to For you.
+- **For you** (`/recommendations`, Member 7): the recommendation-results
+  screen — cards with rank, true cost, explanation and budget fit; category,
+  max-price, delivery/collection and "over today's allowance" filters; sort by
+  rank, true cost, distance or rating.
+- **Daily Budget Split component** (`src/components/budget/DailyBudgetSplit.jsx`,
+  Member 8): the dashboard's "Safe to spend" card, including the next 7 days
+  of the schedule.
+- **Compare** (Member 9): one "Getting it" choice (collect / deliver) drives the
+  whole page; "Item by item" prices each store's offer with `POST /true-cost`;
+  "Can I afford this today?" calls `POST /budget-split/check` on the cheapest
+  single-shop total.
+- **Profile** (`/profile`): name, preferred categories and stores, and travel
+  radius — the preferences the recommender scores on.
+- **Budget**: a survival-mode threshold ("Broke Week Mode") can be set when
+  creating or editing a budget.
+- `npm run test:contract` covers the new calls (40 checks).
+
+### Phase 3 search fix
+
+A colour or size that the parser pulls out of free text is now also matched
+against the product **name**. Before, "Brown Bread", "White Bread" and "Full
+Cream Milk" returned nothing from `/search` and `/recommendations`, because
+"brown"/"white"/"cream" were required as `products.colour`, which is NULL for
+food. That also broke Compare, which looks offers up by product name. An
+explicit `?colour=` / `?size=` filter is still strict. The parser also no
+longer reads the "r" that ends "paper 2-ply" as "R2".
 
 ## Tests
 
@@ -349,7 +374,7 @@ pytest                            # backend, no database needed
 cd mintly-react && npm run lint && npm run test:contract && npm run build
 ```
 
-126 tests covering the recommender, true-cost, budget-split, geo, query
+140 tests covering the recommender, true-cost, budget-split, geo, query
 parser and budget arithmetic (`budget_calc`). They are all pure functions, so
 **no database or `.env` is needed** — useful for Member 10's QA checklist and
 for CI.

@@ -31,14 +31,16 @@ import {
 // The frontend under test. Plain JS, no JSX, no React — importable as-is.
 process.env.VITE_API_BASE_URL = 'http://localhost:4000';
 const {
-  auth, profile, budgets, budgetSplit, recommendations, transactions, search,
+  auth, profile, budgets, budgetSplit, recommendations, transactions, search, trueCost,
 } = await import('../../src/api/client.js');
 const { ApiError } = await import('../../src/api/http.js');
 const {
   buildSearchParams, filtersFromUrl, filtersToUrl, rank,
   priceListByStore, splitShopTotal, comparableGroups,
 } = await import('../../src/lib/search.js');
-const { budgetToApi, budgetToFormValues, daysBetween } = await import('../../src/api/normalise.js');
+const {
+  budgetToApi, budgetToFormValues, budgetUpdateToApi, daysBetween,
+} = await import('../../src/api/normalise.js');
 
 const BASE = 'http://localhost:4000';
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.test.token';
@@ -633,6 +635,59 @@ await test('POST /recommendations drops empty keys and coerces every result', as
   assert.equal(top.hidden_cost, 3.5);
   assert.equal(top.matched_query, false);
   assert.equal(top.explanation, 'Cheapest.');
+});
+
+await test('POST /true-cost sends offer ids + quantity and coerces the breakdown', async () => {
+  installFetch(() => ({
+    body: {
+      results: [{
+        offer_id: 11, currency: 'ZAR', quantity: 2, fulfilment: 'collection',
+        subtotal: dec(35.9), shipping: dec(0), charges_total: dec(5.5), travel_cost: dec(12),
+        true_cost: dec(53.4), hidden_cost: dec(17.5), distance_km: 2.4, notes: [],
+        charges: [{ label: 'Card payment surcharge', charge_type: 'card', amount: dec(3.5), waived: false }],
+        product_name: 'Brown Bread', store_name: 'Shoprite',
+      }],
+      cheapest_offer_id: 11, saving_vs_dearest: dec(0),
+    },
+  }));
+  const res = await trueCost.compare(TOKEN, [11, 12], { quantity: 2, fulfilment: 'collection' });
+  assert.deepEqual(lastRequest().body, {
+    offer_ids: [11, 12], quantity: 2, fulfilment: 'collection', use_my_location: true,
+  });
+  assert.equal(res.results[0].true_cost, 53.4);
+  assert.equal(res.results[0].charges[0].amount, 3.5);
+  assert.equal(res.cheapest_offer_id, 11);
+});
+
+await test('no offer ids means no /true-cost request at all', async () => {
+  installFetch(() => { throw new Error('should not be called'); });
+  const res = await trueCost.compare(TOKEN, []);
+  assert.deepEqual(res.results, []);
+});
+
+await test('survival threshold round-trips through create, edit and update', () => {
+  const body = budgetToApi({ amount: 1650, payoutDate: '2026-09-01', periodDays: 30, survivalThreshold: '200' });
+  assert.equal(body.survival_threshold, 200);
+  assert.equal(budgetToApi({ amount: 1650, payoutDate: '2026-09-01', periodDays: 30 }).survival_threshold, null);
+  const form = budgetToFormValues({ total_amount: 1650, cycle_start_date: '2026-09-01',
+    cycle_end_date: '2026-10-01', savings_percentage: 0, survival_threshold: 200 });
+  assert.equal(form.survivalThreshold, '200');
+  assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '' }, {}), {});
+  assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '0' }, {}), { survival_threshold: 0 });
+});
+
+await test('the same product added from two stores is one item-by-item group', () => {
+  const offers = [
+    { offer_id: 1, product_id: 5, store_id: 1, product_name: 'Bread', store_name: 'A', price: 20, total_cost: 20 },
+    { offer_id: 2, product_id: 5, store_id: 2, product_name: 'Bread', store_name: 'B', price: 18, total_cost: 18 },
+  ];
+  const lines = [
+    { offer_id: 1, product_id: 5, qty: 1, price: 20 },
+    { offer_id: 2, product_id: 5, qty: 2, price: 18 },
+  ];
+  const groups = comparableGroups(lines, new Map([[5, offers]]));
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].qty, 3);
 });
 
 /* ==================================================== NETWORK FAULTS ===== */

@@ -269,13 +269,14 @@ export function rank(offers, { budget = 0, preferences = null } = {}) {
  *
  * Delivery: the backend carries shipping_cost per OFFER, and there is no
  * order-level delivery rule on `stores`. Charging every line's shipping would
- * bill a student one delivery per item. So a physical store costs nothing to
- * "deliver" (you carry it), and for an online or mixed store we charge the
+ * bill a student one delivery per item. So when collecting, a physical store
+ * costs nothing to "deliver" (you carry it); when delivering, or for an online
+ * or mixed store, we charge the
  * largest single shipping_cost among the lines bought there — the closest
  * honest approximation of one delivery. A real order-level rule belongs in the
  * backend; it is listed in docs/BACKEND_INTEGRATION.md.
  */
-export function priceListByStore(lines, offersByProduct) {
+export function priceListByStore(lines, offersByProduct, { fulfilment = 'collection' } = {}) {
   const stores = new Map();
   for (const offers of offersByProduct.values()) {
     for (const o of offers) {
@@ -313,7 +314,10 @@ export function priceListByStore(lines, offersByProduct) {
         }
       }
 
-      const delivery = store.store_type === 'physical' ? 0 : biggestShipping;
+      // Collecting from a walk-in store costs no delivery; asking for delivery
+      // (or an online-only store) costs one delivery for the whole order.
+      const delivery = fulfilment === 'collection' && store.store_type === 'physical'
+        ? 0 : biggestShipping;
       const lineCount = stocked + missing;
 
       return {
@@ -358,7 +362,15 @@ export function splitShopTotal(lines, offersByProduct) {
  * Only products with more than one offer are worth showing.
  */
 export function comparableGroups(lines, offersByProduct) {
-  return lines
+  // One group per PRODUCT: the same bread added from two stores is still one
+  // head-to-head (and two groups would share a React key).
+  const byProduct = new Map();
+  for (const line of lines) {
+    const seen = byProduct.get(line.product_id);
+    if (seen) seen.qty += line.qty;
+    else byProduct.set(line.product_id, { ...line });
+  }
+  return [...byProduct.values()]
     .map((line) => {
       const offers = [...(offersByProduct.get(line.product_id) || [])]
         .sort((a, b) => a.total_cost - b.total_cost);
@@ -374,6 +386,7 @@ export function comparableGroups(lines, offersByProduct) {
         offers,
         cheapest,
         dearest,
+        qty: line.qty,
         saving: Number((dearest.total_cost - cheapest.total_cost).toFixed(2)),
       };
     })

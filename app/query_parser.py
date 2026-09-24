@@ -204,9 +204,10 @@ _MIN_RE = re.compile(
     rf"(?:over|above|more\s+than|at\s+least|from|min(?:imum)?(?:\s+of)?)\s+{_AMOUNT}",
     re.I,
 )
-# A bare amount that is explicitly money (has R or 'rand'), e.g. "sneakers R500"
+# A bare amount that is explicitly money (has R or 'rand'), e.g. "sneakers R500".
+# The R must start a word: without \b the "r" ending "paper 2-ply" read as R2.
 _BARE_MONEY_RE = re.compile(
-    rf"(?:r\s*({_NUMBER})\s*(k\b)?|({_NUMBER})\s*(k\b)?\s*(?:rand|zar|bucks))", re.I
+    rf"(?:\br\s*({_NUMBER})\s*(k\b)?|({_NUMBER})\s*(k\b)?\s*(?:rand|zar|bucks))", re.I
 )
 
 _SIZE_RE = re.compile(r"\bsize\s*[:]?\s*([a-z0-9]{1,4})\b", re.I)
@@ -410,3 +411,8 @@ def parse_query(query: Optional[str]) -> ParsedQuery:
     ]
 
     return parsed
+
+
+def word_pattern(word: str) -> str:
+    """Postgres regex (for `~*`) matching `word` as a whole word."""
+    return r"\m" + re.escape(str(word).strip()) + r"\M"

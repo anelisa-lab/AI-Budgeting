@@ -89,6 +89,8 @@ export function budgetFromApi(b) {
     // Written back by the Daily Budget Split on every read (Member 6).
     daily_limit: numOrNull(b.daily_limit),
     budget_mode: b.budget_mode || 'normal',
+    // Survival ("broke week") mode starts when remaining_amount drops to this.
+    survival_threshold: numOrNull(b.survival_threshold),
   };
 }
 
@@ -101,7 +103,9 @@ export function budgetFromApi(b) {
  *                                       which is what the backend README says
  *                                       cycle_end_date means)
  */
-export function budgetToApi({ amount, payoutDate, periodDays, savingsPercentage, budgetKind } = {}) {
+export function budgetToApi({
+  amount, payoutDate, periodDays, savingsPercentage, survivalThreshold, budgetKind,
+} = {}) {
   const start = toDateOnly(payoutDate);
   return {
     total_amount: num(amount),
@@ -109,6 +113,8 @@ export function budgetToApi({ amount, payoutDate, periodDays, savingsPercentage,
     cycle_end_date: addDays(start, num(periodDays, 30)),
     budget_kind: budgetKind || 'monthly',
     savings_percentage: num(savingsPercentage, 0),
+    // Blank = no survival mode, which the backend expresses as null.
+    survival_threshold: numOrNull(survivalThreshold),
   };
 }
 
@@ -123,20 +129,26 @@ export function budgetToFormValues(budget) {
     payoutDate: budget.cycle_start_date || '',
     periodDays: String(daysBetween(budget.cycle_start_date, budget.cycle_end_date) || 30),
     savingsPercentage: String(budget.savings_percentage ?? 0),
+    survivalThreshold: budget.survival_threshold == null ? '' : String(budget.survival_threshold),
   };
 }
 
 /**
- * PUT /budgets/{id} accepts ONLY total_amount and cycle_end_date
+ * PUT /budgets/{id} accepts ONLY total_amount, cycle_end_date and survival_threshold
  * (BudgetUpdateRequest). cycle_start_date is immutable server-side, so the
  * period length is expressed by moving the end date.
  */
-export function budgetUpdateToApi({ amount, payoutDate, periodDays }, existing) {
+export function budgetUpdateToApi({ amount, payoutDate, periodDays, survivalThreshold }, existing) {
   const start = toDateOnly(payoutDate) || existing?.cycle_start_date;
   const patch = {};
   if (amount !== undefined && amount !== '') patch.total_amount = num(amount);
   if (periodDays !== undefined && periodDays !== '') {
     patch.cycle_end_date = addDays(start, num(periodDays, 30));
+  }
+  // The backend keeps the old threshold when this is omitted, so a blank box
+  // cannot clear it — 0 does (remaining never drops below R0).
+  if (survivalThreshold !== undefined && survivalThreshold !== '') {
+    patch.survival_threshold = num(survivalThreshold);
   }
   return patch;
 }
@@ -326,6 +338,7 @@ export function recommendationFromApi(r) {
     hidden_cost: num(cb.hidden_cost),
     distance_km: numOrNull(r.distance_km),
     rating: numOrNull(r.rating),
+    rating_count: num(r.rating_count, 0),
     score: num(r.score),
     component_scores: r.component_scores || {},
     meets_budget: Boolean(r.meets_budget),
@@ -360,6 +373,44 @@ export function recommendationsFromApi(payload) {
       mode: b.mode || 'normal',
       message: b.message || null,
     },
+  };
+}
+
+/* -------------------------------------------------------------- true cost */
+
+/** TrueCostOut — one offer priced as a single order, itemised. */
+export function trueCostFromApi(t) {
+  if (!t) return null;
+  return {
+    offer_id: t.offer_id,
+    quantity: num(t.quantity, 1),
+    fulfilment: t.fulfilment || 'delivery',
+    subtotal: num(t.subtotal),
+    shipping: num(t.shipping),
+    charges: Array.isArray(t.charges) ? t.charges.map((c) => ({
+      label: c.label,
+      charge_type: c.charge_type,
+      amount: num(c.amount),
+      waived: Boolean(c.waived),
+      note: c.note || null,
+    })) : [],
+    charges_total: num(t.charges_total),
+    travel_cost: num(t.travel_cost),
+    true_cost: num(t.true_cost),
+    hidden_cost: num(t.hidden_cost),
+    distance_km: numOrNull(t.distance_km),
+    notes: Array.isArray(t.notes) ? t.notes : [],
+    product_name: t.product_name || null,
+    store_name: t.store_name || null,
+  };
+}
+
+/** TrueCostResponse — results arrive cheapest first. */
+export function trueCostResponseFromApi(payload) {
+  return {
+    results: Array.isArray(payload?.results) ? payload.results.map(trueCostFromApi) : [],
+    cheapest_offer_id: payload?.cheapest_offer_id ?? null,
+    saving_vs_dearest: num(payload?.saving_vs_dearest),
   };
 }
 

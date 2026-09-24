@@ -110,6 +110,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .nav__toggle { display: none; }
 
 @media (max-width: 860px) {
+  /* Links drop to their own full-width, swipeable row under the logo. */
+  .nav__in { flex-wrap: wrap; row-gap: var(--s-2); }
   .nav__links {
     order: 3;
     width: 100%;
@@ -120,6 +122,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   }
   .nav__links::-webkit-scrollbar { display: none; }
   .nav__link { white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  .nav__in { gap: var(--s-2); }
+  .nav__api { display: none; }
 }
 
 /* ==========================================================================
@@ -502,6 +508,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   .result__icon { width: 48px; height: 48px; font-size: 22px; }
   .result__right { grid-column: 1 / -1; justify-items: start; text-align: left; }
   .cmp-row { grid-template-columns: 110px minmax(0, 1fr) 76px; }
+  .basket-line { flex-wrap: wrap; }
+  .basket-line__controls { margin-left: auto; }
   .card { padding: var(--s-5); }
 }
 

@@ -18,13 +18,17 @@ Everything below was read off the FastAPI source, not assumed:
 | `app/security.py`, `app/dependencies.py` | the JWT scheme |
 | `sql/schema.sql` | the tables behind all of it |
 
-Also live on the backend but **not yet wired into this frontend**:
-`app/routers/recommendations.py` (`POST /recommendations`) and
-`app/routers/true_cost.py` (`POST /true-cost`, `GET /true-cost/{offer_id}`).
-Their request shapes don't cover the filters Search already has (brand,
-colour, size, store, availability), so wiring them in is a UX decision —
-whether they replace `/search`'s ranking, sit alongside it, or power a
-separate "Recommended for you" surface — not just a client change.
+Also wired up in Phase 3:
+
+| Backend file | Where the frontend uses it |
+|---|---|
+| `app/routers/recommendations.py` — `POST /recommendations` | the **For you** screen (`/recommendations`) and the "Recommended for you" panel on Search |
+| `app/routers/true_cost.py` — `POST /true-cost` | Compare → **Item by item**: each store's offer priced as its own order (item + delivery + store charges + travel) |
+| `app/routers/budget_split.py` — `POST /budget-split/check` | Compare → **"Can I afford this today?"**, checked against the cheapest single-shop total |
+| `app/routers/profile.py` — `PUT /profile/`, `PUT /profile/preferences` | the **Profile** screen (`/profile`) |
+
+`GET /true-cost/{offer_id}` and `GET /budget-split/{id}` have no screen: there
+is no product page or budget-history screen for them to live on.
 
 ---
 

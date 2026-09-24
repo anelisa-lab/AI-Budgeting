@@ -172,7 +172,7 @@ date has passed with R… left."
 
 ## 5. "Can I afford this?" — `POST /budget-split/check`
 
-The client wrapper exists (`api.budgetSplit.check`), but no screen calls it yet. It answers against the **daily allowance**,
+`api.budgetSplit.check` is called from the Compare screen ("Can I afford this today?", against the cheapest single-shop total). It answers against the **daily allowance**,
 not just the balance, which is the honest answer for a product page or the
 comparison screen.
 
@@ -210,8 +210,9 @@ than a price comparison site.
 ## 6. Two things to change on the frontend
 
 **Done in Phase 3:** both changes below are in place (`tomorrow_limit` is mapped,
-and `budgetSplit.check()` in `client.js` wraps the endpoint). The check is not
-yet called from any screen.
+and `budgetSplit.check()` in `client.js` wraps the endpoint). The check is
+called from the Compare screen; the split itself is rendered by
+`src/components/budget/DailyBudgetSplit.jsx`.
 
 Small, and both in files Member 8 owns:
 

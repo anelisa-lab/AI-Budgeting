@@ -99,6 +99,18 @@ ONLINE_STORE_PROXIMITY = 0.6
 # ---------------------------------------------------------------------------
 
 
+def attribute_matches(wanted: str, value: Optional[str], product_name: str = "") -> bool:
+    """
+    True when a parsed colour/size is satisfied: the offer's attribute equals
+    it, or the word appears in the product name ("Brown Bread", "Full Cream
+    Milk"). Mirrors the SQL in routers/search.py and routers/recommendations.py.
+    """
+    wanted = str(wanted).strip().lower()
+    if value and str(value).strip().lower() == wanted:
+        return True
+    return re.search(rf"\b{re.escape(wanted)}\b", (product_name or "").lower()) is not None
+
+
 @dataclass
 class Candidate:
     """One product offer being considered. Mirrors a /search result row."""
@@ -483,12 +495,17 @@ def passes_hard_filters(
     # EXPLICIT one from the API caller still filters. Subcategory never
     # filters — the seed has gaps and the SQL lets NULLs through too.
     if parsed:
-        for wanted, value in (
-            (parsed.category if parsed.category_is_explicit else None, candidate.category),
-            (parsed.colour, candidate.colour),
-            (parsed.size, candidate.size),
+        if (
+            parsed.category_is_explicit and parsed.category
+            and (candidate.category or "").strip().lower() != parsed.category.strip().lower()
         ):
-            if wanted and (not value or str(value).strip().lower() != str(wanted).strip().lower()):
+            return False
+        # A colour or size the parser pulled out of free text is also met when
+        # the word is part of the product's own name: "Brown Bread" and "Full
+        # Cream Milk" have no colour on record, and treating "brown"/"cream" as
+        # a missing attribute used to drop the very product that was searched.
+        for wanted, value in ((parsed.colour, candidate.colour), (parsed.size, candidate.size)):
+            if wanted and not attribute_matches(wanted, value, candidate.product_name):
                 return False
 
         # Nothing the student typed appears anywhere on this offer. Showing it

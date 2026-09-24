@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import get_connection
 from app.dependencies import get_current_user_id
-from app.query_parser import parse_query
+from app.query_parser import parse_query, word_pattern
 from app.schemas import ParsedQueryOut, SearchResponse, SearchResultItem
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -117,9 +117,13 @@ def search_offers(
     # --- natural-language q -> constraints (explicit params win) -----------
     parsed = parse_query(q) if q else None
     keywords = parsed.keywords if parsed else []
+    # A colour/size taken from free text is only a hint about the product: it
+    # also matches the product NAME, so "Brown Bread" or "Full Cream Milk"
+    # (no colour on record) still find themselves. An explicit ?colour= /
+    # ?size= from the filter UI stays a strict filter.
+    parsed_colour = parsed.colour if parsed and not colour else None
+    parsed_size = parsed.size if parsed and not size else None
     if parsed:
-        colour = colour or parsed.colour
-        size = size or parsed.size
         if min_price is None and parsed.min_price is not None:
             min_price = parsed.min_price
         if max_price is None and parsed.max_price is not None:
@@ -181,6 +185,11 @@ def search_offers(
         conditions.append("p.size ILIKE %s")
         params.append(size)
         active_filters.append(f"size {size}")
+    for column, wanted in (("p.colour", parsed_colour), ("p.size", parsed_size)):
+        if wanted:
+            conditions.append(f"({column} ILIKE %s OR p.name ~* %s)")
+            params.extend([wanted, word_pattern(wanted)])
+            active_filters.append(wanted)
     if store:
         conditions.append("s.name ILIKE %s")
         params.append(f"%{store}%")
