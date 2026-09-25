@@ -283,12 +283,15 @@ export function offerFromApi(r) {
     product_name: r.product_name,
     brand: r.brand || null,
     category: r.category || null,
+    subcategory: r.subcategory || null,
     colour: r.colour || null,
     size: r.size || null,
     is_essential: Boolean(r.is_essential),
     store_id: r.store_id,
     store_name: r.store_name,
     store_type: r.store_type,            // 'online' | 'physical' | 'mixed'
+    store_latitude: numOrNull(r.store_latitude),
+    store_longitude: numOrNull(r.store_longitude),
     price,
     shipping_cost: shipping,
     // total_cost is a GENERATED column server-side (price + shipping_cost);
@@ -296,6 +299,9 @@ export function offerFromApi(r) {
     total_cost: r.total_cost == null ? price + shipping : num(r.total_cost),
     currency: r.currency || 'ZAR',
     availability_status: r.availability_status || 'unknown',
+    rating: numOrNull(r.rating),
+    rating_count: num(r.rating_count, 0),
+    last_updated: r.last_updated || null,
     product_url: r.product_url || null,
   };
 }
@@ -339,6 +345,7 @@ export function recommendationFromApi(r) {
     distance_km: numOrNull(r.distance_km),
     rating: numOrNull(r.rating),
     rating_count: num(r.rating_count, 0),
+    last_updated: r.last_updated || null,
     score: num(r.score),
     component_scores: r.component_scores || {},
     meets_budget: Boolean(r.meets_budget),

@@ -26,12 +26,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, Eyebrow, Field, Input, Select,
+  Alert, Button, Card, Eyebrow, Field, Input, Select,
 } from '../components/ui/index.js';
 import { useBudget, NSFAS } from '../context/BudgetContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { budgetToFormValues } from '../api/normalise.js';
-import { money, todayIso } from '../lib/format.js';
+import { addDays, budgetToFormValues } from '../api/normalise.js';
+import { daysUntil, longDate, money, todayIso } from '../lib/format.js';
 import * as v from '../lib/validation.js';
 
 const PERIODS = [
@@ -48,14 +48,37 @@ const PRESETS = [
 
 const RULES = {
   amount: (value) => v.amount(value, { min: 1, max: 50000, fieldName: 'Your allowance' }),
-  payoutDate: (value) => v.futureOrTodayDate(value, 'Payout date'),
-  periodDays: (value) => v.required(value, 'Budget period'),
+  payoutDate: (value, all) => {
+    const base = v.futureOrTodayDate(value, 'Payout date');
+    if (base) return base;
+    // Editing: the start date is fixed server-side, so it is never the problem.
+    if (all.isEditing) return null;
+    if (daysUntil(value) > 31) {
+      return 'That date is more than a month away. Enter the date your allowance landed (or will land).';
+    }
+    const end = addDays(value, Number(all.periodDays) || 30);
+    if (end && daysUntil(end) < 0) {
+      return `A ${all.periodDays}-day budget from that date ended on ${longDate(end)}. `
+        + 'Enter the date your latest allowance landed.';
+    }
+    return null;
+  },
+  periodDays: (value, all) => {
+    const base = v.required(value, 'Budget period');
+    if (base) return base;
+    if (all.isEditing && all.payoutDate) {
+      const end = addDays(all.payoutDate, Number(value) || 30);
+      if (end && daysUntil(end) < 0) {
+        return `That would end the budget on ${longDate(end)}, which has already passed. Choose a longer period.`;
+      }
+    }
+    return null;
+  },
   savingsPercentage: (value) => v.percentage(value, 'Savings'),
   survivalThreshold: (value) => (String(value ?? '').trim() === ''
     ? null
     : v.amount(value, { min: 0, max: 50000, fieldName: 'Survival threshold' })),
 };
-
 
 export default function BudgetEntry() {
   const { budget, saveBudget, supports } = useBudget();
@@ -90,6 +113,27 @@ export default function BudgetEntry() {
     const savingsPct = Math.min(100, Math.max(0, Number(values.savingsPercentage) || 0));
     if (!Number.isFinite(amountNum) || amountNum <= 0) return null;
 
+    if (budget) {
+      // Editing: mirror what PUT /budgets/{id} does server-side — the balance
+      // moves by the same amount as the total, and spending already recorded
+      // is kept — then spread it over the days left to the (new) payout date.
+      // Showing "new total ÷ period" here, as the first version did, disagreed
+      // with the dashboard as soon as anything had been spent.
+      const delta = amountNum - budget.total_amount;
+      const newRemaining = Math.max(0, budget.remaining_amount + delta);
+      const end = addDays(budget.cycle_start_date, days);
+      // Same day count as the backend's split: today and payout day included.
+      const daysLeft = Math.max(1, daysUntil(end) + 1);
+      return {
+        editing: true,
+        remaining: newRemaining,
+        daysLeft,
+        end,
+        daily: newRemaining / daysLeft,
+        weekly: (newRemaining / daysLeft) * 7,
+      };
+    }
+
     const savings = Number((amountNum * savingsPct / 100).toFixed(2));
     const spendable = amountNum - savings;
     return {
@@ -100,7 +144,7 @@ export default function BudgetEntry() {
       daily: spendable / days,
       weekly: spendable / (days / 7),
     };
-  }, [values.amount, values.periodDays, values.savingsPercentage]);
+  }, [values.amount, values.periodDays, values.savingsPercentage, budget]);
 
   function change(name, value) {
     setValues((s) => ({ ...s, [name]: value }));
@@ -109,7 +153,7 @@ export default function BudgetEntry() {
   }
 
   function blur(name) {
-    const message = RULES[name](values[name], values);
+    const message = RULES[name](values[name], { ...values, isEditing });
     setErrors((e) => ({ ...e, [name]: message || undefined }));
   }
 
@@ -122,7 +166,7 @@ export default function BudgetEntry() {
     event.preventDefault();
     setFormError(null);
 
-    const { errors: found, isValid } = v.validateAll(values, RULES);
+    const { errors: found, isValid } = v.validateAll({ ...values, isEditing }, RULES);
     setErrors(found);
     if (!isValid) {
       const first = Object.keys(found)[0];
@@ -165,7 +209,7 @@ export default function BudgetEntry() {
             {isEditing ? 'Update your budget' : 'What are you working with?'}
           </h1>
           <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)' }}>
-            Tell Mintly what landed and when. It will work out what you can safely
+            Tell UniWallet what landed and when. It will work out what you can safely
             spend each day so the money lasts to the next payout.
           </p>
         </div>
@@ -224,9 +268,8 @@ export default function BudgetEntry() {
               id="payoutDate"
               label="When did it land?"
               hint={isEditing
-                ? 'The start of a cycle cannot be moved once the budget exists — the '
-                  + 'backend only accepts changes to the amount and the end date.'
-                : undefined}
+                ? 'The start date of a budget cannot be changed once it is set.'
+                : 'The day your allowance was paid. The daily figure counts from here.'}
               error={errors.payoutDate}
               required
             >
@@ -254,7 +297,10 @@ export default function BudgetEntry() {
               {({ id, describedBy, invalid }) => (
                 <Select
                   id={id}
-                  options={PERIODS}
+                  options={PERIODS.some((p) => p.value === String(values.periodDays))
+                    ? PERIODS
+                    // A saved budget can have a length the presets do not offer.
+                    : [...PERIODS, { value: String(values.periodDays), label: `${values.periodDays} days (current)` }]}
                   value={values.periodDays}
                   invalid={invalid}
                   describedBy={describedBy}
@@ -277,7 +323,7 @@ export default function BudgetEntry() {
                   <Input
                     id={id}
                     inputMode="numeric"
-                    prefix="%"
+                    suffix="%"
                     placeholder="0"
                     value={values.savingsPercentage}
                     invalid={invalid}
@@ -296,8 +342,8 @@ export default function BudgetEntry() {
               id="survivalThreshold"
               label="Switch to survival mode below"
               hint={isEditing
-                ? 'When what is left drops to this, Mintly recommends essentials only. Set 0 to turn it off.'
-                : 'Optional. When what is left drops to this, Mintly recommends essentials only.'}
+                ? 'When what is left drops to this, UniWallet recommends essentials only. Set 0 to turn it off.'
+                : 'Optional. When what is left drops to this, UniWallet recommends essentials only.'}
               error={errors.survivalThreshold}
             >
               {({ id, describedBy, invalid }) => (
@@ -334,11 +380,14 @@ export default function BudgetEntry() {
                   </div>
                 </div>
                 <p className="dash-sub dash-sub--on-dark" style={{ marginTop: 'var(--s-4)' }}>
-                  {preview.savings > 0
-                    ? `${money(preview.spendable)} spendable after putting ${money(preview.savings)} aside, `
-                      + `spread over ${preview.days} days.`
-                    : `${money(preview.amount)} spread evenly over ${preview.days} days.`}
-                  {isEditing && ' Spending you have already recorded is kept.'}
+                  {preview.editing
+                    ? `About ${money(preview.remaining)} left for the ${preview.daysLeft} days to `
+                      + `${longDate(preview.end)} — spending you have already recorded is kept. `
+                      + 'The dashboard shows the exact figure once you save.'
+                    : preview.savings > 0
+                      ? `${money(preview.spendable)} spendable after putting ${money(preview.savings)} aside, `
+                        + `spread over ${preview.days} days.`
+                      : `${money(preview.amount)} spread evenly over ${preview.days} days.`}
                 </p>
               </Card>
             )}
@@ -351,9 +400,8 @@ export default function BudgetEntry() {
 
             {isEditing && !supports.deleteBudget && (
               <p className="field__hint">
-                A budget cannot be deleted yet — the backend has no
-                <code> DELETE /budgets/&#123;id&#125;</code> route, and its schema keeps one
-                active budget per student. Listed in docs/BACKEND_INTEGRATION.md.
+                A budget can&apos;t be deleted yet. When your next allowance lands, update
+                the amount and period here.
               </p>
             )}
           </form>
@@ -361,9 +409,8 @@ export default function BudgetEntry() {
 
         {isEditing && (
           <div className="row">
-            <Badge tone="success" icon="✓">Budget saved</Badge>
             <Button variant="quiet" size="sm" onClick={() => navigate('/dashboard')}>
-              Back to dashboard
+              ← Back to dashboard
             </Button>
           </div>
         )}

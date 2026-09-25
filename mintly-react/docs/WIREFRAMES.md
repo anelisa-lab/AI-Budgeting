@@ -45,10 +45,10 @@ land on Login → Dashboard.
 
 ```
 ┌──────────────────────────────────────┐
-│              [ mintly ]              │
+│              [ UniWallet ]              │
 │ ┌──────────────────────────────────┐ │
 │ │ • WELCOME BACK                   │ │
-│ │ Sign in to Mintly                │ │
+│ │ Sign in to UniWallet                │ │
 │ │ Pick up where you left off…      │ │
 │ │                                  │ │
 │ │ [ ! form-level error, if any   ] │ │

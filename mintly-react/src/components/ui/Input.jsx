@@ -5,13 +5,15 @@ import { useState } from 'react';
  * Member 7 · component library
  *
  * `prefix` renders a fixed symbol inside the field (used for "R" on every
- * money input so a student never has to wonder about the unit).
+ * money input so a student never has to wonder about the unit); `suffix`
+ * does the same on the right ("%", "km").
  * Password inputs get a show/hide toggle automatically.
  */
 export default function Input({
   id,
   type = 'text',
   prefix,
+  suffix,
   invalid = false,
   describedBy,
   className = '',
@@ -33,12 +35,13 @@ export default function Input({
     />
   );
 
-  if (!prefix && !isPassword) return control;
+  if (!prefix && !suffix && !isPassword) return control;
 
   return (
     <div className="input-group">
       {prefix && <span className="input-group__prefix" aria-hidden="true">{prefix}</span>}
       {control}
+      {suffix && !isPassword && <span className="input-group__suffix" aria-hidden="true">{suffix}</span>}
       {isPassword && (
         <button
           type="button"

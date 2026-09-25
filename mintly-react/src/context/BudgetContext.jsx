@@ -117,7 +117,7 @@ export function BudgetProvider({ children }) {
 
   /** Health warnings are server-computed, so re-read them after a change. */
   const refreshHealth = useCallback(() => {
-    api.budgets.getDashboard(token, { recent: 0 })
+    api.budgets.getDashboard(token, { recent: 0, knownActive: true })
       .then((dash) => {
         if (!dash) return;
         setSplit(dash.split);
@@ -183,8 +183,15 @@ export function BudgetProvider({ children }) {
     const periodDays = budget
       ? Math.max(1, daysBetween(budget.cycle_start_date, budget.cycle_end_date))
       : 0;
-    const daysLeft = budget ? Math.max(0, daysUntil(budget.cycle_end_date)) : 0;
-    const daysGone = Math.max(0, periodDays - daysLeft);
+    // Counted the way the backend's Daily Budget Split counts it (today AND
+    // payout day, never below 1 — app/budget_split.py days_remaining), and
+    // taken from the split itself when it is there. The first version counted
+    // one day fewer, so the dashboard said "30 days left" beside the split's
+    // "31 days until your next payout".
+    const daysLeft = budget
+      ? (split?.days_remaining ?? Math.max(1, daysUntil(budget.cycle_end_date) + 1))
+      : 0;
+    const daysGone = Math.max(0, periodDays + 1 - daysLeft);
 
     // GET /budget-split (app/routers/budget_split.py) is the source of truth
     // once it answers; budget.daily_limit is a second, older path to the same
@@ -212,7 +219,9 @@ export function BudgetProvider({ children }) {
     else if (split?.mode === 'survival') health = 'tight';
 
     const byCategory = {};
+    let recorded = 0;
     for (const t of transactions) {
+      recorded += t.amount;
       const key = t.category || 'Other';
       byCategory[key] = Number(((byCategory[key] || 0) + t.amount).toFixed(2));
     }
@@ -235,6 +244,7 @@ export function BudgetProvider({ children }) {
       onPace: Number(onPace.toFixed(2)),
       health,
       byCategory,
+      recorded: Number(recorded.toFixed(2)),
       splitMessage: split?.message ?? null,
       survival: split?.mode === 'survival',
       overToday: split ? split.spent_today > split.daily_limit : false,

@@ -25,21 +25,39 @@
 /* ------------------------------------------------------------------ sorts */
 
 /**
- * Only what app/routers/search.py actually implements. Its sort_map is:
- *   price_asc  -> o.total_cost ASC     (note: TOTAL cost, not item price)
- *   price_desc -> o.total_cost DESC
- *   newest     -> o.last_checked_at DESC
+ * What the student can pick, and what the backend is actually asked for.
  *
- * The old UI also offered "closest to campus" and "best rated". The backend
- * returns neither distance nor rating, so offering them would have been a
- * promise the API cannot keep. They are listed in PENDING_BACKEND_FILTERS and
- * shown as unavailable on the Search screen instead of being silently dropped.
+ * app/routers/search.py implements four sorts:
+ *   price_asc   -> o.total_cost ASC     (TOTAL cost, not item price)
+ *   price_desc  -> o.total_cost DESC
+ *   newest      -> o.last_checked_at DESC
+ *   rating_desc -> o.rating DESC
+ *
+ * "Best value for me" is the app's own transparent ranker (rank() below)
+ * applied on top of the backend's cheapest-first order. Before Phase 4 that
+ * re-ranking was silently applied to "Total cost: low to high", so the list
+ * the student saw under that label was NOT low to high. The two are now
+ * separate choices: picking "low to high" gets exactly the backend's order.
  */
 export const SORT_OPTIONS = [
-  { value: 'price_asc', label: 'Total cost: low to high' },
-  { value: 'price_desc', label: 'Total cost: high to low' },
-  { value: 'newest', label: 'Most recently checked' },
+  { value: 'best', label: 'Best value for me', backend: 'price_asc', ranked: true },
+  { value: 'price_asc', label: 'Total cost: low to high', backend: 'price_asc' },
+  { value: 'price_desc', label: 'Total cost: high to low', backend: 'price_desc' },
+  { value: 'rating_desc', label: 'Best rated', backend: 'rating_desc' },
+  { value: 'newest', label: 'Most recently checked', backend: 'newest' },
 ];
+
+export const DEFAULT_SORT = 'best';
+
+/** The backend sort key for a UI sort value (unknown values fall back safely). */
+export function backendSort(value) {
+  return (SORT_OPTIONS.find((o) => o.value === value) || SORT_OPTIONS[0]).backend;
+}
+
+/** True when the UI sort re-orders results with rank(). */
+export function isRankedSort(value) {
+  return Boolean((SORT_OPTIONS.find((o) => o.value === value) || SORT_OPTIONS[0]).ranked);
+}
 
 export const AVAILABILITY_OPTIONS = [
   { value: 'available', label: 'In stock only' },
@@ -56,33 +74,68 @@ export const DEFAULT_FILTERS = {
   colour: '',
   size: '',
   store: '',
+  minPrice: '',          // -> min_price, compared against total_cost
   maxPrice: '',          // -> max_price, compared against total_cost
   freeShippingOnly: false, // -> max_shipping_cost=0
   essentialOnly: false,   // -> essential_only
   availability: 'available',
-  sort: 'price_asc',
+  sort: DEFAULT_SORT,
 };
 
 /**
- * Filters the Search screen shows but cannot apply yet, with the reason.
- * The screen renders these as clearly disabled rather than removing them, so
- * the gap is visible to the team and to a marker instead of being invisible.
- * Each one is specified as a backend request in docs/BACKEND_INTEGRATION.md.
+ * Filters the Search screen shows but cannot apply yet, with the reason in
+ * words a student understands. The technical detail is in
+ * docs/BACKEND_INTEGRATION.md.
  */
 export const PENDING_BACKEND_FILTERS = [
   {
     id: 'radius',
     label: 'Distance from campus',
-    reason: 'GET /search returns no store latitude/longitude or distance, so a '
-      + 'radius cannot be applied. stores.latitude and stores.longitude exist in '
-      + 'the schema but SearchResultItem does not expose them.',
-  },
-  {
-    id: 'rating',
-    label: 'Store rating',
-    reason: 'There is no rating column on stores, so results cannot be ranked by it.',
+    reason: 'Coming soon. Search does not know where stores are relative to you yet, '
+      + 'so it cannot filter by distance.',
   },
 ];
+
+/* --------------------------------------------------------- input handling */
+
+/** A money box's text as a number, or null when blank/invalid. */
+export function parseMoney(value) {
+  const text = String(value ?? '').trim();
+  if (text === '') return null;
+  const n = Number(text.replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Checks the backend would otherwise answer with a 400 (search.py rejects
+ * min_price > max_price). Caught here so the student sees it on the field,
+ * not as "Could not search".
+ */
+export function validateFilters(filters = {}) {
+  const errors = {};
+  const min = parseMoney(filters.minPrice);
+  const max = parseMoney(filters.maxPrice);
+  if (String(filters.minPrice ?? '').trim() !== '' && min === null) errors.minPrice = 'Enter an amount in rand, like 50.';
+  if (String(filters.maxPrice ?? '').trim() !== '' && max === null) errors.maxPrice = 'Enter an amount in rand, like 200.';
+  if (min !== null && max !== null && max > 0 && min > max) {
+    errors.minPrice = `The minimum (R${min}) is more than your maximum (R${max}).`;
+  }
+  return errors;
+}
+
+/**
+ * The backend matches brand, colour, size and category with ILIKE and NO
+ * wildcards — "tastic" finds "Tastic", but "2 kg" does not find "2kg".
+ * When what was typed matches a value the catalogue really uses (ignoring
+ * case and spaces), send the catalogue's own spelling.
+ */
+export function canonicalise(value, options = []) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const squash = (x) => String(x).toLowerCase().replace(/\s+/g, '');
+  const hit = options.find((o) => squash(o) === squash(text));
+  return hit || text;
+}
 
 /* --------------------------------------------------- filters -> query params */
 
@@ -101,18 +154,21 @@ export function buildSearchParams(filters = {}, { limit = PAGE_SIZE, offset = 0 
     colour: f.colour?.trim() || undefined,
     size: f.size?.trim() || undefined,
     store: f.store?.trim() || undefined,
-    availability: f.availability || 'available',
-    sort: SORT_OPTIONS.some((o) => o.value === f.sort) ? f.sort : 'price_asc',
+    availability: AVAILABILITY_OPTIONS.some((o) => o.value === f.availability) ? f.availability : 'available',
+    sort: backendSort(f.sort),
     limit,
     offset,
   };
+
+  const min = parseMoney(f.minPrice);
+  if (min !== null && min > 0) params.min_price = min;
 
   // max_price bounds product_offers.total_cost (price + shipping), which is the
   // right ceiling for a student's budget: a cheap item with R99 delivery is not
   // cheap. That was already the rule in docs/SEED_DATA_CONTRACT.md and the
   // backend happens to implement exactly it.
-  const max = Number(String(f.maxPrice).replace(/[^\d.]/g, ''));
-  if (Number.isFinite(max) && max > 0) params.max_price = max;
+  const max = parseMoney(f.maxPrice);
+  if (max !== null && max > 0) params.max_price = max;
 
   // "No delivery fee" is max_shipping_cost=0 on this backend.
   if (f.freeShippingOnly) params.max_shipping_cost = 0;
@@ -126,6 +182,7 @@ export function buildSearchParams(filters = {}, { limit = PAGE_SIZE, offset = 0 
 /** Read filters out of the URL, so a search can be shared and survives a refresh. */
 export function filtersFromUrl(searchParams) {
   const get = (k, fallback = '') => searchParams.get(k) ?? fallback;
+  const sort = get('sort', DEFAULT_SORT);
   return {
     ...DEFAULT_FILTERS,
     q: get('q'),
@@ -134,11 +191,12 @@ export function filtersFromUrl(searchParams) {
     colour: get('colour'),
     size: get('size'),
     store: get('store'),
+    minPrice: get('min'),
     maxPrice: get('max'),
     freeShippingOnly: searchParams.get('freeship') === '1',
     essentialOnly: searchParams.get('essential') === '1',
     availability: get('availability', 'available'),
-    sort: get('sort', 'price_asc'),
+    sort: SORT_OPTIONS.some((o) => o.value === sort) ? sort : DEFAULT_SORT,
   };
 }
 
@@ -147,8 +205,9 @@ export function filtersToUrl(filters) {
   const f = { ...DEFAULT_FILTERS, ...filters };
   const out = new URLSearchParams();
   const put = (key, value, dflt = '') => {
-    if (value !== undefined && value !== null && value !== '' && value !== dflt) {
-      out.set(key, String(value));
+    const v = typeof value === 'string' ? value.trim() : value;
+    if (v !== undefined && v !== null && v !== '' && v !== dflt) {
+      out.set(key, String(v));
     }
   };
   put('q', f.q);
@@ -157,23 +216,64 @@ export function filtersToUrl(filters) {
   put('colour', f.colour);
   put('size', f.size);
   put('store', f.store);
+  put('min', f.minPrice);
   put('max', f.maxPrice);
   if (f.freeShippingOnly) out.set('freeship', '1');
   if (f.essentialOnly) out.set('essential', '1');
   put('availability', f.availability, 'available');
-  put('sort', f.sort, 'price_asc');
+  put('sort', f.sort, DEFAULT_SORT);
   return out;
 }
 
 /** How many filters the student has actually set — drives the "Clear (n)" button. */
 export function activeFilterCount(filters) {
+  return describeFilters(filters).length;
+}
+
+/**
+ * Every active filter as a removable chip: { key, label, reset }.
+ * `reset` is the patch that switches that one filter off again.
+ */
+export function describeFilters(filters) {
   const f = { ...DEFAULT_FILTERS, ...filters };
-  return [
-    f.q, f.category, f.brand, f.colour, f.size, f.store, f.maxPrice,
-    f.freeShippingOnly, f.essentialOnly,
-    f.availability !== 'available',
-    f.sort !== 'price_asc',
-  ].filter(Boolean).length;
+  const out = [];
+  const text = (key, label) => {
+    if (String(f[key] || '').trim()) out.push({ key, label: `${label}: ${f[key]}`, reset: { [key]: '' } });
+  };
+  if (String(f.q || '').trim()) out.push({ key: 'q', label: `“${f.q}”`, reset: { q: '' } });
+  text('category', 'Category');
+  text('brand', 'Brand');
+  text('colour', 'Colour');
+  text('size', 'Size');
+  text('store', 'Store');
+  if (String(f.minPrice || '').trim()) out.push({ key: 'minPrice', label: `From R${f.minPrice}`, reset: { minPrice: '' } });
+  if (String(f.maxPrice || '').trim()) out.push({ key: 'maxPrice', label: `Up to R${f.maxPrice}`, reset: { maxPrice: '' } });
+  if (f.freeShippingOnly) out.push({ key: 'freeShippingOnly', label: 'No delivery fee', reset: { freeShippingOnly: false } });
+  if (f.essentialOnly) out.push({ key: 'essentialOnly', label: 'Essentials only', reset: { essentialOnly: false } });
+  if (f.availability !== 'available') {
+    const label = AVAILABILITY_OPTIONS.find((o) => o.value === f.availability)?.label || f.availability;
+    out.push({ key: 'availability', label, reset: { availability: 'available' } });
+  }
+  if (f.sort !== DEFAULT_SORT) {
+    const label = SORT_OPTIONS.find((o) => o.value === f.sort)?.label || f.sort;
+    out.push({ key: 'sort', label: `Sort: ${label}`, reset: { sort: DEFAULT_SORT } });
+  }
+  return out;
+}
+
+/**
+ * The filters POST /recommendations can honour: a query, a category and a
+ * price ceiling. With any OTHER filter on, the "Recommended for you" picks
+ * would ignore it (e.g. show Checkers while the student filtered to Shoprite),
+ * so Search hides them rather than contradict the results under them.
+ */
+export function recommendationsCanHonour(filters) {
+  const f = { ...DEFAULT_FILTERS, ...filters };
+  return !(
+    String(f.brand || '').trim() || String(f.colour || '').trim() || String(f.size || '').trim()
+    || String(f.store || '').trim() || String(f.minPrice || '').trim()
+    || f.freeShippingOnly || f.essentialOnly || f.availability !== 'available'
+  );
 }
 
 /* -------------------------------------------------------------- the ranker */
@@ -186,9 +286,9 @@ export function activeFilterCount(filters) {
  * explained back in one sentence.
  *
  * It scores ONLY on fields GET /search actually returns plus the student's own
- * stored preferences from GET /profile/preferences. The previous version also
- * scored distance and store rating; the backend exposes neither, so scoring
- * them would have meant inventing the data.
+ * stored preferences from GET /profile/preferences. Rating is available from
+ * the backend for display/sorting, but this transparent ranker does not invent
+ * an additional rating weight.
  *
  * It re-orders the page the backend returned; it does not re-filter it.
  */
@@ -254,34 +354,48 @@ export function rank(offers, { budget = 0, preferences = null } = {}) {
 
 /* ---------------------------------------------------------- comparison maths */
 
+/** Only an offer the backend says is in stock can be bought today. */
+export const isBuyable = (o) => o && o.availability_status === 'available';
+
+/**
+ * Delivery for ONE order at a store, from the offers bought there.
+ *
+ * The backend carries shipping_cost per OFFER and has no basket rule, so the
+ * closest honest reading of "one delivery" is the largest shipping_cost among
+ * the lines bought there. Collecting from any store you can walk into costs
+ * no delivery; an online-only store always delivers.
+ */
+export function orderDelivery(offers, storeType, fulfilment) {
+  if (fulfilment === 'collection' && storeType !== 'online') return 0;
+  return offers.reduce((max, o) => Math.max(max, Number(o.shipping_cost) || 0), 0);
+}
+
 /**
  * Price the whole list at every store that appears in the offers we fetched.
  *
  * `offersByProduct` is a Map<product_id, SearchResultItem[]> built by
  * `api.search.offersForProducts` — real rows from GET /search, not local data.
  *
- * Rules, unchanged from the version the team already agreed:
- *  - a store that does not stock a line is charged that line's cheapest price
- *    anywhere, so totals stay comparable
- *  - but coverage is reported and ranked on FIRST, so a store stocking nothing
- *    cannot show the cheapest total and win
- *  - only a store that covers every line can be called "cheapest single shop"
- *
- * Delivery: the backend carries shipping_cost per OFFER, and there is no
- * order-level delivery rule on `stores`. Charging every line's shipping would
- * bill a student one delivery per item. So when collecting, a physical store
- * costs nothing to "deliver" (you carry it); when delivering, or for an online
- * or mixed store, we charge the
- * largest single shipping_cost among the lines bought there — the closest
- * honest approximation of one delivery. A real order-level rule belongs in the
- * backend; it is listed in docs/BACKEND_INTEGRATION.md.
+ * Rules:
+ *  - only IN-STOCK offers count; a store whose only listing is out of stock
+ *    does not stock that line today
+ *  - a store gets a total ONLY when it stocks every line. Before Phase 3 a
+ *    missing line was priced at the cheapest store's price, which let a store
+ *    with half the list look cheapest; that synthetic figure is gone
+ *  - total = shelf prices x quantity + ONE delivery (see orderDelivery)
+ *  - complete stores come first, cheapest first; incomplete stores follow,
+ *    most of the list first, with no total
  */
 export function priceListByStore(lines, offersByProduct, { fulfilment = 'collection' } = {}) {
   const stores = new Map();
   for (const offers of offersByProduct.values()) {
     for (const o of offers) {
       if (!stores.has(o.store_id)) {
-        stores.set(o.store_id, { store_id: o.store_id, store_name: o.store_name, store_type: o.store_type });
+        stores.set(o.store_id, {
+          store_id: o.store_id,
+          store_name: o.store_name,
+          store_type: o.store_type,
+        });
       }
     }
   }
@@ -292,65 +406,56 @@ export function priceListByStore(lines, offersByProduct, { fulfilment = 'collect
       let subtotal = 0;
       let stocked = 0;
       let missing = 0;
-      let biggestShipping = 0;
+      let outOfStock = 0;
+      const bought = [];
 
       for (const line of lines) {
         const offers = offersByProduct.get(line.product_id) || [];
-        if (offers.length === 0) continue;
-
-        const here = offers.find((o) => o.store_id === store.store_id);
-        const cheapestAnywhere = offers.reduce(
-          (best, o) => (o.price < best.price ? o : best),
-          offers[0],
-        );
-
-        if (here) {
+        const listed = offers.find((o) => o.store_id === store.store_id);
+        if (isBuyable(listed)) {
           stocked += 1;
-          subtotal += here.price * line.qty;
-          biggestShipping = Math.max(biggestShipping, here.shipping_cost);
+          subtotal += listed.price * line.qty;
+          bought.push(listed);
         } else {
           missing += 1;
-          subtotal += cheapestAnywhere.price * line.qty;
+          if (listed) outOfStock += 1;
         }
       }
 
-      // Collecting from a walk-in store costs no delivery; asking for delivery
-      // (or an online-only store) costs one delivery for the whole order.
-      const delivery = fulfilment === 'collection' && store.store_type === 'physical'
-        ? 0 : biggestShipping;
-      const lineCount = stocked + missing;
+      const full = missing === 0 && lines.length > 0;
+      const delivery = full ? orderDelivery(bought, store.store_type, fulfilment) : 0;
+      const total = full ? Number((subtotal + delivery).toFixed(2)) : null;
 
       return {
         store,
         subtotal: Number(subtotal.toFixed(2)),
         delivery: Number(delivery.toFixed(2)),
-        total: Number((subtotal + delivery).toFixed(2)),
+        total,
         stocked,
         missing,
-        coverage: lineCount ? stocked / lineCount : 0,
-        full: missing === 0 && lineCount > 0,
+        outOfStock,
+        coverage: lines.length ? stocked / lines.length : 0,
+        full,
       };
     })
     .sort((a, b) => {
       if (a.full !== b.full) return a.full ? -1 : 1;
-      if (!a.full && a.coverage !== b.coverage) return b.coverage - a.coverage;
-      return a.total - b.total;
+      if (a.full && b.full) return a.total - b.total || a.store.store_name.localeCompare(b.store.store_name);
+      return b.coverage - a.coverage || a.store.store_name.localeCompare(b.store.store_name);
     });
 }
 
 /**
- * Cheapest achievable total, buying each line wherever it is cheapest.
- * Item prices only — this is the figure for a student walking between shops,
- * not ordering several separate deliveries.
+ * Cheapest achievable total, buying each line wherever it is cheapest
+ * (in-stock offers only). Shelf prices only — this is the figure for a
+ * student walking between shops, not ordering several separate deliveries.
+ * null when any line has no in-stock offer at all.
  */
 export function splitShopTotal(lines, offersByProduct) {
   let total = 0;
   for (const line of lines) {
-    const offers = offersByProduct.get(line.product_id) || [];
-    if (offers.length === 0) {
-      total += line.price * line.qty; // fall back to the snapshot we stored
-      continue;
-    }
+    const offers = (offersByProduct.get(line.product_id) || []).filter(isBuyable);
+    if (offers.length === 0) return null;
     const cheapest = offers.reduce((best, o) => (o.price < best.price ? o : best), offers[0]);
     total += cheapest.price * line.qty;
   }
@@ -358,8 +463,49 @@ export function splitShopTotal(lines, offersByProduct) {
 }
 
 /**
- * Per-item head-to-head: the same product at every store that lists it.
- * Only products with more than one offer are worth showing.
+ * The list exactly as the student built it: each line at the store they
+ * picked it from, at TODAY's price, plus one delivery per store they would
+ * order from. Lines whose store no longer lists them in stock are reported in
+ * `unavailable` and left out of the total rather than priced from a stale
+ * snapshot.
+ */
+export function chosenListTotal(lines, offersByProduct, { fulfilment = 'collection' } = {}) {
+  const byStore = new Map();
+  let items = 0;
+  const unavailable = [];
+  const livePrice = new Map();
+  for (const line of lines) {
+    const offers = offersByProduct.get(line.product_id);
+    const live = offers ? offers.find((o) => o.offer_id === line.offer_id) : null;
+    // Before live prices arrive, fall back to the saved snapshot.
+    const offer = offers ? live : line;
+    if (offers && !isBuyable(live)) {
+      unavailable.push(line);
+      continue;
+    }
+    livePrice.set(line.offer_id, offer.price);
+    items += offer.price * line.qty;
+    const entry = byStore.get(line.store_id) || { store_type: line.store_type, offers: [] };
+    entry.offers.push(offer);
+    byStore.set(line.store_id, entry);
+  }
+  let delivery = 0;
+  for (const { store_type: storeType, offers } of byStore.values()) {
+    delivery += orderDelivery(offers, storeType, fulfilment);
+  }
+  return {
+    items: Number(items.toFixed(2)),
+    delivery: Number(delivery.toFixed(2)),
+    total: Number((items + delivery).toFixed(2)),
+    stores: byStore.size,
+    unavailable,
+    livePrice,
+  };
+}
+
+/**
+ * Per-item head-to-head: the same product at every store that lists it in
+ * stock. Only products with more than one such offer are worth showing.
  */
 export function comparableGroups(lines, offersByProduct) {
   // One group per PRODUCT: the same bread added from two stores is still one
@@ -373,6 +519,7 @@ export function comparableGroups(lines, offersByProduct) {
   return [...byProduct.values()]
     .map((line) => {
       const offers = [...(offersByProduct.get(line.product_id) || [])]
+        .filter(isBuyable)
         .sort((a, b) => a.total_cost - b.total_cost);
       if (offers.length < 2) return null;
       const cheapest = offers[0];

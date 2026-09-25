@@ -79,3 +79,10 @@ export function daysUntil(value) {
   end.setHours(0, 0, 0, 0);
   return Math.round((end - start) / 86400000);
 }
+
+/** 24 September 2026 — for dates that are not about this budget period. */
+export function fullDate(value) {
+  const d = parseDate(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' });
+}

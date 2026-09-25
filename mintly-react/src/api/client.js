@@ -119,7 +119,15 @@ export const budgets = {
    * GET /budgets/dashboard — budget, Daily Budget Split, health warnings and
    * the latest transactions in one call. Same 404-means-null rule as above.
    */
-  async getDashboard(token, { recent } = {}) {
+  async getDashboard(token, { recent, knownActive = false } = {}) {
+    // A brand-new student has no budget, and asking the dashboard for one
+    // answers 404 — which every browser prints as a red console error on the
+    // very first screen after registering. GET /budgets answers [] instead, so
+    // ask that first unless the caller already knows a budget exists.
+    if (!knownActive) {
+      const all = await endpoints.listBudgets(token);
+      if (!Array.isArray(all) || !all.some((b) => b.status === 'active')) return null;
+    }
     try {
       return dashboardFromApi(await endpoints.getBudgetDashboard(token, { recent }));
     } catch (err) {
@@ -264,17 +272,61 @@ export const search = {
     const responses = await Promise.all(
       unique.map((p) => this
         .offers(token, { q: p.product_name, availability: 'any', limit: 100, sort: 'price_asc' })
-        .catch(() => ({ results: [] }))),
+        .catch(() => ({ results: [], failed: true }))),
     );
 
     const byProduct = new Map();
+    let failed = 0;
     unique.forEach((p, i) => {
+      if (responses[i].failed) failed += 1;
       const matches = responses[i].results.filter((r) => r.product_id === p.product_id);
       byProduct.set(p.product_id, matches);
     });
+    // Every lookup failing is an outage, not "nobody stocks this" — say so.
+    if (unique.length > 0 && failed === unique.length) {
+      throw new ApiError('Could not load current prices. Check your connection and try again.', { status: 0 });
+    }
     return byProduct;
   },
+
+  /**
+   * The values the catalogue actually uses for store, brand, colour, size and
+   * category, so Search can offer real choices instead of free text that has
+   * to match the backend's ILIKE exactly ("PnP" or "2 kg" used to return
+   * nothing). Built from GET /search itself — there is no facets endpoint —
+   * by walking the pages once per session; the answer is cached per token.
+   */
+  catalogueFacets(token) {
+    if (!facetCache.has(token)) {
+      const load = (async () => {
+        const rows = [];
+        for (let offset = 0, more = true; more && offset < 2000; offset += 100) {
+          // eslint-disable-next-line no-await-in-loop
+          const page = await this.offers(token, { availability: 'any', limit: 100, offset });
+          rows.push(...page.results);
+          more = page.has_more;
+        }
+        const unique = (field) => [...new Set(
+          rows.map((o) => o[field]).filter((v) => v && String(v).toLowerCase() !== 'n/a'),
+        )].sort((a, b) => String(a).localeCompare(String(b)));
+        return {
+          categories: unique('category'),
+          stores: unique('store_name'),
+          brands: unique('brand'),
+          colours: unique('colour'),
+          sizes: unique('size'),
+          total: rows.length,
+        };
+      })();
+      // A failed load must not be cached forever.
+      load.catch(() => facetCache.delete(token));
+      facetCache.set(token, load);
+    }
+    return facetCache.get(token);
+  },
 };
+
+const facetCache = new Map();
 
 /* ----------------------------------------------------------- shopping list */
 
@@ -284,6 +336,8 @@ export const search = {
  * replacing it with real endpoints is a change to this block alone.
  */
 export const shoppingList = {
+  /** Scope the device-local list to one account (null = signed out). */
+  setOwner: (userId) => localList.setOwner(userId),
   list: () => localList.list(),
   add: (offer, qty) => localList.add(offer, qty),
   setQty: (offerId, qty) => localList.setQty(offerId, qty),

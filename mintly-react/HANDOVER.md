@@ -1,3 +1,45 @@
+# UniWallet — Phase 4 handover and rubric map
+
+## Phase 4 (Members 7, 8, 9) — what changed
+
+- **Rebrand:** Mintly → UniWallet on every screen, title, toast and label.
+  Old `mintly.*` storage keys migrate automatically. The folder is still
+  `mintly-react` because the backend README/tests point at that path.
+- **Search:** category and store are real choices (store list from the live
+  catalogue); brand/colour/size suggest from the whole catalogue and snap to
+  its spelling ("2 kg" → "2kg", "albany" → "Albany"); min > max is caught on
+  the field; "Best value for me" is now its own sort, so "low to high" really is
+  low to high; "Show more" pages through every result (no 100 cap); active
+  filters are removable chips; recommendations hide when a filter they cannot
+  honour is on; filters fold behind a button on phones.
+- **Compare:** only in-stock offers count; no store gets a made-up total;
+  collecting from any walk-in store has no delivery fee; "your list as chosen"
+  uses today's prices plus one delivery per store; changing a quantity no
+  longer re-fetches every price; the whole-list vs item-by-item difference is
+  explained on screen (backend dependency §10).
+- **Profile/Settings:** Settings shows where each setting lives (account vs
+  this device), sign-out, budget shortcut, real connection status; reduce
+  motion now actually persists; Profile guards against overwriting
+  preferences that failed to load, validates the name, includes Maintenance.
+- **Maintenance:** one category list (`src/lib/categories.js`) used everywhere;
+  empty Maintenance searches explain that no products are listed yet (data
+  dependency §11).
+- **Registration:** residences grouped, DUT Durban names match DUT's housing
+  page; still not sent (backend does not accept it).
+- **Also fixed:** the shopping list is now per account (a shared computer no
+  longer shows the last student's list); a backend outage no longer signs the
+  student out; new students no longer trigger a 404 console error; days-left
+  matches the backend split; budget edits preview correctly; budgets whose
+  period already ended are rejected; developer instructions no longer appear to
+  students; nav no longer overflows at 1024px or on phones.
+
+Tests: `npm run test:contract` → **52/52**. Browser walkthrough (register →
+budget → dashboard → search/filters → recommendations → compare → profile →
+settings, plus mobile/tablet/desktop) → **51/51** against the real backend code
+and a seeded Postgres. See "Test criteria" below for how that was run.
+
+---
+
 # Presentation 2 — handover and rubric map
 
 Use this to prepare the demo. It says where every mark is earned and what to
@@ -134,11 +176,11 @@ honest — we have no training data yet. The architecture swaps in a trained
 ranker by replacing that one function.
 
 **"Why can't I filter by distance? The synopsis says 25 km."**
-Because `GET /search` does not return store coordinates. `stores.latitude` and
-`stores.longitude` exist in the schema, but `SearchResultItem` does not expose
-them, so the frontend has no distance to filter on. Rather than hide the gap we
-show the filter as unavailable with that reason, and
-`docs/BACKEND_INTEGRATION.md` §6 specifies the two ways to fix it. **This is a
+Because the app does not know where the *student* is. `/search` now returns
+store coordinates, but there is no endpoint to save a student's location
+(`user_locations` has no router) and `/search` takes no radius. Rather than
+guess, Search shows the filter as "coming soon", and
+`docs/BACKEND_INTEGRATION.md` §6 specifies the fix. **This is a
 good question to get** — it shows the team knows exactly what is missing.
 
 **"Why is the shopping list not saved to my account?"**
@@ -194,7 +236,7 @@ Automated, `npm run test:contract` (no backend needed):
 | 17 | A store is only "complete" when it stocks every line | Pass |
 | 18 | One delivery charge per store, not one per item | Pass |
 | 19 | An unreachable backend gives a readable message, not a raw TypeError | Pass |
-| — | **30 checks in total** | **30/30** |
+| — | **40 checks in total** | **40/40** |
 
 Against a real seeded Postgres, using `search.py`'s own SQL:
 
@@ -218,17 +260,20 @@ Manual, in the browser:
 
 | # | Test | Expected | Result |
 |---|---|---|---|
-| 33 | `npm run build` | no errors | **Not run — see below** |
-| 34 | Full click-through against a live backend | all seven screens | **Not run — see below** |
+| 33 | Production bundle of every module | no errors | Pass — bundled with esbuild (Vite unavailable offline) |
+| 34 | Full click-through against the backend | all screens, 51 scripted checks | **Pass — 51/51** (Phase 4) |
 
-> **Be straight about 33 and 34 if you are asked.** The environment the adjusted
-> frontend was prepared in could not reach npm or PyPI, so `npm install`,
-> `npm run build` and a live uvicorn were not possible there. The module graph
-> was verified by bundling every file with esbuild (0 errors), the API layer by
-> the 30 contract checks, and the SQL by running `search.py`'s own queries
-> against a seeded Postgres. **Anelisa must still run `npm install && npm run
-> build` and click through against a live backend before this is merged.**
-
+> **How 33 and 34 were run (Phase 4), and what is still to do.** The Phase 4
+> environment could not reach npm or PyPI either. So the **unmodified backend
+> code** was run under uvicorn against a real Postgres 16 loaded with
+> `schema.sql`, `seed_backend.sql` and `seed_store_charges.sql`, using small
+> test-only stand-ins for the packages that could not be installed (FastAPI,
+> psycopg2, python-jose, passlib, email-validator). The frontend was bundled
+> from `src/` with esbuild, with React 19 and a minimal react-router stand-in,
+> and driven by Playwright/Chromium. **Before merging, Anelisa should still run
+> `npm install && npm run build && npm run dev` with the real packages and click
+> through once** — the code did not change for that, but it is the one step
+> not done with the exact package versions.
 ---
 
 ## Splitting the demo across the group

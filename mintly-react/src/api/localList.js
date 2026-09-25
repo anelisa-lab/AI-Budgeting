@@ -30,12 +30,50 @@
  * snapshot is never what the student is shown a total for.
  */
 
-const STORAGE_KEY = 'mintly.shoppingList.v2';
+/**
+ * One list PER ACCOUNT on this device. Before Phase 4 there was a single key,
+ * so on a shared computer (a res common room, a campus lab) the next student
+ * to sign in saw — and could edit — the previous student's list. The key now
+ * carries the signed-in user's id; ShoppingContext calls setOwner() whenever
+ * the account changes, and nothing is read or written while signed out.
+ */
+const KEY_PREFIX = 'uniwallet.shoppingList.v3.u';
+// Lists saved by earlier builds under one shared key. They are handed to the
+// first account that signs in on this device, once, and then removed.
+const LEGACY_KEYS = ['uniwallet.shoppingList.v2', 'mintly.shoppingList.v2'];
 const MAX_QTY = 20;
 
-function read() {
+let ownerId = null;
+
+/** Called by ShoppingContext with the signed-in user's id (or null). */
+export function setOwner(userId) {
+  ownerId = userId == null ? null : String(userId);
+  if (ownerId) migrateLegacy();
+}
+
+function storageKey() {
+  return ownerId ? `${KEY_PREFIX}${ownerId}` : null;
+}
+
+function migrateLegacy() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const key = storageKey();
+    for (const legacy of LEGACY_KEYS) {
+      const raw = localStorage.getItem(legacy);
+      if (raw === null) continue;
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, raw);
+      localStorage.removeItem(legacy);
+    }
+  } catch {
+    /* storage unavailable — nothing to migrate */
+  }
+}
+
+function read() {
+  const key = storageKey();
+  if (!key) return [];
+  try {
+    const raw = localStorage.getItem(key);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -46,8 +84,10 @@ function read() {
 }
 
 function write(lines) {
+  const key = storageKey();
+  if (!key) return [];
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(lines));
+    localStorage.setItem(key, JSON.stringify(lines));
   } catch {
     /* Storage unavailable — the list still works until the tab is closed. */
   }

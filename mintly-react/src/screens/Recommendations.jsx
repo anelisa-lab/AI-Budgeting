@@ -20,7 +20,8 @@ import { CATALOGUE_CATEGORIES, categoryIcon, isWithoutListings } from '../lib/ca
 
 /**
  * An explicit category is a HARD filter on POST /recommendations, so the
- * options must use the catalogue's category names.
+ * options are the catalogue's own category names, from the app's single
+ * category list (lib/categories.js).
  */
 const CATEGORY_OPTIONS = [
   { value: '', label: 'Any category' },
@@ -142,7 +143,7 @@ export default function Recommendations() {
 
       {budgetLoaded && !budget && (
         <Alert tone="info" title="Set a budget first">
-          Recommendations are scored against your daily allowance — Mintly needs a
+          Recommendations are scored against your daily allowance — UniWallet needs a
           budget to know what that is.
           <div style={{ marginTop: 'var(--s-3)' }}>
             <Button size="sm" onClick={() => navigate('/budget')}>Set my budget</Button>
@@ -158,7 +159,7 @@ export default function Recommendations() {
       )}
 
       {budgetLoading && !budgetLoaded ? (
-        <Card tone="tint" flat aria-busy="true">
+        <Card flat aria-busy="true">
           <div className="row row--between">
             <div style={{ minWidth: 180 }}>
               <Skeleton height={14} width="9rem" />
@@ -168,7 +169,7 @@ export default function Recommendations() {
           </div>
         </Card>
       ) : budget && (
-        <Card tone="tint" flat>
+        <Card flat>
           <div className="row row--between">
             <div>
               <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)' }}>
@@ -198,7 +199,7 @@ export default function Recommendations() {
                 {({ id, describedBy }) => (
                   <Input
                     id={id}
-                    placeholder="cheap black sneakers under R500 near me size 9"
+                    placeholder="e.g. bread, soap, maize meal under R50"
                     value={query}
                     describedBy={describedBy}
                     onChange={(e) => setQuery(e.target.value)}
@@ -325,9 +326,9 @@ export default function Recommendations() {
                 : 'Nothing ranked yet'}
           >
             {isWithoutListings(category)
-              ? `The catalogue does not list ${category.toLowerCase()} products yet. Pick another category or search for something specific.`
+              ? `None of the stores in the catalogue list ${category.toLowerCase()} products yet, so there is nothing to recommend. Pick another category or search for something specific.`
               : essentialOnly && (response?.results || []).length > 0
-                ? 'Untick “Essentials only” to see these picks, or search for an essential like bread, soap or maize meal.'
+                ? 'Untick “Essentials only” to see them, or search for an essential like bread, soap or maize meal.'
                 : <>
                   {response?.message ? `${response.message} ` : ''}
                   Try a broader search, or tick &ldquo;Include items over my remaining

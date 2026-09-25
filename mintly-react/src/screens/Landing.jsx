@@ -11,13 +11,13 @@ import { money } from '../lib/format.js';
 const STEPS = [
   {
     n: '01',
-    title: 'Tell Mintly what landed',
-    body: 'Your allowance and the date it paid. Mintly works out a safe daily spend.',
+    title: 'Tell UniWallet what landed',
+    body: 'Your allowance and the date it paid. UniWallet works out a safe daily spend.',
   },
   {
     n: '02',
     title: 'Search before you shop',
-    body: 'Set your ceiling and how far you can travel. Every match is ranked on total cost.',
+    body: 'Set a price ceiling and filters. Every match is priced on total cost, delivery included.',
   },
   {
     n: '03',
@@ -43,7 +43,7 @@ export default function Landing() {
         </h1>
         <p style={{ color: 'var(--c-muted)', fontSize: 'var(--t-md)', marginTop: 'var(--s-5)', maxWidth: '54ch' }}>
           NSFAS pays {money(NSFAS.livingAllowanceMonthly)} a month for living costs —
-          about {money(weekly)} a week. Mintly turns that into a daily number you can
+          about {money(weekly)} a week. UniWallet turns that into a daily number you can
           actually shop against, then finds the cheapest place to buy what you need.
         </p>
         <div className="row" style={{ marginTop: 'var(--s-8)', gap: 'var(--s-3)' }}>
@@ -55,7 +55,7 @@ export default function Landing() {
           </Button>
         </div>
         <div className="row" style={{ marginTop: 'var(--s-6)', gap: 'var(--s-2)' }}>
-          <Badge tone="neutral">Live prices from every listed store</Badge>
+          <Badge tone="neutral">Prices from Durban stores near campus</Badge>
           <Badge tone="neutral">One list, priced everywhere</Badge>
           <Badge tone="neutral">Free for DUT students</Badge>
         </div>
@@ -92,11 +92,11 @@ export default function Landing() {
       <Card tone="forest">
         <Eyebrow onDark>Why it matters</Eyebrow>
         <h2 style={{ fontSize: 'var(--t-xl)', color: '#F3EFE2', marginTop: 'var(--s-4)', maxWidth: '24ch' }}>
-          The same trolley can cost R80 more, depending only on where you walk.
+          The same trolley can cost a lot more, depending only on where you walk.
         </h2>
         <p style={{ color: 'rgba(243,239,226,0.78)', marginTop: 'var(--s-4)', maxWidth: '56ch', fontSize: 'var(--t-sm)' }}>
-          That is most of a day&apos;s food budget, lost to a decision nobody tells you
-          how to make. Mintly makes the comparison before you leave res.
+          That difference can be more than a day&apos;s food budget, lost to a decision
+          nobody tells you how to make. UniWallet makes the comparison before you leave res.
         </p>
       </Card>
     </div>
