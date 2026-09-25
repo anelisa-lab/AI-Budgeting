@@ -16,19 +16,15 @@ import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import { money } from '../lib/format.js';
+import { CATALOGUE_CATEGORIES, categoryIcon, isWithoutListings } from '../lib/categories.js';
 
 /**
- * The categories the seed catalogue actually uses. An explicit category is a
- * HARD filter on POST /recommendations, so a free-text box that let a student
- * type "food" or "household" would return an empty screen.
+ * An explicit category is a HARD filter on POST /recommendations, so the
+ * options must use the catalogue's category names.
  */
 const CATEGORY_OPTIONS = [
   { value: '', label: 'Any category' },
-  { value: 'Groceries', label: 'Groceries' },
-  { value: 'Toiletries', label: 'Toiletries' },
-  { value: 'Stationery', label: 'Stationery' },
-  { value: 'Electronics', label: 'Electronics' },
-  { value: 'Homeware', label: 'Homeware' },
+  ...CATALOGUE_CATEGORIES.map(({ value, label }) => ({ value, label })),
 ];
 
 const FULFILMENT_OPTIONS = [
@@ -293,7 +289,7 @@ export default function Recommendations() {
                 checked={includeUnaffordable}
                 onChange={(e) => setIncludeUnaffordable(e.target.checked)}
               />
-              <span>Include items over today&apos;s allowance</span>
+              <span>Include items over my remaining budget</span>
             </label>
           </div>
         </form>
@@ -320,10 +316,23 @@ export default function Recommendations() {
         </div>
       ) : results.length === 0 ? (
         <Card>
-          <EmptyState icon="✨" title="Nothing ranked yet">
-            {response?.message ? `${response.message} ` : ''}
-            Try a broader search, or tick &ldquo;Include items over today&apos;s
-            allowance&rdquo; to see more.
+          <EmptyState
+            icon={isWithoutListings(category) ? categoryIcon(category) : '✨'}
+            title={isWithoutListings(category)
+              ? `No ${category} items are listed yet`
+              : essentialOnly && (response?.results || []).length > 0
+                ? 'None of these picks are essentials'
+                : 'Nothing ranked yet'}
+          >
+            {isWithoutListings(category)
+              ? `The catalogue does not list ${category.toLowerCase()} products yet. Pick another category or search for something specific.`
+              : essentialOnly && (response?.results || []).length > 0
+                ? 'Untick “Essentials only” to see these picks, or search for an essential like bread, soap or maize meal.'
+                : <>
+                  {response?.message ? `${response.message} ` : ''}
+                  Try a broader search, or tick &ldquo;Include items over my remaining
+                  budget&rdquo; to see more.
+                </>}
           </EmptyState>
         </Card>
       ) : (
@@ -331,7 +340,7 @@ export default function Recommendations() {
           {results.map((rec) => (
             <RecommendationCard
               key={rec.offer_id}
-              rec={rec}
+              rec={{ ...rec, fulfilment }}
               qty={qtyOf(rec.offer_id)}
               onAdd={() => handleAdd(rec)}
             />
@@ -369,8 +378,8 @@ function RecommendationCard({ rec, qty, onAdd }) {
         </p>
         <div className="result__tags">
           {rec.meets_budget
-            ? <Badge tone="success">Fits today&apos;s allowance</Badge>
-            : <Badge tone="warning">Over today&apos;s allowance</Badge>}
+            ? <Badge tone="success">Within your budget</Badge>
+            : <Badge tone="danger">Over your remaining budget</Badge>}
           {rec.is_essential && <Badge tone="accent">Essential</Badge>}
           {rec.rating != null && (
             // rating_count 0 means "not recorded", not "no reviews".
@@ -392,8 +401,8 @@ function RecommendationCard({ rec, qty, onAdd }) {
           <div className="result__price num">{money(rec.true_cost)}</div>
           <p className="result__ship">
             {rec.hidden_cost > 0
-              ? `${money(rec.price)} + ${money(rec.hidden_cost)} delivery & fees`
-              : 'true cost'}
+              ? `true cost · ${money(rec.price)} + ${money(rec.hidden_cost)} ${rec.fulfilment === 'collection' ? 'fees & travel' : 'delivery & fees'}`
+              : 'true cost · no extra fees'}
           </p>
         </div>
         <Button size="sm" variant={qty > 0 ? 'secondary' : 'primary'} onClick={onAdd}>
