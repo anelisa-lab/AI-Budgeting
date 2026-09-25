@@ -166,19 +166,9 @@ export function AuthProvider({ children }) {
 
   /** PUT /profile/ takes `name` and nothing else. */
   const updateProfile = useCallback(async ({ name }) => {
-    const saved = await api.profile.update(token, { name });
-    // PUT /profile returns id, name, email and created_at only, so keep the
-    // residence and student number we already have instead of blanking them.
-    let merged = saved;
-    setUser((prev) => {
-      merged = {
-        ...saved,
-        residence: saved.residence ?? prev?.residence ?? null,
-        student_number: saved.student_number ?? prev?.student_number ?? null,
-      };
-      return merged;
-    });
-    return merged;
+    const updated = await api.profile.update(token, { name });
+    setUser(updated);
+    return updated;
   }, [token]);
 
   const updatePreferences = useCallback(async (patch) => {

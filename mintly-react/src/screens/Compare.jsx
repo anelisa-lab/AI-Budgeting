@@ -3,34 +3,33 @@
  *
  * Two comparisons, because students ask two different questions:
  *
- *  1. "Where should I do this whole shop?"  -> POST /compare/basket (Phase 4,
- *     app/basket.py): the list priced as ONE order at every store, plus the
- *     cheapest plan across up to three stores.
+ *  1. "Where should I do this whole shop?"  -> the list priced at every store
+ *     that stocks ALL of it, cheapest first, plus the split-shop total.
  *  2. "Am I overpaying for this one thing?" -> each item more than one store
- *     sells, priced by POST /true-cost (Member 6).
+ *     sells, priced by the backend's true-cost calculator.
  *
- * WHERE THE NUMBERS COME FROM
- * ---------------------------
+ * WHERE THE NUMBERS COME FROM, AND WHY THEY ARE LABELLED THE WAY THEY ARE
+ * -----------------------------------------------------------------------
  * The list itself is device-local (the backend has no shopping-list
- * endpoints). Every price and total on this screen comes from the backend,
- * fetched fresh whenever the list or "Getting it" changes:
+ * endpoints). The PRICES are live: every time this screen opens, or the set of
+ * products on the list changes, it re-fetches each product's offers from
+ * GET /search. Nothing is priced from a stale snapshot and no price is made up:
  *
- *  - Store totals: items + delivery ONCE per order (the free-delivery
- *    threshold is judged on the whole basket) + the store's own fees + travel
- *    once per trip. A store that lacks an item gets no whole-list total, and
- *    a store that can't serve the student the way they asked (e.g. a shop
- *    that doesn't deliver) is shown separately, never ranked.
- *  - Split plan: the backend tries every set of up to three stores and pays
- *    for each extra delivery or trip, so "split the shop" is only suggested
- *    when it really is cheaper.
- *  - Item by item: each option priced as its OWN order, so these don't add up
- *    to the store totals — the screen says so.
+ *  - Whole-list totals are shelf price x quantity + ONE delivery per store,
+ *    from in-stock offers only. A store that does not stock every line gets
+ *    no total at all.
+ *  - "Item by item" is POST /true-cost (Member 6): each option priced as its
+ *    own order — item, delivery, the store's own fees and travel.
  *
- * Before Phase 4 this screen did the store arithmetic in the browser and
- * could not see store charges or which stores deliver; that code is gone.
+ * Those are genuinely different questions, so the two figures differ: store
+ * fees (e.g. a card surcharge) are charged once per ORDER, and the backend has
+ * no endpoint that prices a whole basket as one order. Rather than invent that
+ * calculation here, both figures are labelled for what they are and the
+ * screen explains the difference. The basket endpoint is listed as a backend
+ * dependency in docs/BACKEND_INTEGRATION.md.
  *
  * "Can I afford this today?" is POST /budget-split/check (Member 6), asked
- * about the cheapest whole-list total.
+ * about the cheapest complete single-shop total.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -45,7 +44,9 @@ import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import { money, plural } from '../lib/format.js';
 import { categoryIcon } from '../lib/categories.js';
-import { basketOffersByProduct, chosenListTotal, itemGroups } from '../lib/search.js';
+import {
+  chosenListTotal, comparableGroups, priceListByStore, splitShopTotal,
+} from '../lib/search.js';
 
 /**
  * Store ids are integers from the backend, so a colour cannot be keyed off a
@@ -58,15 +59,6 @@ const PALETTE = [
 ];
 const colourFor = (storeId) => PALETTE[Math.abs(Number(storeId) || 0) % PALETTE.length];
 
-/** "R12,00 delivery · R5,00 fees · R20,00 travel" — only the parts that apply. */
-function extrasText(q) {
-  return [
-    q.delivery > 0 && `${money(q.delivery)} delivery`,
-    q.fees > 0 && `${money(q.fees)} fees`,
-    q.travel > 0 && `${money(q.travel)} travel`,
-  ].filter(Boolean).join(' · ');
-}
-
 export default function Compare() {
   const { token } = useAuth();
   const {
@@ -76,80 +68,68 @@ export default function Compare() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  // One answer for the whole page, so the store chart and item-by-item never
-  // disagree about whether delivery is being paid for.
-  const [fulfilment, setFulfilment] = useState('collection');
-
-  const [comparison, setComparison] = useState(null); // null = not loaded yet
+  const [offersByProduct, setOffersByProduct] = useState(null); // null = not loaded yet
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const [verdict, setVerdict] = useState(null);
   const [verdictError, setVerdictError] = useState(null);
 
+  // One answer for the whole page, so the store chart and item-by-item never
+  // disagree about whether delivery is being paid for.
+  const [fulfilment, setFulfilment] = useState('collection');
   const [trueCosts, setTrueCosts] = useState(new Map());
   const [trueCostError, setTrueCostError] = useState(null);
 
-  /* ------------------------------------ the whole list, POST /compare/basket */
+  /* --------------------------------------------- live prices from /search */
 
-  // Products and quantities decide the basket (a quantity can cross a
-  // free-delivery threshold), so both are in the key.
-  const basketKey = useMemo(() => {
-    const qty = new Map();
-    for (const l of lines) qty.set(l.product_id, (qty.get(l.product_id) || 0) + l.qty);
-    return [...qty].sort((a, b) => a[0] - b[0]).map(([id, q]) => `${id}x${q}`).join(',');
-  }, [lines]);
+  // Only the SET of products decides what needs fetching. Changing a quantity
+  // used to re-fetch every product's prices (one request each).
+  const productKey = useMemo(
+    () => [...new Set(lines.map((l) => l.product_id))].sort((a, b) => a - b).join(','),
+    [lines],
+  );
   const linesRef = useRef(lines);
   linesRef.current = lines;
   const loadId = useRef(0);
 
-  const loadComparison = useCallback(async () => {
+  const loadOffers = useCallback(async () => {
     const id = ++loadId.current;
-    if (!token || !basketKey) {
-      setComparison(null);
+    if (!token || !productKey) {
+      setOffersByProduct(new Map());
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const result = await api.compare.basket(token, linesRef.current, { fulfilment });
-      if (id === loadId.current) setComparison(result);
+      const map = await api.search.offersForProducts(token, linesRef.current);
+      if (id === loadId.current) setOffersByProduct(map);
     } catch (err) {
-      if (id !== loadId.current) return;
-      if (err.status === 404) {
-        // None of the products is listed anywhere any more — not an outage.
-        setComparison({ stores: [], items: [], unavailable: [], best_plan: null, gone: true });
-      } else {
-        setComparison(null);
-        setError(err.message || 'Could not load current prices for your list.');
-      }
+      if (id === loadId.current) setError(err.message || 'Could not load current prices for your list.');
     } finally {
       if (id === loadId.current) setLoading(false);
     }
-  }, [token, basketKey, fulfilment]);
+  }, [token, productKey]);
 
-  useEffect(() => { loadComparison(); }, [loadComparison]);
+  useEffect(() => { loadOffers(); }, [loadOffers]);
 
-  const pricesReady = comparison !== null && !loading;
-  const stores = comparison?.stores || [];
-  const usable = stores.filter((q) => q.fulfilment_available);
-  const complete = usable.filter((q) => q.full);
-  const incomplete = usable.filter((q) => !q.full);
-  const cannotServe = stores.filter((q) => !q.fulfilment_available);
-  const best = stores.find((q) => q.store_id === comparison?.best_single_store_id) || null;
-  const plan = comparison?.best_plan || null;
-  const splitPlan = plan && plan.store_count > 1 ? plan : null;
+  const priced = offersByProduct || new Map();
+  const pricesReady = offersByProduct !== null && !loading;
 
-  /* -------------------------------------------- derived from the response */
+  /* -------------------------------------------------------------- derived */
 
-  const offersByProduct = useMemo(
-    () => (comparison && !loading ? basketOffersByProduct(comparison, lines) : null),
-    [comparison, loading, lines],
+  const byStore = useMemo(
+    () => (lines.length && pricesReady ? priceListByStore(lines, priced, { fulfilment }) : []),
+    [lines, priced, pricesReady, fulfilment],
+  );
+  const split = useMemo(
+    () => (lines.length && pricesReady ? splitShopTotal(lines, priced) : null),
+    [lines, priced, pricesReady],
   );
   const groups = useMemo(
-    () => (comparison && !loading ? itemGroups(comparison) : []),
-    [comparison, loading],
+    () => (lines.length && pricesReady ? comparableGroups(lines, priced) : []),
+    [lines, priced, pricesReady],
   );
   const chosen = useMemo(
     () => chosenListTotal(lines, offersByProduct || new Map(), { fulfilment }),
@@ -179,18 +159,18 @@ export default function Compare() {
 
   /* ------------------------------------------ can I afford this today? */
 
-  // The cheapest way to buy the whole list: the best plan when there is one
-  // (it may be a single store), otherwise the cheapest complete store.
-  const cheapestTotal = plan?.total ?? best?.total ?? 0;
+  const complete = byStore.filter((r) => r.full);
+  const best = complete[0] || null;
+  const shopTotal = best?.total || 0;
 
   useEffect(() => {
     let cancelled = false;
     setVerdictError(null);
-    if (!token || !budget || !(cheapestTotal > 0)) {
+    if (!token || !budget || !(shopTotal > 0)) {
       setVerdict(null);
       return undefined;
     }
-    api.budgetSplit.check(token, cheapestTotal)
+    api.budgetSplit.check(token, shopTotal)
       .then((result) => { if (!cancelled) setVerdict(result); })
       .catch((err) => {
         if (cancelled) return;
@@ -198,7 +178,7 @@ export default function Compare() {
         setVerdictError(err.message || 'Could not check this against your budget.');
       });
     return () => { cancelled = true; };
-  }, [token, budget, cheapestTotal]);
+  }, [token, budget, shopTotal]);
 
   async function handleClear() {
     // eslint-disable-next-line no-alert
@@ -227,11 +207,10 @@ export default function Compare() {
   const worst = complete.length ? complete[complete.length - 1] : null;
   const gap = best && worst ? Number((worst.total - best.total).toFixed(2)) : 0;
   const maxTotal = Math.max(...complete.map((r) => r.total), 1);
-  const noCompleteStore = pricesReady && usable.length > 0 && complete.length === 0;
+  const splitSaving = best && split != null ? Number((best.total - split).toFixed(2)) : null;
+  const incomplete = byStore.filter((r) => !r.full);
+  const noCompleteStore = pricesReady && byStore.length > 0 && complete.length === 0;
   const overBudget = Boolean(budget) && pricesReady && chosen.total > remaining;
-  const unavailable = comparison?.unavailable || [];
-  const priceInfo = comparison?.prices;
-  const travelUnknown = pricesReady && fulfilment === 'collection' && comparison && !comparison.location_known;
 
   return (
     <div className="stack stack--loose">
@@ -272,26 +251,17 @@ export default function Compare() {
         <Alert tone="danger" title="Could not load current prices">
           {error}
           <div style={{ marginTop: 'var(--s-3)' }}>
-            <Button size="sm" onClick={loadComparison}>Try again</Button>
+            <Button size="sm" onClick={loadOffers}>Try again</Button>
           </div>
         </Alert>
-      )}
-
-      {priceInfo && priceInfo.listings > 0 && !priceInfo.all_confirmed && (
-        <p className="price-note">
-          <Badge tone="neutral">Estimate</Badge>{' '}
-          {priceInfo.confirmed === 0
-            ? 'All of these prices are estimates — none has been confirmed with the store yet. Check the shelf price before you buy.'
-            : `${priceInfo.estimates} of ${priceInfo.listings} prices are estimates; the rest were confirmed with the store.`}
-        </p>
       )}
 
       {overBudget && (
         <Alert tone="warning" title="This list is more than you have left">
           Your list as chosen comes to {money(chosen.total)}, but you have {money(remaining)} left
           this period.
-          {cheapestTotal > 0 && cheapestTotal < chosen.total
-            ? ` Shopping it the cheapest way brings it to ${money(cheapestTotal)}.`
+          {best && best.total < chosen.total
+            ? ` Buying it all at ${best.store.store_name} brings it to ${money(best.total)}.`
             : ' Remove something or look for cheaper alternatives in Search.'}
         </Alert>
       )}
@@ -300,50 +270,44 @@ export default function Compare() {
       <Card>
         <h2 className="card__title">Your whole list, by store</h2>
         <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)', marginTop: 'var(--s-2)', maxWidth: '64ch' }}>
-          Everything on your list as one order at each store
-          {fulfilment === 'delivery' ? ', with one delivery fee per order' : ''} and the
-          store&apos;s own fees. Only stores that stock every item get a total.
+          Shelf prices for everything on your list{fulfilment === 'delivery' ? ' plus one delivery fee per store' : ''}.
+          Only stores that stock every item get a total.
         </p>
-        {travelUnknown && (
-          <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)', marginTop: 'var(--s-2)', maxWidth: '64ch' }}>
-            Taxi fares aren&apos;t included: UniWallet doesn&apos;t know where you are yet.
-          </p>
-        )}
 
         {!pricesReady && !error ? (
           <div className="stack stack--tight" style={{ marginTop: 'var(--s-5)' }} aria-busy="true">
             {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={34} radius="var(--r-md)" />)}
           </div>
-        ) : stores.length === 0 ? (
-          !error && (
-            <p style={{ color: 'var(--c-muted)', fontSize: 'var(--t-sm)', marginTop: 'var(--s-4)' }}>
-              None of the items on your list are listed by any store right now, so there is
-              nothing to compare. They may have been removed since you added them.
-            </p>
-          )
+        ) : byStore.length === 0 ? (
+          <p style={{ color: 'var(--c-muted)', fontSize: 'var(--t-sm)', marginTop: 'var(--s-4)' }}>
+            None of the items on your list are listed by any store right now, so there is
+            nothing to compare. They may have been removed since you added them.
+          </p>
         ) : (
           <>
             {complete.length > 0 && (
               <div className="stack stack--tight" style={{ marginTop: 'var(--s-5)' }}>
                 {complete.map((row, i) => (
-                  <div className={i === 0 ? 'cmp-row cmp-row--best' : 'cmp-row'} key={row.store_id}>
+                  <div className={i === 0 ? 'cmp-row cmp-row--best' : 'cmp-row'} key={row.store.store_id}>
                     <div className="cmp-row__name">
-                      <span className="cmp-row__dot" style={{ background: colourFor(row.store_id) }} aria-hidden="true" />
-                      <span title={row.store_name}>{row.store_name}</span>
+                      <span className="cmp-row__dot" style={{ background: colourFor(row.store.store_id) }} aria-hidden="true" />
+                      <span title={row.store.store_name}>{row.store.store_name}</span>
                     </div>
                     <div className="cmp-row__bar" aria-hidden="true">
                       <div
                         className="cmp-row__fill"
                         style={{
                           width: `${Math.max(6, (row.total / maxTotal) * 100)}%`,
-                          background: i === 0 ? 'var(--c-forest)' : colourFor(row.store_id),
+                          background: i === 0 ? 'var(--c-forest)' : colourFor(row.store.store_id),
                           opacity: i === 0 ? 1 : 0.5,
                         }}
                       />
                     </div>
                     <div className="cmp-row__val num">
                       {money(row.total)}
-                      {extrasText(row) && <span className="cmp-row__sub">incl. {extrasText(row)}</span>}
+                      {row.delivery > 0 && (
+                        <span className="cmp-row__sub">incl. {money(row.delivery)} delivery</span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -357,27 +321,10 @@ export default function Compare() {
                 </p>
                 <ul className="cmp-missing">
                   {incomplete.map((r) => (
-                    <li key={r.store_id}>
-                      <span className="cmp-row__dot" style={{ background: colourFor(r.store_id) }} aria-hidden="true" />
-                      {r.store_name} — {r.stocked} of {r.stocked + r.missing_count} items
-                      {r.missing.length > 0 && ` (no ${r.missing.map((m) => m.product_name).join(', ')})`}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {cannotServe.length > 0 && (
-              <div style={{ marginTop: 'var(--s-5)' }}>
-                <p style={{ fontSize: 'var(--t-xs)', fontWeight: 'var(--fw-extra)', color: 'var(--c-muted)' }}>
-                  {fulfilment === 'delivery' ? "Don't deliver" : "Can't be collected from"}
-                </p>
-                <ul className="cmp-missing">
-                  {cannotServe.map((r) => (
-                    <li key={r.store_id}>
-                      <span className="cmp-row__dot" style={{ background: colourFor(r.store_id) }} aria-hidden="true" />
-                      {r.store_name}
-                      {r.full ? ` — ${money(r.total)} if you ${r.fulfilment === 'collection' ? 'collect it' : 'have it delivered'}` : ''}
+                    <li key={r.store.store_id}>
+                      <span className="cmp-row__dot" style={{ background: colourFor(r.store.store_id) }} aria-hidden="true" />
+                      {r.store.store_name} — {r.stocked} of {r.stocked + r.missing} items
+                      {r.outOfStock > 0 && ` (${r.outOfStock} out of stock)`}
                     </li>
                   ))}
                 </ul>
@@ -388,76 +335,57 @@ export default function Compare() {
       </Card>
 
       {/* --------------------------------------------------- the verdict */}
-      {(best || splitPlan) && (
+      {best && (
         <div className="dash-hero">
           <Card tone="forest">
             <p className="dash-label">Cheapest single shop</p>
             <div className="dash-amount num" style={{ marginTop: 'var(--s-3)' }}>
-              {best ? money(best.total) : '—'}
+              {money(best.total)}
             </div>
             <p className="dash-sub dash-sub--on-dark">
-              {best
-                ? `at ${best.store_name}${extrasText(best) ? ` · includes ${extrasText(best)}` : ''}`
-                : 'No single store stocks your whole list.'}
+              at {best.store.store_name}
+              {best.delivery > 0 ? ` · includes ${money(best.delivery)} delivery` : ''}
             </p>
             {gap > 0 && (
               <p style={{ marginTop: 'var(--s-4)', fontSize: 'var(--t-sm)', color: 'rgba(243,239,226,0.86)' }}>
-                {money(gap)} less than {worst.store_name} for exactly the same items.
+                {money(gap)} less than {worst.store.store_name} for exactly the same items.
               </p>
             )}
-            {best && (
-              <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--t-xs)', color: 'rgba(243,239,226,0.66)' }}>
-                {complete.length} of {usable.length} stores stock your whole list.
-              </p>
-            )}
+            <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--t-xs)', color: 'rgba(243,239,226,0.66)' }}>
+              {complete.length} of {byStore.length} stores stock your whole list.
+              {' '}Store fees such as a card surcharge are extra — see Item by item.
+            </p>
           </Card>
 
           <Card tone="butter">
             <p className="dash-label">Split across stores</p>
             <div className="dash-amount num" style={{ marginTop: 'var(--s-3)' }}>
-              {splitPlan ? money(splitPlan.total) : '—'}
+              {split != null ? money(split) : '—'}
             </div>
             <p className="dash-sub dash-sub--on-butter">
-              {splitPlan
-                ? splitPlan.stores.map((q) => q.store_name).join(' + ')
-                : 'buying each item wherever it is cheapest'}
+              shelf prices, buying each item wherever it is cheapest
             </p>
             <p style={{ marginTop: 'var(--s-4)', fontSize: 'var(--t-sm)', color: 'rgba(28,28,25,0.75)' }}>
-              {splitPlan
-                ? (splitPlan.saving_vs_best_single != null && splitPlan.saving_vs_best_single > 0
-                  ? `${money(splitPlan.saving_vs_best_single)} less than one stop, after paying for the extra ${fulfilment === 'delivery' ? 'delivery' : 'trip'}.`
-                  : `No single store has everything, so this is the cheapest way to get it all${fulfilment === 'delivery' ? ', delivery included' : ''}.`)
-                : best
-                  ? `One stop at ${best.store_name} is already the cheapest way to buy this list, once the extra ${fulfilment === 'delivery' ? 'delivery' : 'trip'} is paid for.`
-                  : 'At least one item is not in stock anywhere, so there is no split-shop figure.'}
+              {split == null
+                ? 'At least one item is not in stock anywhere, so there is no split-shop figure.'
+                : splitSaving > 0.01
+                  ? `${money(splitSaving)} less than one stop — only worth it if the stores are close together, and before any extra delivery or taxi fares.`
+                  : `One stop at ${best.store.store_name} is already the cheapest way to buy this list.`}
             </p>
           </Card>
         </div>
       )}
 
-      {noCompleteStore && !splitPlan && (
+      {noCompleteStore && (
         <Alert tone="info" title="No single store stocks everything on your list">
           UniWallet only calls a store cheapest when it has every item, so there is no
           whole-list total yet. Remove the item most stores are missing, or buy it separately.
         </Alert>
       )}
 
-      {pricesReady && unavailable.length > 0 && (
-        <Alert tone="warning" title={`${plural(unavailable.length, 'item')} can't be bought right now`}>
-          {unavailable.map((u) => u.product_name).join(', ')}
-          {unavailable.length === 1 ? ' is' : ' are'} not in stock at any store that can
-          {fulfilment === 'delivery' ? ' deliver to you' : ' be collected from'}, so
-          {unavailable.length === 1 ? ' it is' : ' they are'} left out of the totals above.
-        </Alert>
-      )}
-
       {/* ------------------------------------- can I afford this today? */}
       {budget && (verdict || verdictError) && (
-        <AffordabilityCard
-          verdict={verdict}
-          error={verdictError}
-          where={splitPlan ? splitPlan.stores.map((q) => q.store_name).join(' + ') : best?.store_name}
-        />
+        <AffordabilityCard verdict={verdict} error={verdictError} storeName={best?.store.store_name} />
       )}
 
       {/* ------------------------------------------- item-level comparison */}
@@ -472,25 +400,30 @@ export default function Compare() {
           </p>
           {trueCostError && (
             <p style={{ color: 'var(--c-warning)', fontSize: 'var(--t-xs)', marginTop: 'var(--s-2)' }}>
-              {trueCostError} Showing the shelf price only, without delivery or store fees.
+              {trueCostError} Showing the listed price plus delivery instead, without store fees.
             </p>
           )}
           <div className="stack" style={{ marginTop: 'var(--s-5)' }}>
             {groups.map((g) => {
               const pricedGroup = trueCosts.get(g.product_id);
-              // Backend true cost when we have it; otherwise the shelf price
-              // for the quantity, labelled as such above.
+              // Backend true cost when we have it; otherwise the listed price
+              // for the quantity plus ONE delivery (delivery is per order).
               const rows = g.offers
                 .map((o) => ({ ...o, tc: pricedGroup?.get(o.offer_id) || null }))
-                .map((o) => ({ ...o, shown: o.tc ? o.tc.true_cost : o.line_total }))
+                .map((o) => ({
+                  ...o,
+                  shown: o.tc
+                    ? o.tc.true_cost
+                    : Number((o.price * g.qty + (fulfilment === 'collection' && o.store_type !== 'online' ? 0 : o.shipping_cost)).toFixed(2)),
+                }))
                 .sort((a, b) => a.shown - b.shown);
               const top = rows[rows.length - 1]?.shown || 1;
               const saving = rows.length > 1 ? rows[rows.length - 1].shown - rows[0].shown : 0;
               return (
-                <div key={g.product_id}>
+                <div key={g.key}>
                   <div className="row row--between" style={{ marginBottom: 'var(--s-3)' }}>
                     <span style={{ fontWeight: 'var(--fw-extra)', fontSize: 'var(--t-sm)' }}>
-                      {g.product_name}{g.qty > 1 ? ` × ${g.qty}` : ''}
+                      {g.product_name}{g.size ? ` · ${g.size}` : ''}{g.qty > 1 ? ` × ${g.qty}` : ''}
                     </span>
                     {saving > 0.005 && <Badge tone="accent">Save up to {money(saving)}</Badge>}
                   </div>
@@ -514,11 +447,6 @@ export default function Compare() {
                           </div>
                           <div className="cmp-row__val num">{money(o.shown)}</div>
                         </div>
-                        {o.tc && !o.tc.fulfilment_available && (
-                          <p className="cmp-row__breakdown">
-                            {o.tc.fulfilment === 'collection' ? "Doesn't deliver — priced for collection" : 'Delivery only — priced delivered'}
-                          </p>
-                        )}
                         {o.tc && o.tc.hidden_cost > 0 && (
                           <p className="cmp-row__breakdown">
                             {money(o.tc.subtotal)} item
@@ -649,7 +577,7 @@ export default function Compare() {
  *   fits the cycle only   -> amber, with how many days of allowance it eats
  *   does not fit at all   -> red, an overspend
  */
-function AffordabilityCard({ verdict, error, where }) {
+function AffordabilityCard({ verdict, error, storeName }) {
   if (error) {
     return (
       <Alert tone="warning" title="Could not check this against your budget">{error}</Alert>
@@ -667,9 +595,9 @@ function AffordabilityCard({ verdict, error, where }) {
   return (
     <Alert tone={tone} title={title}>
       {verdict.message}
-      {where && (
+      {storeName && (
         <span style={{ display: 'block', marginTop: 'var(--s-2)', fontSize: 'var(--t-xs)' }}>
-          Checked against {money(verdict.amount)} — your whole list at {where}. You have{' '}
+          Checked against {money(verdict.amount)} — your whole list at {storeName}. You have{' '}
           {money(verdict.remaining_today)} left today and {money(verdict.remaining_amount)} this period.
         </span>
       )}

@@ -5,14 +5,19 @@
  * per-field errors that explain the fix, and a submit button that reports
  * progress.
  *
- * WHAT THE BACKEND ACCEPTS
- * ------------------------
- * POST /auth/register takes RegisterRequest { name, email, password,
- * residence?, student_number? }. The last two were added in Phase 4
- * (sql/004_phase4_student_number.sql): residence goes to
- * users.residence_area_code and student_number must be 8 or 9 digits, the
- * same rule lib/validation.js checks here. Both are optional, and a blank one
- * is simply not sent. Profile shows them back.
+ * WHAT THE BACKEND ACTUALLY ACCEPTS
+ * ---------------------------------
+ * POST /auth/register takes RegisterRequest { name, email, password } and
+ * nothing else. Student number and residence are NOT stored — `users` has a
+ * `residence_area_code` column but neither RegisterRequest nor UserOut expose
+ * it, and there is no student-number column at all.
+ *
+ * So those two inputs are kept (Res-Mate bulk-buy matching needs residence,
+ * and the team already designed for it) but they are marked optional, grouped
+ * under a heading that says they are not saved yet, and they are NOT sent. A
+ * field that is silently dropped by the API is worse than one that admits it.
+ * docs/BACKEND_INTEGRATION.md specifies the backend change that would let this
+ * block become real.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -24,11 +29,72 @@ import { useAuth } from '../context/AuthContext.jsx';
 import BackendStatus from '../components/layout/BackendStatus.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import * as v from '../lib/validation.js';
-import { RESIDENCES } from '../lib/residences.js';
 
 /**
- * studentNumber and residence are optional; their rules only fire once
- * something has been typed, so an empty value is never an error.
+ * DUT residences. Not yet accepted by the backend — see the header.
+ *
+ * Phase 4: the group leader noted the list was incomplete. The DUT-owned
+ * Durban residences use the names on DUT's Student Housing page
+ * (dut.ac.za/support_services/student_housing/student-residence): Alpine
+ * Road, Baltimore Flats, Berea Residence, Campbell Hall, Corlo Court, Hertine
+ * Court, Stratford Hall, Student Village and Walsingham Hall. The Midlands
+ * and leased/accredited names were supplied by the group and are grouped
+ * separately so they are easy to check and extend.
+ */
+const RESIDENCES = [
+  { value: '', label: 'Select your residence…' },
+  {
+    label: 'DUT residences — Durban',
+    options: [
+      { value: 'alpine-road', label: 'Alpine Road (Overport)' },
+      { value: 'baltimore-flats', label: 'Baltimore Flats (Beachfront)' },
+      { value: 'berea', label: 'Berea Residence' },
+      { value: 'campbell-hall', label: 'Campbell Hall (Glenwood)' },
+      { value: 'corlo-court', label: 'Corlo Court (Berea)' },
+      { value: 'hertine-court', label: 'Hertine Court (Albert Park)' },
+      { value: 'stratford-hall', label: 'Stratford Hall' },
+      { value: 'student-village', label: 'Student Village' },
+      { value: 'walsingham-hall', label: 'Walsingham Hall' },
+    ],
+  },
+  {
+    label: 'Midlands — Indumiso & Pietermaritzburg',
+    options: [
+      { value: 'indumiso-1', label: 'Indumiso Residence 1' },
+      { value: 'indumiso-2', label: 'Indumiso Residence 2' },
+      { value: 'indumiso-3', label: 'Indumiso Residence 3' },
+      { value: 'indumiso-4', label: 'Indumiso Residence 4' },
+      { value: 'indumiso-5', label: 'Indumiso Residence 5' },
+      { value: 'indumiso-6', label: 'Indumiso Residence 6' },
+      { value: 'pebs', label: 'PEBS (Pietermaritzburg)' },
+      { value: 'roseville', label: 'Roseville (Pietermaritzburg)' },
+      { value: 'aloes', label: 'Aloes (Pietermaritzburg)' },
+      { value: '02-jesmond', label: '02 Jesmond (Pietermaritzburg)' },
+    ],
+  },
+  {
+    label: 'Leased & accredited residences',
+    options: [
+      { value: 'winterton', label: 'Winterton (New Student Village)' },
+      { value: 'lynnfield-chestnut', label: 'Lynnfield Estates: Chestnut' },
+      { value: 'boombox', label: 'Boombox Residence' },
+      { value: 'chorley', label: 'Chorley Residence' },
+    ],
+  },
+  {
+    label: 'Not in a residence',
+    options: [
+      { value: 'private', label: 'Private accommodation / digs' },
+      { value: 'home', label: 'Living at home' },
+      { value: 'other', label: 'Other residence (not listed)' },
+    ],
+  },
+];
+
+/**
+ * studentNumber and residence are optional because the backend cannot store
+ * them; their rules only fire once something has been typed, so an empty
+ * value is never an error.
  */
 const RULES = {
   name: (value) => v.fullName(value),
@@ -89,13 +155,11 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      // The fields RegisterRequest declares; blank optional ones are left out.
+      // Exactly the three fields RegisterRequest declares.
       const user = await register({
         name: values.name.trim().replace(/\s+/g, ' '),
         email: values.email.trim(),
         password: values.password,
-        residence: values.residence || undefined,
-        student_number: values.studentNumber.trim() || undefined,
       });
       toast.success(`Account created. Welcome to UniWallet, ${user.name.split(' ')[0]}.`);
       // Straight to budget setup — an empty dashboard would teach them nothing.
@@ -203,6 +267,8 @@ export default function Register() {
               )}
             </Field>
 
+            {/* Collected for a feature that is designed but not yet stored
+                server-side. Nothing here is sent to POST /auth/register. */}
             <fieldset
               style={{
                 border: '1.5px solid var(--c-line)',
@@ -213,11 +279,11 @@ export default function Register() {
               }}
             >
               <legend className="field__label" style={{ padding: '0 var(--s-2)' }}>
-                Optional
+                Optional — not saved yet
               </legend>
               <p className="field__hint" style={{ marginTop: 0 }}>
-                Saved to your account and shown on your profile. They help with
-                features like bulk-buying with students near you. You can skip them.
+                These help with future features like bulk-buying with students near
+                you. They are not saved to your account yet, so you can skip them.
               </p>
 
               <Field

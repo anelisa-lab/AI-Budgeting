@@ -471,8 +471,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .search-bar .input { font-size: var(--t-base); }
 .search-bar__filters { display: none; }
 .filter-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
-.price-note { display: flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap; font-size: var(--t-xs); color: var(--c-muted); max-width: 72ch; }
-.profile-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--s-4); }
 
 .results-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; margin-bottom: var(--s-4); }
 .results-count { font-size: var(--t-sm); color: var(--c-muted); font-weight: var(--fw-semibold); }

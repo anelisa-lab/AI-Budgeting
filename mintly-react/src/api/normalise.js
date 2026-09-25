@@ -303,31 +303,6 @@ export function offerFromApi(r) {
     rating_count: num(r.rating_count, 0),
     last_updated: r.last_updated || null,
     product_url: r.product_url || null,
-    // Phase 4 backend. effective_cost is what ?fulfilment= made the offer
-    // cost: the shelf price when collecting, price + delivery when delivered.
-    // Without ?fulfilment= it is absent, so fall back to total_cost.
-    effective_cost: r.effective_cost == null
-      ? (r.total_cost == null ? price + shipping : num(r.total_cost))
-      : num(r.effective_cost),
-    ...priceProvenance(r),
-    delivery_available: r.delivery_available ?? null,
-    collection_available: r.collection_available ?? null,
-  };
-}
-
-/**
- * Where a price came from. Every seeded price is a modelled estimate; only a
- * price confirmed with the store (price_source 'live_api' or
- * 'verified_manual', with a price_verified_at date) is shown as confirmed.
- * The backend decides this — the screens only label it.
- */
-export function priceProvenance(r) {
-  const source = r?.price_source || 'seed_estimate';
-  const verifiedAt = r?.price_verified_at || null;
-  return {
-    price_source: source,
-    price_verified_at: verifiedAt,
-    price_is_estimate: r?.price_is_estimate ?? (source === 'seed_estimate' || !verifiedAt),
   };
 }
 
@@ -384,11 +359,6 @@ export function recommendationFromApi(r) {
     total_cost: num(r.price) + num(cb.shipping),
     availability_status: 'available',
     product_url: r.product_url || null,
-    // How it was priced. A store that can't serve the student the way they
-    // asked is priced the only way it can be (Phase 4 true-cost rule 7).
-    fulfilment: cb.fulfilment || null,
-    fulfilment_available: cb.fulfilment_available !== false,
-    ...priceProvenance(r),
   };
 }
 
@@ -439,87 +409,6 @@ export function trueCostFromApi(t) {
     notes: Array.isArray(t.notes) ? t.notes : [],
     product_name: t.product_name || null,
     store_name: t.store_name || null,
-    requested_fulfilment: t.requested_fulfilment || null,
-    fulfilment_available: t.fulfilment_available !== false,
-  };
-}
-
-/* ------------------------------------------------------ basket comparison */
-
-function basketLineFromApi(l) {
-  return {
-    product_id: l.product_id,
-    product_name: l.product_name,
-    qty: num(l.qty, 1),
-    offer_id: l.offer_id,
-    price: num(l.price),
-    line_total: num(l.line_total),
-    is_estimate: l.is_estimate !== false,
-  };
-}
-
-/** StoreQuoteOut — the whole list as ONE order at one store. */
-export function storeQuoteFromApi(q) {
-  return {
-    store_id: q.store_id,
-    store_name: q.store_name,
-    store_type: q.store_type,
-    distance_km: numOrNull(q.distance_km),
-    fulfilment: q.fulfilment,
-    fulfilment_available: q.fulfilment_available !== false,
-    full: Boolean(q.full),
-    stocked: num(q.stocked, 0),
-    missing_count: num(q.missing_count, 0),
-    lines: Array.isArray(q.lines) ? q.lines.map(basketLineFromApi) : [],
-    missing: Array.isArray(q.missing) ? q.missing : [],
-    subtotal: num(q.subtotal),
-    delivery: num(q.delivery),
-    fees: num(q.fees),
-    travel: num(q.travel),
-    total: num(q.total),
-    estimate_count: num(q.estimate_count, 0),
-    notes: Array.isArray(q.notes) ? q.notes : [],
-  };
-}
-
-/** CompareBasketResponse — POST /compare/basket. */
-export function basketComparisonFromApi(payload) {
-  const plan = payload?.best_plan;
-  const prices = payload?.prices || {};
-  return {
-    fulfilment: payload?.fulfilment || 'collection',
-    location_known: Boolean(payload?.location_known),
-    stores: Array.isArray(payload?.stores) ? payload.stores.map(storeQuoteFromApi) : [],
-    best_single_store_id: payload?.best_single_store_id ?? null,
-    best_plan: plan ? {
-      total: num(plan.total),
-      store_count: num(plan.store_count, 0),
-      stores: Array.isArray(plan.stores) ? plan.stores.map(storeQuoteFromApi) : [],
-      saving_vs_best_single: numOrNull(plan.saving_vs_best_single),
-    } : null,
-    unavailable: Array.isArray(payload?.unavailable) ? payload.unavailable : [],
-    items: Array.isArray(payload?.items) ? payload.items.map((it) => ({
-      product_id: it.product_id,
-      product_name: it.product_name,
-      qty: num(it.qty, 1),
-      offers: Array.isArray(it.offers) ? it.offers.map((o) => ({
-        offer_id: o.offer_id,
-        store_id: o.store_id,
-        store_name: o.store_name,
-        price: num(o.price),
-        line_total: num(o.line_total),
-        in_stock: Boolean(o.in_stock),
-        is_estimate: o.is_estimate !== false,
-        price_verified_at: o.price_verified_at || null,
-        product_url: o.product_url || null,
-      })) : [],
-    })) : [],
-    prices: {
-      listings: num(prices.listings, 0),
-      estimates: num(prices.estimates, 0),
-      confirmed: num(prices.confirmed, 0),
-      all_confirmed: Boolean(prices.all_confirmed),
-    },
   };
 }
 
@@ -534,15 +423,13 @@ export function trueCostResponseFromApi(payload) {
 
 /* ------------------------------------------------------------------ user */
 
-/** UserOut { id, name, email, residence, student_number, created_at }. */
+/** UserOut { id, name, email, created_at }. */
 export function userFromApi(u) {
   if (!u) return null;
   return {
     id: u.id,
     name: u.name,
     email: u.email,
-    residence: u.residence || null,
-    student_number: u.student_number || null,
     created_at: u.created_at || null,
   };
 }
