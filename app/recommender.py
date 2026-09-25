@@ -76,6 +76,46 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
     "freshness": 0.02,
 }
 
+# ---------------------------------------------------------------------------
+# Phase 4 tuning (Member 5) — driven by scripts/eval_recommender.py
+# ---------------------------------------------------------------------------
+#
+# Integration testing showed proximity double-counting distance. When a
+# student COLLECTS, travel is already inside true cost (app/geo.py), so a far
+# store pays twice: once in rands through price_value and budget_fit, and
+# again through proximity. When a student has it DELIVERED, distance costs
+# them nothing at all — the courier fee is already in true cost — yet
+# proximity still carried 12% of the score. Either way the result was the
+# same: a dearer offer from a nearer store outranked a cheaper offer of the
+# identical product, which is the one thing a budgeting app must not do.
+#
+# The weight proximity gives up goes to price_value. Everything else is
+# unchanged. Weights still sum to 1.0 in both modes.
+FULFILMENT_WEIGHT_SHIFTS: Dict[str, Dict[str, float]] = {
+    # Distance is irrelevant to a delivery; the fee is in true cost already.
+    "delivery": {"proximity": 0.00, "price_value": 0.28},
+    # Travel is already costed in rands; keep a small nudge for time and
+    # effort, which a taxi fare does not capture.
+    "collection": {"proximity": 0.04, "price_value": 0.24},
+}
+
+
+def weights_for(fulfilment: Optional[str], base: Optional[Dict[str, float]] = None) -> Dict[str, float]:
+    """The weights to score with, for how the student is getting the item."""
+    weights = dict(base or DEFAULT_WEIGHTS)
+    weights.update(FULFILMENT_WEIGHT_SHIFTS.get(fulfilment or "", {}))
+    return weights
+
+
+# Words that describe the FORM a product comes in rather than what it is.
+# "Sunlight Soap Bar" is soap; "Margarine Spread" is margarine. Used by the
+# head-noun rule in relevance_score().
+FORM_WORDS = {"bar", "bars", "pack", "packs", "portions", "spread", "tin", "loaf"}
+
+# Relevance for a keyword that hits the product name as a modifier rather
+# than as the thing itself: "sugar" in "Sugar Beans".
+MODIFIER_MATCH = 0.75
+
 # How much each field a keyword can hit is worth. A hit on the product name is
 # what the student actually meant; a hit on the category is the weakest kind of
 # match ("groceries" matching 142 items tells you almost nothing).
@@ -137,6 +177,12 @@ class Candidate:
     rating_count: int = 0
     last_updated: Optional[datetime] = None
     product_url: Optional[str] = None
+    # Phase 4: where the price came from, and when it was last confirmed
+    # against a real source. A 'seed_estimate' has never been confirmed.
+    price_source: str = "seed_estimate"
+    price_verified_at: Optional[datetime] = None
+    delivery_available: Optional[bool] = None
+    collection_available: Optional[bool] = None
 
     @classmethod
     def from_row(cls, row) -> "Candidate":
@@ -168,7 +214,15 @@ class Candidate:
             rating_count=row.get("rating_count") or 0,
             last_updated=row.get("last_updated"),
             product_url=row.get("product_url"),
+            price_source=row.get("price_source") or "seed_estimate",
+            price_verified_at=row.get("price_verified_at"),
+            delivery_available=row.get("delivery_available"),
+            collection_available=row.get("collection_available"),
         )
+
+    @property
+    def price_is_estimate(self) -> bool:
+        return self.price_source == "seed_estimate" or self.price_verified_at is None
 
     def to_offer(self) -> Offer:
         """Hand off to Member 6's true-cost calculator."""
@@ -181,6 +235,8 @@ class Candidate:
             store_name=self.store_name,
             store_type=self.store_type,
             product_name=self.product_name,
+            delivery_available=self.delivery_available,
+            collection_available=self.collection_available,
         )
 
 
@@ -201,6 +257,11 @@ class UserContext:
     essential_only: bool = False
     location: Optional[tuple] = None          # (lat, lng)
     currency: str = "ZAR"
+    # Phase 4: how the student is getting it (drives the weights), and the
+    # price ceiling / floor they set, enforced on TRUE cost.
+    fulfilment: str = "delivery"
+    max_price: Optional[Decimal] = None
+    min_price: Optional[Decimal] = None
 
 
 @dataclass
@@ -219,6 +280,10 @@ class ScoredOffer:
     # matched nothing, so this is the nearest aisle rather than the thing asked
     # for. The UI should label these differently.
     matched_query: bool = True
+    # Phase 4: the product's head noun is one of the student's words — it IS
+    # the thing searched for ("White Sugar" for "sugar"), rather than merely
+    # containing the word ("Sugar Beans").
+    names_query: bool = True
 
     @property
     def true_cost(self) -> Decimal:
@@ -382,16 +447,49 @@ def relevance_score(candidate: Candidate, parsed: Optional[ParsedQuery] = None) 
         "category": (candidate.category or "").lower(),
     }
 
+    head = _head_noun(candidate.product_name)
+
     total = 0.0
     for keyword in parsed.keywords:
         best = 0.0
         for field, weight in RELEVANCE_FIELD_WEIGHTS:
             if _contains_word(fields[field], keyword):
                 best = weight
+                # Phase 4 head-noun rule: "sugar" names the product in
+                # "White Sugar" but only describes it in "Sugar Beans".
+                # Integration testing found "sugar" recommending beans,
+                # because both names contain the word and beans were cheaper.
+                if field == "product_name" and head and not _is_head_match(keyword, head):
+                    best = weight * MODIFIER_MATCH
                 break
         total += best
 
     return round(total / len(parsed.keywords), 4)
+
+
+def _head_noun(name: str) -> str:
+    """
+    The word that says what a product IS — the last word of its name, once
+    form words ("bar", "spread") and pack sizes ("2-Ply") are stripped.
+    """
+    words = re.findall(r"[a-z0-9][a-z0-9'-]*", (name or "").lower())
+    while words and (words[-1] in FORM_WORDS or any(ch.isdigit() for ch in words[-1])):
+        words.pop()
+    return words[-1] if words else ""
+
+
+def names_the_query(candidate: Candidate, parsed: Optional[ParsedQuery]) -> bool:
+    """True when the product's head noun is one of the student's keywords."""
+    if not parsed or not parsed.keywords:
+        return True
+    head = _head_noun(candidate.product_name)
+    return bool(head) and any(_is_head_match(k, head) for k in parsed.keywords)
+
+
+def _is_head_match(keyword: str, head: str) -> bool:
+    """Tolerates the plural either way: 'bean' / 'beans', 'pen' / 'pens'."""
+    k, h = keyword.lower(), head.lower()
+    return k == h or k + "s" == h or k == h + "s" or k + "es" == h
 
 
 def rating_score(rating: Optional[Decimal], rating_count: int = 0) -> float:
@@ -440,6 +538,18 @@ def freshness_score(last_updated: Optional[datetime], now: Optional[datetime] = 
 # ---------------------------------------------------------------------------
 # Filtering and ranking
 # ---------------------------------------------------------------------------
+
+
+def price_freshness(candidate: Candidate, now: datetime) -> float:
+    """
+    Phase 4: freshness is scored on when the price was last CONFIRMED against
+    a real source, not on product_offers.last_checked_at. The seed script set
+    last_checked_at to NOW() for every modelled price, so an estimate that had
+    never been checked against a shelf scored as perfectly fresh.
+    """
+    if candidate.price_is_estimate:
+        return 0.0
+    return freshness_score(candidate.price_verified_at, now)
 
 
 def _distance_for(candidate: Candidate, context: UserContext) -> Optional[float]:
@@ -534,6 +644,8 @@ def _default_pricer(candidate: Candidate, context: UserContext) -> TrueCostBreak
 def _explain(scored_reasons: List[str], breakdown: TrueCostBreakdown, candidate: Candidate) -> str:
     """One sentence a student can act on."""
     head = f"R{breakdown.true_cost} all in at {candidate.store_name or 'this store'}"
+    if candidate.price_is_estimate:
+        head += " (estimated price — not yet confirmed with the store)"
 
     # Name the extra honestly. Calling a taxi fare "delivery and fees" is the
     # kind of small lie that stops a student trusting the number.
@@ -585,8 +697,12 @@ def recommend(
     Returns:
         ScoredOffers, best first, with rank starting at 1.
     """
-    weights = {**DEFAULT_WEIGHTS, **(weights or {})}
+    # Explicit weights win outright (that is how the tests and the eval script
+    # compare settings); otherwise the Phase 4 fulfilment-aware weights apply.
+    weights = {**DEFAULT_WEIGHTS, **weights} if weights else weights_for(context.fulfilment)
     pricer = pricer or _default_pricer
+    ceiling = context.max_price if context.max_price is not None else (parsed.max_price if parsed else None)
+    floor = context.min_price if context.min_price is not None else (parsed.min_price if parsed else None)
     now = now or datetime.now(timezone.utc)
 
     # Pass 1 — filter, and price whatever survives.
@@ -609,6 +725,17 @@ def recommend(
                 if (candidate.category or "").strip().lower() != wanted.strip().lower():
                     continue
             breakdown = pricer(candidate, context)
+            # Phase 4: a store that can't serve the student the way they
+            # asked is not a recommendation (true_cost.py rule 7).
+            if not breakdown.fulfilment_available:
+                continue
+            # Phase 4: the student's ceiling is a promise. Phase 3 let the SQL
+            # over-fetch by 15% and never checked again, so "under R50" could
+            # recommend something at R56.
+            if ceiling is not None and breakdown.true_cost > money(ceiling):
+                continue
+            if floor is not None and breakdown.true_cost < money(floor):
+                continue
             if not include_unaffordable and context.remaining_amount is not None:
                 if breakdown.true_cost > money(context.remaining_amount):
                     continue
@@ -652,7 +779,7 @@ def recommend(
             "preference_match": pref_score,
             "proximity": prox,
             "rating": rating_score(candidate.rating, candidate.rating_count),
-            "freshness": freshness_score(candidate.last_updated, now),
+            "freshness": price_freshness(candidate, now),
         }
         total = round(sum(components[k] * weights.get(k, 0.0) for k in components), 5)
 
@@ -696,13 +823,27 @@ def recommend(
                 reasons=headline,
                 explanation=_explain(headline, breakdown, candidate),
                 matched_query=matched_query,
+                names_query=names_the_query(candidate, parsed),
             )
         )
 
-    # Affordable options always outrank unaffordable ones, whatever the score:
-    # a perfect match you cannot pay for is not a recommendation.
+    # Phase 4 ordering, in tiers:
+    #
+    #  1. Products that ARE what was searched for outrank products that only
+    #     contain the word. Integration testing found "sugar" recommending
+    #     Sugar Beans in 7 of 8 scenario/fulfilment runs: beans were R27
+    #     cheaper, and no relevance weight small enough to leave budget
+    #     ranking intact could outweigh that. A tier can. It only reorders
+    #     when at least one candidate names the query, so category browsing
+    #     and the closest-match fallback are unaffected. It sits ABOVE
+    #     affordability because substituting a different product is worse
+    #     than showing the right one flagged "R.. over your budget".
+    #  2. Affordable options outrank unaffordable ones, whatever the score.
+    #  3. Score, then true cost.
     scored.sort(
-        key=lambda s: (not s.meets_budget, -s.score, s.true_cost, s.candidate.offer_id)
+        key=lambda s: (
+            not s.names_query, not s.meets_budget, -s.score, s.true_cost, s.candidate.offer_id,
+        )
     )
 
     for index, item in enumerate(scored[:limit], start=1):

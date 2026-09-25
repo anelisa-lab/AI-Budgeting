@@ -13,6 +13,8 @@ from app.routers import (
     recommendations,
     true_cost,
     budget_split,
+    compare,
+    prices,
 )
 
 app = FastAPI(title="AI Shopping for Student Budgeting — Backend")
@@ -61,3 +63,5 @@ app.include_router(search.router)
 app.include_router(recommendations.router)   # Member 5 — /recommendations
 app.include_router(true_cost.router)         # Member 6 — /true-cost
 app.include_router(budget_split.router)      # Member 6 — /budget-split
+app.include_router(compare.router)
+app.include_router(prices.router)

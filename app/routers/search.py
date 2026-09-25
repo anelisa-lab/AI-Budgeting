@@ -64,12 +64,26 @@ router = APIRouter(prefix="/search", tags=["search"])
 #   The parsed category is not applied as a filter — the keywords already
 #   match against category, and a wrong guess would hide real results.
 
+# Phase 4 — fulfilment:
+#   ?fulfilment=collection  price, filter and sort on the SHELF price, and only
+#                           return stores you can actually walk into
+#   ?fulfilment=delivery    price on price + delivery, and only return stores
+#                           that deliver
+#   (omitted)               unchanged Phase 3 behaviour: total_cost everywhere
+# Phase 3 always used total_cost (price + delivery), so a student collecting
+# from a shop 600 m away saw bread at R54.99 instead of R19.99, and a "max
+# R30" filter hid it entirely. That was the "filter doesn't work" report.
+# Every result also carries price_source / price_verified_at, so the screen
+# can say whether a price is a confirmed one or a seed estimate.
 AVAILABILITY_VALUES = ("available", "out_of_stock", "unknown", "any")
+FULFILMENT_VALUES = ("collection", "delivery")
+CAN_COLLECT = "COALESCE(s.collection_available, s.store_type <> 'online')"
+CAN_DELIVER = "COALESCE(s.delivery_available, TRUE)"
 SORT_MAP = {
-    "price_asc": "o.total_cost ASC, o.id ASC",
-    "price_desc": "o.total_cost DESC, o.id ASC",
+    "price_asc": "{cost} ASC, o.id ASC",
+    "price_desc": "{cost} DESC, o.id ASC",
     "newest": "o.last_checked_at DESC NULLS LAST, o.id ASC",
-    "rating_desc": "o.rating DESC NULLS LAST, o.total_cost ASC, o.id ASC",
+    "rating_desc": "o.rating DESC NULLS LAST, {cost} ASC, o.id ASC",
 }
 
 
@@ -103,6 +117,7 @@ def search_offers(
     max_shipping_cost: Optional[Decimal] = Query(default=None, ge=0),
     availability: str = "available",
     essential_only: bool = False,
+    fulfilment: Optional[str] = None,
     sort: Optional[str] = None,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -153,8 +168,16 @@ def search_offers(
             status_code=400,
             detail=f"sort must be one of: {', '.join(SORT_MAP)}",
         )
+    fulfilment = (_clean(fulfilment) or "").lower() or None
+    if fulfilment is not None and fulfilment not in FULFILMENT_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"fulfilment must be one of: {', '.join(FULFILMENT_VALUES)}",
+        )
     if page is not None:
         offset = (page - 1) * limit
+
+    cost = "o.price" if fulfilment == "collection" else "o.total_cost"
 
     conditions = []
     params: list = []
@@ -194,12 +217,18 @@ def search_offers(
         conditions.append("s.name ILIKE %s")
         params.append(f"%{store}%")
         active_filters.append(f"store {store}")
+    if fulfilment == "collection":
+        conditions.append(CAN_COLLECT)
+        active_filters.append("stores you can collect from")
+    elif fulfilment == "delivery":
+        conditions.append(CAN_DELIVER)
+        active_filters.append("stores that deliver")
     if min_price is not None:
-        conditions.append("o.total_cost >= %s")
+        conditions.append(f"{cost} >= %s")
         params.append(min_price)
         active_filters.append(f"min R{min_price}")
     if max_price is not None:
-        conditions.append("o.total_cost <= %s")
+        conditions.append(f"{cost} <= %s")
         params.append(max_price)
         active_filters.append(f"max R{max_price}")
     if max_shipping_cost is not None:
@@ -214,7 +243,7 @@ def search_offers(
         active_filters.append("essentials only")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    order_by = SORT_MAP[sort]
+    order_by = SORT_MAP[sort].format(cost=cost)
 
     base_from = """
         FROM product_offers o
@@ -239,7 +268,10 @@ def search_offers(
                             s.latitude AS store_latitude, s.longitude AS store_longitude,
                             o.price, o.shipping_cost, o.total_cost, o.currency,
                             o.availability_status, o.rating, o.rating_count,
-                            o.last_checked_at AS last_updated, o.product_url
+                            o.last_checked_at AS last_updated, o.product_url,
+                            {cost} AS effective_cost,
+                            o.price_source, o.price_verified_at,
+                            s.delivery_available, s.collection_available
                         {base_from}
                         ORDER BY {order_by}
                         LIMIT %s OFFSET %s""",

@@ -33,6 +33,16 @@ down rather than left implicit in the code):
 5.  Percentage charges are clamped to [min_charge, max_charge] when set.
 6.  Everything is Decimal and rounded to cents at each step, so the lines in
     the breakdown always add up to the total shown. Never use float for money.
+7.  (Phase 4) A store can only be priced the way it can actually serve the
+    student. An online-only store cannot be collected from, and a store that
+    does not deliver cannot be delivered from. Phase 3 priced "collect from
+    Takealot" as the bare sticker price — no courier, no travel — so the one
+    store you CAN'T collect from came out cheapest on every collection
+    comparison. Now the offer is priced the only way it can be fulfilled,
+    `fulfilment` says which way that was, and `fulfilment_available` is False
+    so callers can drop it (the recommender) or flag it (the compare screen).
+8.  (Phase 4) Travel is only charged beyond walking distance — see
+    app/geo.py WALKING_DISTANCE_KM.
 
 This module is pure Python — no database, no FastAPI — so the numbers can be
 unit-tested directly (see tests/test_true_cost.py). The router in
@@ -80,6 +90,23 @@ class Offer:
     store_name: Optional[str] = None
     store_type: str = "online"
     product_name: Optional[str] = None
+    # None means "not recorded" and falls back to the store type: an online
+    # store delivers and can't be collected from; anything else can be
+    # collected and is assumed to deliver. sql/003 records the real answer.
+    delivery_available: Optional[bool] = None
+    collection_available: Optional[bool] = None
+
+    @property
+    def can_deliver(self) -> bool:
+        if self.delivery_available is not None:
+            return bool(self.delivery_available)
+        return True
+
+    @property
+    def can_collect(self) -> bool:
+        if self.collection_available is not None:
+            return bool(self.collection_available)
+        return self.store_type != "online"
 
     @classmethod
     def from_row(cls, row) -> "Offer":
@@ -93,6 +120,8 @@ class Offer:
             store_name=row.get("store_name"),
             store_type=row.get("store_type") or "online",
             product_name=row.get("product_name") or row.get("name"),
+            delivery_available=row.get("delivery_available"),
+            collection_available=row.get("collection_available"),
         )
 
 
@@ -173,6 +202,10 @@ class TrueCostBreakdown:
     distance_km: Optional[float] = None
     hidden_cost: Decimal = ZERO          # everything above the sticker price
     notes: List[str] = field(default_factory=list)
+    # What the caller asked for, and whether the store can actually do it.
+    # When it can't, `fulfilment` is the way it WAS priced instead.
+    requested_fulfilment: Optional[str] = None
+    fulfilment_available: bool = True
 
     def as_dict(self) -> dict:
         return {
@@ -180,6 +213,8 @@ class TrueCostBreakdown:
             "currency": self.currency,
             "quantity": self.quantity,
             "fulfilment": self.fulfilment,
+            "requested_fulfilment": self.requested_fulfilment or self.fulfilment,
+            "fulfilment_available": self.fulfilment_available,
             "subtotal": self.subtotal,
             "shipping": self.shipping,
             "charges": [c.as_dict() for c in self.charges],
@@ -254,6 +289,25 @@ def store_true_cost(
     notes: List[str] = []
     subtotal = money(offer.price * quantity)
 
+    # --- can the store actually do what was asked? (rule 7) ----------------
+    requested = fulfilment
+    fulfilment_available = True
+    store_label = offer.store_name or "This store"
+    if fulfilment == FULFILMENT_COLLECTION and not offer.can_collect:
+        fulfilment_available = False
+        if offer.can_deliver:
+            fulfilment = FULFILMENT_DELIVERY
+            notes.append(f"{store_label} can't be collected from, so this is priced delivered.")
+        else:
+            notes.append(f"{store_label} offers neither collection nor delivery on record.")
+    elif fulfilment == FULFILMENT_DELIVERY and not offer.can_deliver:
+        fulfilment_available = False
+        if offer.can_collect:
+            fulfilment = FULFILMENT_COLLECTION
+            notes.append(f"{store_label} doesn't deliver, so this is priced for collection.")
+        else:
+            notes.append(f"{store_label} offers neither collection nor delivery on record.")
+
     # --- shipping (rule 1 and 3) -------------------------------------------
     if fulfilment == FULFILMENT_COLLECTION:
         shipping = ZERO
@@ -316,6 +370,8 @@ def store_true_cost(
                 f"Includes an estimated R{travel_cost} to travel {distance_km:.1f} km "
                 "there and back."
             )
+        else:
+            notes.append(f"{distance_km:.1f} km away — walking distance, so no travel cost.")
 
     true_cost = money(subtotal + shipping + charges_total + travel_cost)
     hidden_cost = money(true_cost - subtotal)
@@ -338,12 +394,19 @@ def store_true_cost(
         distance_km=round(distance_km, 2) if distance_km is not None else None,
         hidden_cost=hidden_cost,
         notes=notes,
+        requested_fulfilment=requested,
+        fulfilment_available=fulfilment_available,
     )
 
 
 def cheapest(breakdowns: Iterable[TrueCostBreakdown]) -> Optional[TrueCostBreakdown]:
-    """The lowest true cost of a set — the answer to 'where should I buy this?'."""
-    items = list(breakdowns)
+    """
+    The lowest true cost of a set — the answer to 'where should I buy this?'.
+
+    Only offers that can be fulfilled the way the student asked are eligible;
+    a store that can't deliver is not "the cheapest delivery" (rule 7).
+    """
+    items = [b for b in breakdowns if b.fulfilment_available]
     if not items:
         return None
     return min(items, key=lambda b: (b.true_cost, b.offer_id))

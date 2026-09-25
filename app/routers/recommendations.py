@@ -59,7 +59,9 @@ _CANDIDATE_SELECT = """
            s.latitude AS store_latitude, s.longitude AS store_longitude,
            o.price, o.shipping_cost, o.total_cost, o.currency,
            o.availability_status, o.rating, o.rating_count,
-           o.last_checked_at AS last_updated, o.product_url
+           o.last_checked_at AS last_updated, o.product_url,
+           o.price_source, o.price_verified_at,
+           s.delivery_available, s.collection_available
     FROM product_offers o
     JOIN products p ON p.id = o.product_id
     JOIN stores s ON s.id = o.store_id
@@ -96,17 +98,17 @@ def _candidate_sql(payload: RecommendationRequest, parsed: ParsedQuery) -> tuple
             conditions.append(f"({column} ILIKE %s OR p.name ~* %s)")
             params.extend([wanted, word_pattern(wanted)])
 
-    max_price = payload.max_price or parsed.max_price
+    # Phase 4: the ceiling is enforced on TRUE cost in recommend(). True cost
+    # is never below the shelf price, so price <= ceiling here is a safe
+    # pre-filter that can't drop anything that would pass. Phase 3 filtered
+    # total_cost <= 1.15 x the ceiling ("head-room") and never checked again,
+    # so "under R50" could recommend R56. The floor can't be pre-filtered on
+    # price the same way, so recommend() applies it.
+    max_price = payload.max_price if payload.max_price is not None else parsed.max_price
     if max_price is not None:
-        # Head-room over the stated ceiling: a R520 item with free delivery can
-        # still be the right answer to "under R500" once fees are counted, and
-        # the recommender will rank it honestly against the rest.
-        conditions.append("o.total_cost <= %s")
-        params.append(Decimal(max_price) * Decimal("1.15"))
-    if parsed.min_price is not None:
-        conditions.append("o.total_cost >= %s")
-        params.append(parsed.min_price)
-    if parsed.essential_only:
+        conditions.append("o.price <= %s")
+        params.append(Decimal(max_price))
+    if parsed.essential_only or payload.essential_only:
         conditions.append("p.is_essential = TRUE")
     if parsed.free_delivery_only:
         conditions.append("o.shipping_cost = 0")
@@ -204,6 +206,9 @@ def _to_out(scored: ScoredOffer) -> RecommendedOffer:
             product_name=candidate.product_name,
             store_name=candidate.store_name,
         ),
+        price_source=candidate.price_source,
+        price_verified_at=candidate.price_verified_at,
+        price_is_estimate=candidate.price_is_estimate,
     )
 
 
@@ -291,7 +296,10 @@ def get_recommendations(
                     else None
                 ),
                 require_available=prefs.get("require_available", True),
-                essential_only=prefs.get("essential_only", False),
+                essential_only=prefs.get("essential_only", False) or payload.essential_only,
+                fulfilment=fulfilment,
+                max_price=payload.max_price if payload.max_price is not None else parsed.max_price,
+                min_price=parsed.min_price,
                 location=location,
                 currency=budget["currency"] if budget else "ZAR",
             )

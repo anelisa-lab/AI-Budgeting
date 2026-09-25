@@ -17,7 +17,10 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, email, created_at FROM users WHERE id = %s", (user_id,)
+                """SELECT id, name, email, created_at,
+                          residence_area_code AS residence, student_number
+                   FROM users WHERE id = %s""",
+                (user_id,),
             )
             user = cur.fetchone()
         if not user:
