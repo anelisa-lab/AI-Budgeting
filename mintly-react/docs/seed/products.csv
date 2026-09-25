@@ -256,3 +256,29 @@ P254,Kettle,Russell Hobbs,Homeware,Kitchen,Silver,1.7L,unit,340.49,ZAR,checkers,
 P255,Storage Crate,Addis,Homeware,Storage,Clear,30L,unit,123.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,183.49,True,True,True,4.3,📦
 P256,Storage Crate,Addis,Homeware,Storage,Clear,30L,unit,121.0,ZAR,takealot,Takealot (online only),Online,,,,60.0,181.0,True,False,True,4.3,📦
 P257,Storage Crate,Addis,Homeware,Storage,Clear,30L,unit,110.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,175.49,True,True,True,4.3,📦
+P258,LED Light Bulb,Eurolux,Maintenance,Lighting,White,9W E27,bulb,28.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,88.49,True,True,True,4.3,💡
+P259,LED Light Bulb,Eurolux,Maintenance,Lighting,White,9W E27,bulb,25.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,90.49,True,True,True,4.3,💡
+P260,LED Light Bulb,Eurolux,Maintenance,Lighting,White,9W E27,bulb,30.99,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,65.99,True,True,True,4.3,💡
+P261,LED Light Bulb,Eurolux,Maintenance,Lighting,White,9W E27,bulb,32.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,77.99,True,True,True,4.3,💡
+P262,LED Light Bulb,Eurolux,Maintenance,Lighting,White,9W E27,bulb,27.95,ZAR,takealot,Takealot (online only),Online,,,,60.0,87.95,True,False,True,4.3,💡
+P263,AA Batteries,Duracell,Maintenance,Batteries,n/a,4 pack,pack,61.49,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,121.49,True,True,True,4.6,🔋
+P264,AA Batteries,Duracell,Maintenance,Batteries,n/a,4 pack,pack,55.49,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,120.49,True,True,True,4.6,🔋
+P265,AA Batteries,Duracell,Maintenance,Batteries,n/a,4 pack,pack,67.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,102.49,True,True,True,4.6,🔋
+P266,AA Batteries,Duracell,Maintenance,Batteries,n/a,4 pack,pack,71.49,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,116.49,True,True,True,4.6,🔋
+P267,AA Batteries,Duracell,Maintenance,Batteries,n/a,4 pack,pack,72.49,ZAR,clicks,Clicks Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,50.0,122.49,True,True,True,4.6,🔋
+P268,AA Batteries,Duracell,Maintenance,Batteries,n/a,4 pack,pack,60.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,120.49,True,False,True,4.6,🔋
+P269,Duct Tape,Tesa,Maintenance,Repairs,Silver,48mm x 10m,roll,51.99,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,111.99,True,True,True,4.2,🩹
+P270,Duct Tape,Tesa,Maintenance,Repairs,Silver,48mm x 10m,roll,46.95,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,111.95,True,True,True,4.2,🩹
+P271,Duct Tape,Tesa,Maintenance,Repairs,Silver,48mm x 10m,roll,50.99,ZAR,takealot,Takealot (online only),Online,,,,60.0,110.99,True,False,True,4.2,🩹
+P272,Super Glue,Pratley,Maintenance,Repairs,Clear,3g,tube,37.95,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,97.95,True,True,True,4.4,🧴
+P273,Super Glue,Pratley,Maintenance,Repairs,Clear,3g,tube,33.99,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,98.99,True,True,True,4.4,🧴
+P274,Super Glue,Pratley,Maintenance,Repairs,Clear,3g,tube,41.49,ZAR,checkers,Checkers Berea Centre,Berea,-29.8489,31.0056,0.7,35.0,76.49,True,True,True,4.4,🧴
+P275,Super Glue,Pratley,Maintenance,Repairs,Clear,3g,tube,43.99,ZAR,picknpay,Pick n Pay Musgrave Centre,Musgrave,-29.8437,30.9997,1.48,45.0,88.99,True,True,True,4.4,🧴
+P276,Super Glue,Pratley,Maintenance,Repairs,Clear,3g,tube,36.99,ZAR,takealot,Takealot (online only),Online,,,,60.0,96.99,True,False,True,4.4,🧴
+P277,Padlock,Yale,Maintenance,Security,Brass,40mm,unit,113.95,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,173.95,True,True,True,4.5,🔒
+P278,Padlock,Yale,Maintenance,Security,Brass,40mm,unit,102.0,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,167.0,True,True,True,4.5,🔒
+P279,Padlock,Yale,Maintenance,Security,Brass,40mm,unit,111.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,171.49,True,False,True,4.5,🔒
+P280,Extension Cord,Ellies,Maintenance,Electrical,White,5m,unit,132.95,ZAR,game,Game Durban CBD,Durban Central,-29.8587,31.0218,1.37,60.0,192.95,True,True,True,4.1,🔌
+P281,Extension Cord,Ellies,Maintenance,Electrical,White,5m,unit,119.0,ZAR,makro,Makro Springfield,Springfield Park,-29.81,31.015,5.01,65.0,184.0,True,True,True,4.1,🔌
+P282,Extension Cord,Ellies,Maintenance,Electrical,White,5m,unit,130.49,ZAR,takealot,Takealot (online only),Online,,,,60.0,190.49,True,False,True,4.1,🔌
+P283,Extension Cord,Ellies,Maintenance,Electrical,White,5m,unit,163.0,ZAR,incredible,Incredible Connection Gateway,Umhlanga,-29.725,31.067,15.49,99.0,262.0,True,True,True,4.1,🔌

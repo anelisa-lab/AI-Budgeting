@@ -146,6 +146,13 @@ browser subtraction goes negative.
 
 ## Backend dependencies
 
+> **Phase 5 status:** §2–4 (shopping list, deleting spends and budgets), §6
+> (student location and distance), §8 (residence and student number) and §11
+> (Maintenance products) are now **closed**, and §10 (whole-basket true cost)
+> was closed in Phase 4 by `POST /compare/basket` — see
+> `../../docs/PHASE5_GAPS_REPORT.md` for the routes and screens. The sections
+> below are kept as the record of what was asked for.
+
 Nothing in this list is faked in the frontend. Each one is either visibly
 marked as unavailable on screen or handled by a device-local store that says so.
 

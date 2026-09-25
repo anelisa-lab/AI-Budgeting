@@ -15,7 +15,7 @@ import { useBudget } from '../context/BudgetContext.jsx';
 import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
-import { money } from '../lib/format.js';
+import { money, shortDate } from '../lib/format.js';
 import { CATALOGUE_CATEGORIES, categoryIcon, isWithoutListings } from '../lib/categories.js';
 
 /**
@@ -64,6 +64,36 @@ export default function Recommendations() {
   // A slower, older request must not overwrite the answer to a newer one.
   const requestId = useRef(0);
 
+  // Recent searches (Phase 5) — GET /recommendations/history. The backend
+  // saves every run; this shows them back so the student can repeat one, and
+  // lets them clear it.
+  const [history, setHistory] = useState([]);
+  const [historyError, setHistoryError] = useState(null);
+  const loadHistory = useCallback(() => {
+    if (!token) return;
+    api.recommendations.history(token, { limit: 20 })
+      .then((rows) => { setHistory(rows.slice(0, 6)); setHistoryError(null); })
+      .catch(() => setHistoryError('Could not load your recent searches.'));
+  }, [token]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  async function clearHistory() {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Clear your recent searches? Your preferences are not affected.')) return;
+    try {
+      await api.recommendations.clearHistory(token);
+      setHistory([]);
+      toast.info('Recent searches cleared.');
+    } catch (err) {
+      toast.error(err.message || 'Could not clear your recent searches.');
+    }
+  }
+
+  function repeatSearch(pastQuery) {
+    setQuery(pastQuery);
+    runSearch(pastQuery);
+  }
+
   const runSearch = useCallback(async (activeQuery) => {
     if (!token) return;
     const id = ++requestId.current;
@@ -83,6 +113,7 @@ export default function Recommendations() {
       });
       if (id !== requestId.current) return;
       setResponse(result);
+      if (activeQuery || category) loadHistory();
     } catch (err) {
       if (id !== requestId.current) return;
       setError(err.message || 'Could not load recommendations right now.');
@@ -90,7 +121,7 @@ export default function Recommendations() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [token, fulfilment, category, maxPrice, includeUnaffordable, essentialOnly]);
+  }, [token, fulfilment, category, maxPrice, includeUnaffordable, essentialOnly, loadHistory]);
 
   // First load, and again whenever a filter that the BACKEND applies changes
   // (the text query waits for "Find recommendations").
@@ -226,7 +257,11 @@ export default function Recommendations() {
                 )}
               </Field>
             </div>
-            <Button type="submit" loading={loading}>
+            {/* Not disabled while loading: For you loads its default picks on
+                open, and a disabled submit button stops Enter from submitting,
+                so a student who typed and pressed Enter straight away lost
+                their search. runSearch() already ignores a stale answer. */}
+            <Button type="submit" aria-busy={loading || undefined}>
               {loading ? 'Finding…' : 'Find recommendations'}
             </Button>
           </div>
@@ -301,6 +336,36 @@ export default function Recommendations() {
           </div>
         </form>
       </Card>
+
+      {(history.length > 0 || historyError) && (
+        <Card>
+          <div className="card__head">
+            <h2 className="card__title">Your recent searches</h2>
+            {history.length > 0 && (
+              <Button variant="quiet" size="sm" onClick={clearHistory}>Clear</Button>
+            )}
+          </div>
+          {historyError ? (
+            <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)', marginTop: 'var(--s-3)' }}>{historyError}</p>
+          ) : (
+            <ul className="history-list">
+              {history.map((h) => (
+                <li key={h.id}>
+                  <button type="button" className="history-item" onClick={() => repeatSearch(h.query)}>
+                    <span className="history-item__query">{h.query}</span>
+                    <span className="history-item__meta">
+                      {h.top[0]
+                        ? `Top pick: ${h.top[0].product_name} at ${h.top[0].store_name}, ${money(h.top[0].total_cost)}`
+                        : 'No picks'}
+                      {h.created_at ? ` · ${shortDate(h.created_at)}` : ''}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
 
       {error && (
         <Alert tone="danger" title="Could not load recommendations">

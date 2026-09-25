@@ -20,10 +20,9 @@
  *    dashboard and "Groceries" in Search are the same category.
  *
  * MAINTENANCE (group leader, Phase 4): a first-class category everywhere a
- * category can be chosen. The seeded catalogue has no products filed under
- * it yet — that is a data task for the backend/data team (see
- * docs/BACKEND_INTEGRATION.md) — so the screens say so plainly when a
- * Maintenance search comes back empty, instead of showing a blank page.
+ * category can be chosen. Phase 5 added its products to the catalogue (light
+ * bulbs, batteries, duct tape, super glue, padlocks, extension cords — see
+ * docs/seed/build_seed.py), so it is no longer flagged as empty.
  */
 
 export const CATALOGUE_CATEGORIES = [
@@ -43,8 +42,12 @@ const SPEND_ONLY = [
 
 export const SPENDING_CATEGORIES = [...CATALOGUE_CATEGORIES, ...SPEND_ONLY];
 
-/** Categories the seeded catalogue does not stock yet (backend data gap). */
-export const CATEGORIES_WITHOUT_LISTINGS = ['Maintenance'];
+/**
+ * Categories the catalogue does not stock yet. Empty since Phase 5; kept so a
+ * future category can be added to the app before its products exist, and the
+ * screens will say so plainly instead of showing a blank page.
+ */
+export const CATEGORIES_WITHOUT_LISTINGS = [];
 
 const BY_VALUE = new Map(SPENDING_CATEGORIES.map((c) => [c.value.toLowerCase(), c]));
 

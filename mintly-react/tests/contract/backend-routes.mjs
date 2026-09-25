@@ -65,7 +65,20 @@ export const ROUTES = [
   {
     name: 'updateProfile',
     method: 'PUT', pattern: /^\/profile\/$/, auth: true,
-    body: ['name'], requiredBody: ['name'],
+    body: ['name', 'residence', 'student_number'], requiredBody: ['name'],
+  },
+  {
+    name: 'getLocation',
+    method: 'GET', pattern: /^\/profile\/location$/, auth: true,
+  },
+  {
+    name: 'setLocation',
+    method: 'PUT', pattern: /^\/profile\/location$/, auth: true,
+    body: ['latitude', 'longitude', 'label'], requiredBody: ['latitude', 'longitude'],
+  },
+  {
+    name: 'clearLocation',
+    method: 'DELETE', pattern: /^\/profile\/location$/, auth: true,
   },
   {
     name: 'getPreferences',
@@ -111,6 +124,14 @@ export const ROUTES = [
     requiredBody: ['item_name', 'amount'],
   },
   {
+    name: 'deleteTransaction',
+    method: 'DELETE', pattern: /^\/budgets\/\d+\/transactions\/\d+$/, auth: true,
+  },
+  {
+    name: 'deleteBudget',
+    method: 'DELETE', pattern: /^\/budgets\/\d+$/, auth: true,
+  },
+  {
     name: 'listTransactions',
     method: 'GET', pattern: /^\/budgets\/\d+\/transactions$/, auth: true,
   },
@@ -120,7 +141,7 @@ export const ROUTES = [
     query: [
       'q', 'category', 'brand', 'colour', 'size', 'store',
       'min_price', 'max_price', 'max_shipping_cost',
-      'availability', 'essential_only', 'fulfilment', 'sort', 'limit', 'offset', 'page',
+      'availability', 'essential_only', 'fulfilment', 'max_distance_km', 'sort', 'limit', 'offset', 'page',
     ],
   },
   {
@@ -157,10 +178,41 @@ export const ROUTES = [
     name: 'getPriceStatus',
     method: 'GET', pattern: /^\/prices\/status$/, auth: true,
   },
+  {
+    name: 'getRecommendationHistory',
+    method: 'GET', pattern: /^\/recommendations\/history$/, auth: true,
+    query: ['limit'],
+  },
+  {
+    name: 'clearRecommendationHistory',
+    method: 'DELETE', pattern: /^\/recommendations\/history$/, auth: true,
+  },
+  {
+    name: 'getShoppingList',
+    method: 'GET', pattern: /^\/shopping-list$/, auth: true,
+  },
+  {
+    name: 'clearShoppingList',
+    method: 'DELETE', pattern: /^\/shopping-list$/, auth: true,
+  },
+  {
+    name: 'addShoppingListItem',
+    method: 'POST', pattern: /^\/shopping-list\/items$/, auth: true,
+    body: ['offer_id', 'qty'], requiredBody: ['offer_id'],
+  },
+  {
+    name: 'setShoppingListQty',
+    method: 'PUT', pattern: /^\/shopping-list\/items\/\d+$/, auth: true,
+    body: ['qty'], requiredBody: ['qty'],
+  },
+  {
+    name: 'removeShoppingListItem',
+    method: 'DELETE', pattern: /^\/shopping-list\/items\/\d+$/, auth: true,
+  },
 ];
 
 /** app/routers/search.py sort_map keys. Anything else falls back to price_asc. */
-export const SORT_VALUES = ['price_asc', 'price_desc', 'newest', 'rating_desc'];
+export const SORT_VALUES = ['price_asc', 'price_desc', 'newest', 'rating_desc', 'distance'];
 /** search.py availability check. */
 export const AVAILABILITY_VALUES = ['available', 'out_of_stock', 'unknown', 'any'];
 

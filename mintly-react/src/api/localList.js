@@ -1,33 +1,10 @@
 /**
- * The shopping list — held on this device, NOT on the backend.
+ * The shopping list as earlier builds kept it — in this browser only.
  *
- * ⚠ READ THIS BEFORE CHANGING ANYTHING HERE ⚠
- *
- * This is not a mock of a backend endpoint and it must never be mistaken for
- * one. The backend genuinely has no shopping-list API yet:
- *
- *   sql/schema.sql DOES define `comparison_lists` and `comparison_items`
- *   app/routers/   does NOT expose any router for them
- *
- * So the list a student builds on the Search screen lives in this browser,
- * under one key, until those endpoints exist. The Compare screen says so on
- * screen — it is never presented as saved to an account.
- *
- * WHAT MAKES IT EASY TO REPLACE
- * -----------------------------
- * Every function below is async and returns the WHOLE list, which is exactly
- * the shape a REST endpoint would return. `client.js` calls them through the
- * same `shoppingList.*` namespace it would use for real endpoints, so swapping
- * this for the real thing is an edit to client.js alone — no context, no
- * screen, no component changes.
- *
- * The four endpoints needed, and the request/response each one should use, are
- * specified in docs/BACKEND_INTEGRATION.md under "Backend dependencies".
- *
- * A line stores a snapshot of the offer it came from (price, store, shipping)
- * so the list still renders if an offer is later delisted. Live prices are
- * re-fetched from GET /search whenever the Compare screen opens, so a stale
- * snapshot is never what the student is shown a total for.
+ * Since Phase 5 the list is saved on the server (/shopping-list). This file
+ * is kept for ONE job: reading a list an earlier build saved on this device,
+ * so client.js can upload it to the student's account on their next sign-in
+ * and then clear it here. Nothing new is written to it.
  */
 
 /**

@@ -158,6 +158,21 @@ CATEGORY_KEYWORDS: Dict[str, tuple] = {
     "battery": ("Electronics", "Power"),
     "usb": ("Electronics", "Storage"),
     "flash": ("Electronics", "Storage"),
+
+    # ---- Maintenance (Phase 5) ----
+    "maintenance": ("Maintenance", None),
+    "repair": ("Maintenance", "Repairs"),
+    "repairs": ("Maintenance", "Repairs"),
+    "fix": ("Maintenance", "Repairs"),
+    "tape": ("Maintenance", "Repairs"),
+    "glue": ("Maintenance", "Repairs"),
+    "bulb": ("Maintenance", "Lighting"),
+    "bulbs": ("Maintenance", "Lighting"),
+    "batteries": ("Maintenance", "Batteries"),
+    "padlock": ("Maintenance", "Security"),
+    "lock": ("Maintenance", "Security"),
+    "extension": ("Maintenance", "Electrical"),
+    "cord": ("Maintenance", "Electrical"),
 }
 
 ESSENTIAL_WORDS = {"essential", "essentials", "basics", "necessity", "necessities", "need"}

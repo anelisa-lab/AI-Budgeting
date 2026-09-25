@@ -3,6 +3,7 @@ Recommendation endpoints — Member 5.
 
     POST /recommendations          rank offers for this student, right now
     GET  /recommendations/history  their recent recommendation runs
+    DELETE /recommendations/history  forget them (Phase 5)
 
 The scoring lives in app/recommender.py and the parsing in
 app/query_parser.py — both pure and unit-tested. This file is the plumbing:
@@ -25,7 +26,7 @@ keeps its score and its explanation.
 from decimal import Decimal
 from time import perf_counter
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from psycopg2.extras import Json
 
 from app.budget_split import build_split
@@ -482,3 +483,23 @@ def recommendation_history(
     return {
         "runs": [{**run, "items": items.get(run["id"], [])} for run in runs]
     }
+
+
+@router.delete("/history", status_code=204)
+def clear_recommendation_history(user_id: int = Depends(get_current_user_id)):
+    """
+    Forget the student's past searches and the picks made for them (Phase 5).
+
+    The history is used only to show "Recent searches" back to the student,
+    and the non-functional requirements say personal data is used only for
+    authorised functions — so the student can clear it. Preferences are not
+    touched; they have their own screen.
+    """
+    conn = get_connection()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM recommendation_runs WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM shopping_searches WHERE user_id = %s", (user_id,))
+    finally:
+        conn.close()
+    return Response(status_code=204)

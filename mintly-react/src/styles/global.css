@@ -472,6 +472,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .search-bar__filters { display: none; }
 .filter-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
 .price-note { display: flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap; font-size: var(--t-xs); color: var(--c-muted); max-width: 72ch; }
+.history-list { list-style: none; margin: var(--s-3) 0 0; padding: 0; display: grid; gap: var(--s-2); }
+.history-item {
+  width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px;
+  padding: var(--s-3) var(--s-4); border: 1.5px solid var(--c-line); border-radius: var(--r-md);
+  background: transparent; font: inherit; color: inherit; cursor: pointer;
+}
+.history-item:hover, .history-item:focus-visible { border-color: var(--c-forest); }
+.history-item__query { font-weight: var(--fw-extra); overflow-wrap: anywhere; }
+.history-item__meta { font-size: var(--t-xs); color: var(--c-muted); overflow-wrap: anywhere; }
 .profile-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--s-4); }
 
 .results-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; margin-bottom: var(--s-4); }

@@ -97,8 +97,20 @@ export default function Dashboard() {
     budget, transactions, loading, error, supports, split, serverHealth,
     savings, spendable, spent, remaining, ratio,
     daysLeft, dailyAllowance, health, byCategory, recorded,
-    addTransaction,
+    addTransaction, deleteTransaction,
   } = budgetCtx;
+
+  async function handleDeleteTransaction(t) {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Delete "${t.item_name}" (${money(t.amount)})? The money goes back to your budget.`)) return;
+    try {
+      await deleteTransaction(t.id);
+      setOverspend(null);
+      toast.info(`Deleted ${t.item_name}.`);
+    } catch (err) {
+      toast.error(err.message || 'Could not delete that spend.');
+    }
+  }
 
   const [form, setForm] = useState({
     description: '', amount: '', category: 'Groceries', isEssential: false,
@@ -425,6 +437,14 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <span className="txn__amt num">{money(t.amount)}</span>
+                {supports.deleteTransaction && (
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    aria-label={`Delete ${t.item_name}, ${money(t.amount)}`}
+                    onClick={() => handleDeleteTransaction(t)}
+                  >✕</Button>
+                )}
               </div>
             ))}
             {transactions.length > 10 && (

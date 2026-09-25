@@ -32,6 +32,7 @@ import {
 process.env.VITE_API_BASE_URL = 'http://localhost:4000';
 const {
   auth, profile, budgets, budgetSplit, recommendations, transactions, search, trueCost, compare,
+  shoppingList,
 } = await import('../../src/api/client.js');
 const { ApiError } = await import('../../src/api/http.js');
 const {
@@ -41,7 +42,7 @@ const {
   isRankedSort, DEFAULT_FILTERS,
 } = await import('../../src/lib/search.js');
 const {
-  CATALOGUE_CATEGORIES, SPENDING_CATEGORIES, canonicalCategory,
+  CATALOGUE_CATEGORIES, SPENDING_CATEGORIES, canonicalCategory, CATEGORIES_WITHOUT_LISTINGS,
 } = await import('../../src/lib/categories.js');
 const {
   budgetToApi, budgetToFormValues, budgetUpdateToApi, daysBetween,
@@ -861,6 +862,121 @@ await test('a confirmed price is labelled confirmed; a seed price is an estimate
   const page = await search.offers(TOKEN, {});
   assert.equal(page.results[0].price_is_estimate, false);
   assert.equal(page.results[1].price_is_estimate, true, 'no price_source means a seed estimate');
+});
+
+/* ================================================= PHASE 5 BACKEND ===== */
+
+console.log('\nPhase 5 — location, distance, deletes, server list, history');
+
+await test('location is read, saved and cleared on /profile/location', async () => {
+  installFetch((req) => {
+    if (req.method === 'GET') return { body: null };
+    if (req.method === 'DELETE') return { status: 204 };
+    return { body: { latitude: '-29.854700', longitude: '31.008400', label: req.body.label, updated_at: null } };
+  });
+  assert.equal(await profile.getLocation(TOKEN), null, 'no saved location is null, not an error');
+  const saved = await profile.setLocation(TOKEN, { latitude: -29.8547, longitude: 31.0084, label: 'Steve Biko Campus (Durban)' });
+  assert.deepEqual(lastRequest().body, { latitude: -29.8547, longitude: 31.0084, label: 'Steve Biko Campus (Durban)' });
+  assert.equal(saved.latitude, -29.8547, 'Decimal strings become numbers');
+  assert.equal(await profile.clearLocation(TOKEN), null);
+  assert.equal(lastRequest().method, 'DELETE');
+});
+
+await test('profile update sends residence / student number only when given', async () => {
+  installFetch(() => ({ body: userOut({ residence: 'berea', student_number: '22123456' }) }));
+  await profile.update(TOKEN, { name: 'A B' });
+  assert.deepEqual(Object.keys(lastRequest().body), ['name']);
+  const u = await profile.update(TOKEN, { name: 'A B', residence: 'berea', student_number: '' });
+  assert.deepEqual(lastRequest().body, { name: 'A B', residence: 'berea', student_number: '' }, "'' clears it");
+  assert.equal(u.residence, 'berea');
+});
+
+await test('distance filter and "nearest first" reach GET /search', async () => {
+  assert.equal(buildSearchParams({ maxDistance: '5' }).max_distance_km, 5);
+  assert.equal(buildSearchParams({ maxDistance: '7' }).max_distance_km, undefined, 'only offered distances');
+  assert.equal(buildSearchParams({ sort: 'distance' }).sort, 'distance');
+  const url = filtersToUrl({ ...DEFAULT_FILTERS, maxDistance: '1.5' });
+  assert.equal(filtersFromUrl(url).maxDistance, '1.5');
+  assert.deepEqual(describeFilters({ maxDistance: '3' }).map((c) => c.key), ['maxDistance']);
+  assert.equal(recommendationsCanHonour({ q: 'bread', maxDistance: '3' }), false);
+
+  installFetch(() => ({ body: { results: [searchResultItem({ distance_km: 0.53 })], count: 1, limit: 20, offset: 0 } }));
+  const page = await search.offers(TOKEN, buildSearchParams({ q: 'bread', maxDistance: '3', sort: 'distance' }));
+  assert.equal(lastRequest().query.max_distance_km, '3');
+  assert.equal(page.results[0].distance_km, 0.53);
+});
+
+await test('deleting a spend uses the server\'s budget, not a local sum', async () => {
+  installFetch(() => ({ body: { budget: budgetOut({ remaining_amount: dec(1650) }), daily_split: budgetSplitOut() } }));
+  const result = await transactions.remove(TOKEN, 7, 31);
+  assert.equal(lastRequest().method, 'DELETE');
+  assert.equal(lastRequest().path, '/budgets/7/transactions/31');
+  assert.equal(result.budget.remaining_amount, 1650);
+  assert.ok(result.daily_split);
+
+  installFetch(() => ({ status: 204 }));
+  await budgets.remove(TOKEN, 7);
+  assert.equal(lastRequest().path, '/budgets/7');
+  assert.equal(lastRequest().method, 'DELETE');
+});
+
+const listLine = (over = {}) => ({
+  offer_id: 101, product_id: 11, product_name: 'Super Maize Meal', brand: 'Ace', size: '2.5kg',
+  category: 'Groceries', is_essential: true, store_id: 3, store_name: 'Shoprite Warwick Junction',
+  store_type: 'physical', price: dec(40.49), current_price: dec(41.99), shipping_cost: dec(0),
+  total_cost: dec(41.99), availability_status: 'available', qty: 2, added_at: '2026-09-25T10:00:00+00:00',
+  ...over,
+});
+
+await test('the shopping list lives on the server and a device list is uploaded once', async () => {
+  const store = { 'uniwallet.shoppingList.v3.u1': JSON.stringify([{ offer_id: 101, qty: 2 }]) };
+  globalThis.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+  installFetch((req) => ({ body: { items: req.method === 'DELETE' && req.path === '/shopping-list' ? [] : [listLine()] } }));
+  shoppingList.setOwner(1, TOKEN);
+  const lines = await shoppingList.list();
+  const posts = captured.filter((r) => r.method === 'POST');
+  assert.equal(posts.length, 1, 'the device list is uploaded');
+  assert.deepEqual(posts[0].body, { offer_id: 101, qty: 2 });
+  assert.equal(lines[0].price, 40.49, 'price when added (Compare shows "was")');
+  assert.equal(lines[0].current_price, 41.99);
+  assert.equal(shoppingList.isLocalOnly, false);
+
+  captured = [];
+  await shoppingList.list();
+  assert.equal(captured.filter((r) => r.method === 'POST').length, 0, 'and only once');
+
+  await shoppingList.setQty(101, 0);
+  assert.deepEqual(lastRequest().body, { qty: 0 }, '0 removes the line');
+  await shoppingList.add({ offer_id: 5 }, 1);
+  assert.deepEqual(lastRequest().body, { offer_id: 5, qty: 1 });
+  await shoppingList.clear();
+  assert.equal(lastRequest().path, '/shopping-list');
+  shoppingList.setOwner(null, null);
+  delete globalThis.localStorage;
+});
+
+await test('recent searches skip blank runs, show each query once, and can be cleared', async () => {
+  installFetch((req) => (req.method === 'DELETE' ? { status: 204 } : { body: { runs: [
+    { id: 3, query_text: 'bread', created_at: '2026-09-25T10:00:00+00:00', items: [
+      { offer_id: 1, rank: 1, product_name: 'Brown Bread', store_name: 'Checkers', total_cost_snapshot: '18.99' },
+    ] },
+    { id: 2, query_text: null, created_at: null, items: [] },
+    { id: 1, query_text: 'Bread', created_at: null, items: [] },
+  ] } }));
+  const rows = await recommendations.history(TOKEN);
+  assert.equal(lastRequest().query.limit, '20');
+  assert.deepEqual(rows.map((r) => r.query), ['bread']);
+  assert.equal(rows[0].top[0].total_cost, 18.99);
+  await recommendations.clearHistory(TOKEN);
+  assert.equal(lastRequest().method, 'DELETE');
+});
+
+await test('Maintenance is a category with listings now', () => {
+  assert.equal(CATEGORIES_WITHOUT_LISTINGS.length, 0);
 });
 
 /* ==================================================== NETWORK FAULTS ===== */

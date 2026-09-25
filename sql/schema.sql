@@ -339,12 +339,20 @@ CREATE TABLE IF NOT EXISTS comparison_lists (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Phase 5: the student's shopping list (one list per student, see
+-- app/routers/shopping_list.py). qty and price_when_added come from
+-- sql/005_phase5_shopping_list.sql.
 CREATE TABLE IF NOT EXISTS comparison_items (
   comparison_list_id INTEGER NOT NULL REFERENCES comparison_lists(id) ON DELETE CASCADE,
   offer_id           INTEGER NOT NULL REFERENCES product_offers(id) ON DELETE CASCADE,
+  qty                INTEGER NOT NULL DEFAULT 1
+                     CONSTRAINT chk_comparison_items_qty CHECK (qty BETWEEN 1 AND 99),
+  price_when_added   NUMERIC(12,2) CHECK (price_when_added IS NULL OR price_when_added >= 0),
   added_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (comparison_list_id, offer_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_comparison_lists_user_id ON comparison_lists (user_id);
 
 CREATE TABLE IF NOT EXISTS saved_offers (
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

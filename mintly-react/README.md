@@ -103,7 +103,7 @@ src/
     endpoints.js     one function per real backend route
     http.js          transport, Bearer auth, FastAPI error translation
     normalise.js     Decimal coercion + the form↔API mapping
-    localList.js     the shopping list, device-local until the backend has one
+    localList.js     reads a list an earlier build saved in the browser, once, to upload it
   context/
     AuthContext      the JWT, the signed-in user, stored preferences
     BudgetContext    the active budget and its transactions
@@ -153,10 +153,11 @@ shelf prices plus one delivery per store; a store that lacks an item gets no
 total. The item-by-item figures are the backend's true cost. See
 `docs/BACKEND_INTEGRATION.md` §10 for why the two differ.
 
-**What the backend cannot do is visible, not hidden.** The distance filter is
-shown as coming soon. The shopping list says it is saved on this device (it is
-kept per account). The registration fields the API will not store are marked
-optional under a heading that says so. Every gap is specified in
+**What the backend cannot do is visible, not hidden.** Phase 5 closed the
+gaps this used to list (distance, a server-side shopping list, deleting
+spends, Maintenance products, saving residence and student number) — see
+`../docs/PHASE5_GAPS_REPORT.md`. Prices are still modelled estimates and every
+screen labels them so. Every remaining gap is specified in
 `docs/BACKEND_INTEGRATION.md` so the backend team can implement it without
 guessing.
 

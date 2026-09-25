@@ -48,8 +48,8 @@ export const NSFAS = {
  * those controls honestly instead of offering a button that cannot work.
  */
 export const BACKEND_SUPPORTS = {
-  deleteBudget: false,
-  deleteTransaction: false,
+  deleteBudget: true,       // DELETE /budgets/{id} (Phase 5)
+  deleteTransaction: true,  // DELETE /budgets/{id}/transactions/{tid} (Phase 5)
   serverDailyLimit: true, // GET /budgets/dashboard carries the split — see refresh
 };
 
@@ -166,6 +166,30 @@ export function BudgetProvider({ children }) {
     return result;
   }, [budget, token, refreshHealth]);
 
+  /**
+   * DELETE a recorded spend. The server gives the money back (capped so
+   * undoing an overspend can't create money) and returns the budget and the
+   * recalculated split — used as-is, never a local addition.
+   */
+  const deleteTransaction = useCallback(async (transactionId) => {
+    if (!budget) return;
+    const result = await api.transactions.remove(token, budget.id, transactionId);
+    setTransactions((list) => list.filter((t) => t.id !== transactionId));
+    setBudget(result.budget);
+    if (result.daily_split) setSplit(result.daily_split);
+    refreshHealth();
+  }, [budget, token, refreshHealth]);
+
+  /** DELETE the active budget and its spends; the student starts afresh. */
+  const deleteBudget = useCallback(async () => {
+    if (!budget) return;
+    await api.budgets.remove(token, budget.id);
+    setBudget(null);
+    setTransactions([]);
+    setSplit(null);
+    setServerHealth(null);
+  }, [budget, token]);
+
   /* -------------------------------------------------------------- derived */
 
   const derived = useMemo(() => {
@@ -262,10 +286,12 @@ export function BudgetProvider({ children }) {
     refresh,
     saveBudget,
     addTransaction,
+    deleteTransaction,
+    deleteBudget,
     supports: BACKEND_SUPPORTS,
     ...derived,
   }), [budget, transactions, split, serverHealth, loading, loaded, error, refresh,
-       saveBudget, addTransaction, derived]);
+       saveBudget, addTransaction, deleteTransaction, deleteBudget, derived]);
 
   return <BudgetContext.Provider value={value}>{children}</BudgetContext.Provider>;
 }

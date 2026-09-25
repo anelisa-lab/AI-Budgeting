@@ -312,6 +312,8 @@ export function offerFromApi(r) {
     ...priceProvenance(r),
     delivery_available: r.delivery_available ?? null,
     collection_available: r.collection_available ?? null,
+    // Phase 5: km from the student's saved location; null when unknown.
+    distance_km: numOrNull(r.distance_km),
   };
 }
 
@@ -553,5 +555,51 @@ export function preferencesFromApi(p) {
     preferred_categories: Array.isArray(p?.preferred_categories) ? p.preferred_categories : [],
     preferred_stores: Array.isArray(p?.preferred_stores) ? p.preferred_stores : [],
     max_distance_km: numOrNull(p?.max_distance_km),
+  };
+}
+
+/* ---------------------------------------------------------- shopping list */
+
+/**
+ * ShoppingListLineOut — one line on the server-side list (Phase 5). `price`
+ * is what the offer cost when it was added (so Compare can say "was R9");
+ * `current_price` is today's.
+ */
+export function shoppingLineFromApi(l) {
+  return {
+    offer_id: l.offer_id,
+    product_id: l.product_id,
+    product_name: l.product_name,
+    brand: l.brand || null,
+    size: l.size || null,
+    category: l.category || null,
+    is_essential: Boolean(l.is_essential),
+    store_id: l.store_id,
+    store_name: l.store_name,
+    store_type: l.store_type,
+    price: num(l.price),
+    current_price: num(l.current_price),
+    shipping_cost: num(l.shipping_cost),
+    total_cost: num(l.total_cost),
+    availability_status: l.availability_status || 'unknown',
+    qty: num(l.qty, 1),
+    added_at: l.added_at || null,
+  };
+}
+
+export function shoppingListFromApi(payload) {
+  return Array.isArray(payload?.items) ? payload.items.map(shoppingLineFromApi) : [];
+}
+
+/* --------------------------------------------------------------- location */
+
+/** LocationOut, or null when the student hasn't set one. */
+export function locationFromApi(l) {
+  if (!l || l.latitude == null || l.longitude == null) return null;
+  return {
+    latitude: num(l.latitude),
+    longitude: num(l.longitude),
+    label: l.label || 'My location',
+    updated_at: l.updated_at || null,
   };
 }

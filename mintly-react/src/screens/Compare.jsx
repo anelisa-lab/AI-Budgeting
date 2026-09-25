@@ -34,7 +34,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Progress, Select, Skeleton,
 } from '../components/ui/index.js';
@@ -307,6 +307,7 @@ export default function Compare() {
         {travelUnknown && (
           <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)', marginTop: 'var(--s-2)', maxWidth: '64ch' }}>
             Taxi fares aren&apos;t included: UniWallet doesn&apos;t know where you are yet.
+            {' '}<Link to="/profile">Add your location</Link> to include them.
           </p>
         )}
 

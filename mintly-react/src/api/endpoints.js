@@ -76,9 +76,36 @@ export function getProfile(token, opts = {}) {
   return request('/profile/', { token, ...opts });
 }
 
-/** PUT /profile/  ->  UserOut.  Body: UpdateProfileRequest { name: str } */
-export function updateProfile(token, { name }, opts = {}) {
-  return request('/profile/', { method: 'PUT', body: { name }, token, ...opts });
+/**
+ * PUT /profile/  ->  UserOut.
+ * Body: UpdateProfileRequest { name: str, residence?: str, student_number?: str }
+ * residence / student_number are only changed when sent; "" clears one (Phase 5).
+ */
+export function updateProfile(token, { name, residence, student_number: studentNumber }, opts = {}) {
+  const body = { name };
+  if (residence !== undefined) body.residence = residence;
+  if (studentNumber !== undefined) body.student_number = studentNumber;
+  return request('/profile/', { method: 'PUT', body, token, ...opts });
+}
+
+/**
+ * GET /profile/location  ->  LocationOut { latitude, longitude, label, updated_at } | null
+ * The origin for distance search, proximity ranking and taxi fares (Phase 5).
+ */
+export function getLocation(token, opts = {}) {
+  return request('/profile/location', { token, ...opts });
+}
+
+/** PUT /profile/location  ->  LocationOut.  Body: LocationIn { latitude, longitude, label } */
+export function setLocation(token, { latitude, longitude, label }, opts = {}) {
+  return request('/profile/location', {
+    method: 'PUT', body: { latitude, longitude, label }, token, ...opts,
+  });
+}
+
+/** DELETE /profile/location  ->  204 */
+export function clearLocation(token, opts = {}) {
+  return request('/profile/location', { method: 'DELETE', token, ...opts });
 }
 
 /**
@@ -206,6 +233,24 @@ export function createTransaction(token, budgetId, body, opts = {}) {
   });
 }
 
+/**
+ * DELETE /budgets/{budget_id}/transactions/{transaction_id}
+ *   ->  TransactionDeleteResult { budget: BudgetOut, daily_split: BudgetSplitOut | null }
+ * The money goes back to the budget, capped so undoing an overspend can't
+ * create money (Phase 5).
+ */
+export function deleteTransaction(token, budgetId, transactionId, opts = {}) {
+  return request(
+    `/budgets/${encodeURIComponent(budgetId)}/transactions/${encodeURIComponent(transactionId)}`,
+    { method: 'DELETE', token, ...opts },
+  );
+}
+
+/** DELETE /budgets/{budget_id}  ->  204.  Removes the budget and its spends (Phase 5). */
+export function deleteBudget(token, budgetId, opts = {}) {
+  return request(`/budgets/${encodeURIComponent(budgetId)}`, { method: 'DELETE', token, ...opts });
+}
+
 /** GET /budgets/{budget_id}/transactions  ->  TransactionOut[]  (newest first) */
 export function listTransactions(token, budgetId, opts = {}) {
   return request(`/budgets/${encodeURIComponent(budgetId)}/transactions`, { token, ...opts });
@@ -226,12 +271,15 @@ export function listTransactions(token, budgetId, opts = {}) {
  *   availability                  -> 'available' | 'out_of_stock' | 'unknown' | 'any'
  *                                    (default 'available')
  *   essential_only                -> products.is_essential
+ *   max_distance_km               -> stores within N km of the saved location
+ *                                    (400 when no location is saved)  (Phase 5)
  *   fulfilment                    -> 'collection' | 'delivery'   (Phase 4)
  *                                    collection: price/filter/sort on the SHELF
  *                                    price, only stores you can walk into;
  *                                    delivery: price + delivery, only stores
  *                                    that deliver. Omitted: total_cost.
  *   sort                          -> 'price_asc' | 'price_desc' | 'newest' | 'rating_desc'
+ *                                    | 'distance' (Phase 5, needs a saved location)
  *                                    ('price_*' sorts on the effective cost)
  *   limit  1..100 (default 20),  offset >= 0 (default 0)
  *
@@ -241,6 +289,7 @@ export function listTransactions(token, budgetId, opts = {}) {
  *   total_cost, currency, availability_status, product_url,
  *   effective_cost, price_source, price_verified_at,
  *   delivery_available, collection_available            (Phase 4)
+ *   distance_km                                         (Phase 5)
  */
 export function search(token, params = {}, opts = {}) {
   return request('/search', { token, query: params, ...opts });
@@ -306,6 +355,19 @@ export function getRecommendations(token, body = {}, opts = {}) {
     if (body[key] !== undefined && body[key] !== null && body[key] !== '') clean[key] = body[key];
   }
   return request('/recommendations', { method: 'POST', body: clean, token, ...opts });
+}
+
+/**
+ * GET /recommendations/history?limit=N  ->  { runs: [{ id, query_text, created_at,
+ *   items: [{ offer_id, rank, product_name, store_name, total_cost_snapshot, ... }] }] }
+ */
+export function getRecommendationHistory(token, { limit = 10 } = {}, opts = {}) {
+  return request('/recommendations/history', { token, query: { limit }, ...opts });
+}
+
+/** DELETE /recommendations/history  ->  204.  Forgets past searches (Phase 5). */
+export function clearRecommendationHistory(token, opts = {}) {
+  return request('/recommendations/history', { method: 'DELETE', token, ...opts });
 }
 
 /* =======================================================================
@@ -379,6 +441,41 @@ export function compareBasket(token, { items, fulfilment = 'collection', use_my_
  */
 export function getPriceStatus(token, opts = {}) {
   return request('/prices/status', { token, ...opts });
+}
+
+/* =======================================================================
+ * SHOPPING LIST  —  app/routers/shopping_list.py   (prefix "/shopping-list")  Phase 5
+ * =====================================================================*/
+
+/** GET /shopping-list  ->  ShoppingListOut { items: ShoppingListLineOut[] } */
+export function getShoppingList(token, opts = {}) {
+  return request('/shopping-list', { token, ...opts });
+}
+
+/** POST /shopping-list/items  { offer_id, qty }  — adds to the quantity if already listed. */
+export function addShoppingListItem(token, { offer_id: offerId, qty = 1 }, opts = {}) {
+  return request('/shopping-list/items', {
+    method: 'POST', body: { offer_id: offerId, qty }, token, ...opts,
+  });
+}
+
+/** PUT /shopping-list/items/{offer_id}  { qty }  — 0 removes the line. */
+export function setShoppingListQty(token, offerId, qty, opts = {}) {
+  return request(`/shopping-list/items/${encodeURIComponent(offerId)}`, {
+    method: 'PUT', body: { qty }, token, ...opts,
+  });
+}
+
+/** DELETE /shopping-list/items/{offer_id} */
+export function removeShoppingListItem(token, offerId, opts = {}) {
+  return request(`/shopping-list/items/${encodeURIComponent(offerId)}`, {
+    method: 'DELETE', token, ...opts,
+  });
+}
+
+/** DELETE /shopping-list  — empties it. */
+export function clearShoppingList(token, opts = {}) {
+  return request('/shopping-list', { method: 'DELETE', token, ...opts });
 }
 
 /* =======================================================================

@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Depends, Response
 
 from app.database import get_connection
 from app.dependencies import get_current_user_id
-from app.schemas import UserOut, UpdateProfileRequest, PreferencesOut, UpdatePreferencesRequest
+from app.schemas import (
+    LocationIn, LocationOut, PreferencesOut, UpdatePreferencesRequest, UpdateProfileRequest, UserOut,
+)
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -33,12 +37,24 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
 @router.put("", response_model=UserOut)
 @router.put("/", response_model=UserOut, include_in_schema=False)
 def update_profile(payload: UpdateProfileRequest, user_id: int = Depends(get_current_user_id)):
+    """
+    Name always; residence and student number only when sent. An empty
+    string clears either one. Returns the same fields as GET /profile, so
+    saving a name doesn't make the frontend forget the other two.
+    """
+    sets, params = ["name = %s"], [payload.name]
+    for field, column in (("residence", "residence_area_code"), ("student_number", "student_number")):
+        if field in payload.model_fields_set:
+            sets.append(f"{column} = %s")
+            params.append(getattr(payload, field) or None)
     conn = get_connection()
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
-                "UPDATE users SET name = %s WHERE id = %s RETURNING id, name, email, created_at",
-                (payload.name, user_id),
+                f"""UPDATE users SET {", ".join(sets)} WHERE id = %s
+                    RETURNING id, name, email, created_at,
+                              residence_area_code AS residence, student_number""",
+                (*params, user_id),
             )
             user = cur.fetchone()
         if not user:
@@ -46,6 +62,61 @@ def update_profile(payload: UpdateProfileRequest, user_id: int = Depends(get_cur
         return UserOut(**user)
     finally:
         conn.close()
+
+
+# -------------------------
+# Location — the origin for distance, proximity and travel cost
+# -------------------------
+# user_locations has been in the schema since Phase 1 and geo.fetch_user_location()
+# reads it (search distance, recommender proximity, true-cost travel, basket
+# travel), but nothing could write it, so every student had no location.
+
+@router.get("/location", response_model=Optional[LocationOut])
+def get_location(user_id: int = Depends(get_current_user_id)):
+    """The student's default location, or null if they haven't set one."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT latitude, longitude, label, updated_at FROM user_locations
+                   WHERE user_id = %s ORDER BY is_default DESC, id ASC LIMIT 1""",
+                (user_id,),
+            )
+            row = cur.fetchone()
+        return LocationOut(**row) if row else None
+    finally:
+        conn.close()
+
+
+@router.put("/location", response_model=LocationOut)
+def set_location(payload: LocationIn, user_id: int = Depends(get_current_user_id)):
+    """Replace the student's default location."""
+    conn = get_connection()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM user_locations WHERE user_id = %s AND is_default = TRUE", (user_id,))
+            cur.execute(
+                """INSERT INTO user_locations (user_id, label, latitude, longitude, is_default)
+                   VALUES (%s, %s, %s, %s, TRUE)
+                   RETURNING latitude, longitude, label, updated_at""",
+                (user_id, payload.label, round(payload.latitude, 6), round(payload.longitude, 6)),
+            )
+            row = cur.fetchone()
+        return LocationOut(**row)
+    finally:
+        conn.close()
+
+
+@router.delete("/location", status_code=204)
+def clear_location(user_id: int = Depends(get_current_user_id)):
+    """Forget the student's location. Distance and travel go back to 'unknown'."""
+    conn = get_connection()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM user_locations WHERE user_id = %s", (user_id,))
+    finally:
+        conn.close()
+    return Response(status_code=204)
 
 
 @router.get("/preferences", response_model=PreferencesOut)

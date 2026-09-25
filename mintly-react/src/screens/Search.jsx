@@ -42,7 +42,7 @@ import {
   CATALOGUE_CATEGORIES, canonicalCategory, categoryIcon, isWithoutListings,
 } from '../lib/categories.js';
 import {
-  AVAILABILITY_OPTIONS, FULFILMENT_OPTIONS, PAGE_SIZE, PENDING_BACKEND_FILTERS, SORT_OPTIONS,
+  AVAILABILITY_OPTIONS, DISTANCE_OPTIONS, FULFILMENT_OPTIONS, PAGE_SIZE, SORT_OPTIONS,
   activeFilterCount, buildSearchParams, canonicalise, describeFilters, filtersFromUrl,
   filtersToUrl, isRankedSort, rank, recommendationsCanHonour, validateFilters,
 } from '../lib/search.js';
@@ -59,6 +59,17 @@ export default function Search() {
   const [params, setParams] = useSearchParams();
 
   const filters = useMemo(() => filtersFromUrl(params), [params]);
+
+  // The saved location (Profile → "Where you are") decides whether distance
+  // filtering and "Nearest store first" can be offered (Phase 5).
+  const [hasLocation, setHasLocation] = useState(null); // null = not known yet
+  useEffect(() => {
+    let cancelled = false;
+    api.profile.getLocation(token)
+      .then((l) => { if (!cancelled) setHasLocation(Boolean(l)); })
+      .catch(() => { if (!cancelled) setHasLocation(false); });
+    return () => { cancelled = true; };
+  }, [token]);
   const filterErrors = useMemo(() => validateFilters(filters), [filters]);
   const filtersValid = Object.keys(filterErrors).length === 0;
 
@@ -338,6 +349,25 @@ export default function Search() {
                 )}
               </Field>
 
+              <Field
+                id="maxDistance"
+                label="Distance"
+                hint={hasLocation === false
+                  ? <>Add where you are in <Link to="/profile">Profile</Link> to use this.</>
+                  : 'From your saved location. Online-only stores have no distance.'}
+              >
+                {({ id, describedBy }) => (
+                  <Select
+                    id={id}
+                    describedBy={describedBy}
+                    options={DISTANCE_OPTIONS}
+                    value={filters.maxDistance}
+                    disabled={hasLocation === false && !filters.maxDistance}
+                    onChange={(e) => commit({ maxDistance: e.target.value })}
+                  />
+                )}
+              </Field>
+
               <Field id="category" label="Category">
                 {({ id }) => (
                   <Select
@@ -469,11 +499,6 @@ export default function Search() {
               </Button>
             </form>
 
-            {PENDING_BACKEND_FILTERS.map((f) => (
-              <p key={f.id} className="field__hint">
-                <strong>{f.label}:</strong> {f.reason}
-              </p>
-            ))}
           </Card>
         </div>
 
@@ -508,7 +533,9 @@ export default function Search() {
               <label className="sr-only" htmlFor="sort">Sort results</label>
               <Select
                 id="sort"
-                options={SORT_OPTIONS.map(({ value, label }) => ({ value, label }))}
+                options={SORT_OPTIONS
+                  .filter((o) => !o.needsLocation || hasLocation || filters.sort === o.value)
+                  .map(({ value, label }) => ({ value, label }))}
                 value={filters.sort}
                 onChange={(e) => commit({ sort: e.target.value })}
               />
@@ -762,7 +789,9 @@ function ResultRow({ offer, best, fulfilment, qty, onAdd }) {
       <div>
         <h3 className="result__name">{offer.product_name}</h3>
         <p className="result__meta">
-          {[offer.brand, offer.size, offer.store_name].filter(Boolean).join(' · ')}
+          {[offer.brand, offer.size, offer.store_name,
+            offer.distance_km != null ? `${offer.distance_km.toFixed(1)} km away` : null]
+            .filter(Boolean).join(' · ')}
         </p>
         <div className="result__tags">
           {best && <Badge tone="brand" icon="★">Best value</Badge>}

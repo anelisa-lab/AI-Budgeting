@@ -45,6 +45,8 @@ export const SORT_OPTIONS = [
   { value: 'price_desc', label: 'Total cost: high to low', backend: 'price_desc' },
   { value: 'rating_desc', label: 'Best rated', backend: 'rating_desc' },
   { value: 'newest', label: 'Most recently checked', backend: 'newest' },
+  // Phase 5: needs a saved location (Profile). The backend answers 400 without one.
+  { value: 'distance', label: 'Nearest store first', backend: 'distance', needsLocation: true },
 ];
 
 export const DEFAULT_SORT = 'best';
@@ -92,23 +94,25 @@ export const DEFAULT_FILTERS = {
   fulfilment: DEFAULT_FULFILMENT, // -> fulfilment
   freeShippingOnly: false, // -> max_shipping_cost=0
   essentialOnly: false,   // -> essential_only
+  maxDistance: '',        // -> max_distance_km (Phase 5; needs a saved location)
   availability: 'available',
   sort: DEFAULT_SORT,
 };
 
 /**
- * Filters the Search screen shows but cannot apply yet, with the reason in
- * words a student understands. The technical detail is in
- * docs/BACKEND_INTEGRATION.md.
+ * Distance from the student's saved location (Profile → "Where you are").
+ * 1.5 km is geo.WALKING_DISTANCE_KM on the backend — the distance under which
+ * collecting costs no taxi fare. 25 km is the radius the project brief names.
  */
-export const PENDING_BACKEND_FILTERS = [
-  {
-    id: 'radius',
-    label: 'Distance from campus',
-    reason: 'Coming soon. Search does not know where stores are relative to you yet, '
-      + 'so it cannot filter by distance.',
-  },
+export const DISTANCE_OPTIONS = [
+  { value: '', label: 'Any distance' },
+  { value: '1.5', label: 'Walking distance (1.5 km)' },
+  { value: '3', label: 'Within 3 km' },
+  { value: '5', label: 'Within 5 km' },
+  { value: '10', label: 'Within 10 km' },
+  { value: '25', label: 'Within 25 km' },
 ];
+const validDistance = (v) => (DISTANCE_OPTIONS.some((o) => o.value === String(v ?? '')) ? String(v ?? '') : '');
 
 /* --------------------------------------------------------- input handling */
 
@@ -189,6 +193,9 @@ export function buildSearchParams(filters = {}, { limit = PAGE_SIZE, offset = 0 
   // The backend only adds the clause when the flag is true, so send it only then.
   if (f.essentialOnly) params.essential_only = true;
 
+  const km = validDistance(f.maxDistance);
+  if (km) params.max_distance_km = Number(km);
+
   return params;
 }
 
@@ -209,6 +216,7 @@ export function filtersFromUrl(searchParams) {
     freeShippingOnly: searchParams.get('freeship') === '1',
     essentialOnly: searchParams.get('essential') === '1',
     fulfilment: validFulfilment(searchParams.get('get')),
+    maxDistance: validDistance(searchParams.get('km')),
     availability: get('availability', 'available'),
     sort: SORT_OPTIONS.some((o) => o.value === sort) ? sort : DEFAULT_SORT,
   };
@@ -235,6 +243,7 @@ export function filtersToUrl(filters) {
   if (f.freeShippingOnly) out.set('freeship', '1');
   if (f.essentialOnly) out.set('essential', '1');
   put('get', f.fulfilment, DEFAULT_FULFILMENT);
+  put('km', validDistance(f.maxDistance), '');
   put('availability', f.availability, 'available');
   put('sort', f.sort, DEFAULT_SORT);
   return out;
@@ -266,6 +275,10 @@ export function describeFilters(filters) {
   if (validFulfilment(f.fulfilment) !== DEFAULT_FULFILMENT) {
     out.push({ key: 'fulfilment', label: 'Delivered to me', reset: { fulfilment: DEFAULT_FULFILMENT } });
   }
+  if (validDistance(f.maxDistance)) {
+    const label = DISTANCE_OPTIONS.find((o) => o.value === validDistance(f.maxDistance)).label;
+    out.push({ key: 'maxDistance', label, reset: { maxDistance: '' } });
+  }
   if (f.freeShippingOnly) out.push({ key: 'freeShippingOnly', label: 'No delivery fee', reset: { freeShippingOnly: false } });
   if (f.essentialOnly) out.push({ key: 'essentialOnly', label: 'Essentials only', reset: { essentialOnly: false } });
   if (f.availability !== 'available') {
@@ -291,7 +304,7 @@ export function recommendationsCanHonour(filters) {
   return !(
     String(f.brand || '').trim() || String(f.colour || '').trim() || String(f.size || '').trim()
     || String(f.store || '').trim() || String(f.minPrice || '').trim()
-    || f.freeShippingOnly || f.availability !== 'available'
+    || f.freeShippingOnly || f.availability !== 'available' || validDistance(f.maxDistance)
   );
 }
 

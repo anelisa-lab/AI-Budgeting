@@ -27,6 +27,7 @@ import { API_BASE_URL, ApiError, setUnauthorizedHandler } from './http.js';
 import {
   affordabilityFromApi,
   basketComparisonFromApi,
+  locationFromApi,
   budgetFromApi,
   budgetSplitFromApi,
   budgetToApi,
@@ -35,6 +36,7 @@ import {
   preferencesFromApi,
   recommendationsFromApi,
   searchResponseFromApi,
+  shoppingListFromApi,
   transactionFromApi,
   transactionResultFromApi,
   transactionToApi,
@@ -83,9 +85,28 @@ export const profile = {
     return userFromApi(await endpoints.getProfile(token));
   },
 
-  /** PUT /profile/ accepts `name` only. */
-  async update(token, { name }) {
-    return userFromApi(await endpoints.updateProfile(token, { name }));
+  /**
+   * PUT /profile/ — name, and optionally residence / student number
+   * (undefined = leave as is, '' = clear).
+   */
+  async update(token, { name, residence, student_number: studentNumber }) {
+    return userFromApi(await endpoints.updateProfile(token, {
+      name, residence, student_number: studentNumber,
+    }));
+  },
+
+  /** The student's saved location (Phase 5), or null. */
+  async getLocation(token) {
+    return locationFromApi(await endpoints.getLocation(token));
+  },
+
+  async setLocation(token, { latitude, longitude, label }) {
+    return locationFromApi(await endpoints.setLocation(token, { latitude, longitude, label }));
+  },
+
+  async clearLocation(token) {
+    await endpoints.clearLocation(token);
+    return null;
   },
 
   async getPreferences(token) {
@@ -147,6 +168,11 @@ export const budgets = {
     return budgetFromApi(await endpoints.createBudget(token, budgetToApi(formValues)));
   },
 
+  /** DELETE /budgets/{id} — the budget and every spend recorded against it. */
+  async remove(token, budgetId) {
+    await endpoints.deleteBudget(token, budgetId);
+  },
+
   /**
    * PUT /budgets/{id}. Only total_amount and cycle_end_date are updatable, and
    * the server re-derives remaining_amount from the delta — so nothing here
@@ -192,6 +218,38 @@ export const budgetSplit = {
 export const recommendations = {
   async get(token, body) {
     return recommendationsFromApi(await endpoints.getRecommendations(token, body));
+  },
+
+  /**
+   * Past searches and what was recommended for them (Phase 5 "Recent
+   * searches"). Runs without a query (the default For you list) are skipped,
+   * and a query searched twice is shown once, newest first.
+   */
+  async history(token, { limit = 20 } = {}) {
+    const payload = await endpoints.getRecommendationHistory(token, { limit });
+    const seen = new Set();
+    const out = [];
+    for (const run of payload?.runs || []) {
+      const query = String(run.query_text || '').trim();
+      if (!query || seen.has(query.toLowerCase())) continue;
+      seen.add(query.toLowerCase());
+      out.push({
+        id: run.id,
+        query,
+        created_at: run.created_at || null,
+        top: (run.items || []).slice(0, 3).map((i) => ({
+          offer_id: i.offer_id,
+          product_name: i.product_name,
+          store_name: i.store_name,
+          total_cost: Number(i.total_cost_snapshot) || 0,
+        })),
+      });
+    }
+    return out;
+  },
+
+  async clearHistory(token) {
+    await endpoints.clearRecommendationHistory(token);
   },
 };
 
@@ -266,6 +324,18 @@ export const transactions = {
     );
     return transactionResultFromApi(payload);
   },
+
+  /**
+   * DELETE a recorded spend (Phase 5). Returns { budget, daily_split } — the
+   * authoritative state after the money goes back, like create() does.
+   */
+  async remove(token, budgetId, transactionId) {
+    const payload = await endpoints.deleteTransaction(token, budgetId, transactionId);
+    return {
+      budget: budgetFromApi(payload?.budget),
+      daily_split: payload?.daily_split ? budgetSplitFromApi(payload.daily_split) : null,
+    };
+  },
 };
 
 /* ------------------------------------------------------------------ search */
@@ -322,20 +392,52 @@ const facetCache = new Map();
 /* ----------------------------------------------------------- shopping list */
 
 /**
- * Device-local. NOT a backend resource yet — localList.js explains why and
- * the Compare screen tells the student. Kept behind this namespace so that
- * replacing it with real endpoints is a change to this block alone.
+ * Server-side since Phase 5 (/shopping-list), so the list follows the
+ * student to any device. The first time a student signs in after the move,
+ * whatever was saved in this browser's localStorage (localList.js) is
+ * uploaded once and then cleared, so nobody loses the list they had.
  */
+let listToken = null;
+let listUserId = null;
+
+async function uploadDeviceList(token) {
+  const saved = await localList.list();
+  if (!saved.length) return;
+  for (const line of saved) {
+    // eslint-disable-next-line no-await-in-loop
+    await endpoints.addShoppingListItem(token, { offer_id: line.offer_id, qty: line.qty })
+      .catch(() => null); // an offer that no longer exists is simply dropped
+  }
+  await localList.clear();
+}
+
 export const shoppingList = {
-  /** Scope the device-local list to one account (null = signed out). */
-  setOwner: (userId) => localList.setOwner(userId),
-  list: () => localList.list(),
-  add: (offer, qty) => localList.add(offer, qty),
-  setQty: (offerId, qty) => localList.setQty(offerId, qty),
-  remove: (offerId) => localList.remove(offerId),
-  clear: () => localList.clear(),
-  /** True while the list is device-local; drives the banner on Compare. */
-  isLocalOnly: true,
+  /** Called by ShoppingContext whenever the signed-in account changes. */
+  setOwner(userId, token) {
+    listUserId = userId;
+    listToken = userId ? token : null;
+    localList.setOwner(userId);
+  },
+  async list() {
+    if (!listToken) return [];
+    await uploadDeviceList(listToken);
+    return shoppingListFromApi(await endpoints.getShoppingList(listToken));
+  },
+  async add(offer, qty = 1) {
+    return shoppingListFromApi(await endpoints.addShoppingListItem(listToken, { offer_id: offer.offer_id, qty }));
+  },
+  async setQty(offerId, qty) {
+    return shoppingListFromApi(await endpoints.setShoppingListQty(listToken, offerId, Math.max(0, Math.round(qty))));
+  },
+  async remove(offerId) {
+    return shoppingListFromApi(await endpoints.removeShoppingListItem(listToken, offerId));
+  },
+  async clear() {
+    return shoppingListFromApi(await endpoints.clearShoppingList(listToken));
+  },
+  /** False since Phase 5: the list is saved to the account. */
+  isLocalOnly: false,
+  get ownerId() { return listUserId; },
 };
 
 /* ------------------------------------------------------------------ health */

@@ -33,9 +33,11 @@ source venv/bin/activate          # macOS/Linux — use venv\Scripts\activate on
 pip install -r requirements.txt
 cp .env.example .env              # then fill in your local DATABASE_URL and JWT_SECRET
 psql -U <user> -d <dbname> -f sql/schema.sql
-psql -U <user> -d <dbname> -f mintly-react/docs/seed/seed_backend.sql   # catalogue: 10 stores / 49 products / 257 offers
+psql -U <user> -d <dbname> -f mintly-react/docs/seed/seed_backend.sql   # catalogue: 10 stores / 55 products / 283 offers
 psql -U <user> -d <dbname> -f sql/seed_store_charges.sql               # AFTER the catalogue — it matches stores by slug
 # Existing database from before Phase 4? Run sql/003_phase4_prices_and_fulfilment.sql FIRST.
+# Existing database from before Phase 5? Run sql/005_phase5_shopping_list.sql, then
+# re-run seed_backend.sql (it is safe to re-run; it adds the Maintenance products).
 uvicorn app.main:app --reload --port 4000
 ```
 
@@ -78,11 +80,14 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | Method | Path                    | Auth? | Body / Notes                                  |
 |--------|-------------------------|-------|------------------------------------------------|
 | GET    | /health                 | No    | Liveness check                                 |
-| POST   | /auth/register          | No    | `{ name, email, password }`                    |
+| POST   | /auth/register          | No    | `{ name, email, password, residence?, student_number? }` |
 | POST   | /auth/login             | No    | `{ email, password }`                          |
 | POST   | /auth/logout            | Yes   | —                                               |
-| GET    | /profile                | Yes   | Returns id, name, email, created_at            |
-| PUT    | /profile                | Yes   | `{ name }`                                     |
+| GET    | /profile                | Yes   | Returns id, name, email, residence, student_number, created_at |
+| PUT    | /profile                | Yes   | `{ name, residence?, student_number? }` — omitted = unchanged, `""` = clear (Phase 5) |
+| GET    | /profile/location       | Yes   | The student's saved location, or `null` (Phase 5) |
+| PUT    | /profile/location       | Yes   | `{ latitude, longitude, label? }` — origin for distance search, proximity and taxi fares (Phase 5) |
+| DELETE | /profile/location       | Yes   | Forget it (Phase 5)                            |
 | GET    | /profile/preferences    | Yes   | Returns preferred_categories, preferred_stores, max_distance_km |
 | PUT    | /profile/preferences    | Yes   | Any subset of the same three fields            |
 | POST   | /budgets                | Yes   | `{ total_amount, cycle_start_date, cycle_end_date, budget_kind?, savings_percentage?, survival_threshold? }` |
@@ -92,9 +97,12 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | PUT    | /budgets/{id}           | Yes   | `{ total_amount?, cycle_end_date?, survival_threshold? }` |
 | POST   | /budgets/{id}/transactions | Yes | `{ item_name, amount, category?, is_essential? }` — records spend, recalculates `remaining_amount`, flags overspend and over-today's-allowance, returns the new `daily_split` |
 | GET    | /budgets/{id}/transactions | Yes | List transactions for a budget                 |
+| DELETE | /budgets/{id}/transactions/{tid} | Yes | Delete a spend; the money goes back, capped so undoing an overspend can't create money (`budget_calc.calculate_transaction_removal`). Returns `{ budget, daily_split }` (Phase 5) |
+| DELETE | /budgets/{id}           | Yes   | Delete a budget and its spends (Phase 5)       |
 | GET    | /search                 | Yes   | `?q=&category=&brand=&colour=&size=&store=&min_price=&max_price=&max_shipping_cost=&availability=&essential_only=&sort=&limit=&offset=&page=` — `q` accepts natural language ("bread under R20"); response adds `page`, `total_pages`, `has_more`, `next_offset`, `message`, `parsed` |
 | POST   | /recommendations        | Yes   | `{ query?, category?, max_price?, fulfilment?, limit?, include_unaffordable?, candidate_pool? }` — ranked offers with true cost, scores and an explanation |
-| GET    | /recommendations/history | Yes  | `?limit=` — recent runs and the items they returned |
+| GET    | /recommendations/history | Yes  | `?limit=` — recent runs and the items they returned (shown as "Recent searches" on For you) |
+| DELETE | /recommendations/history | Yes  | Clear them (Phase 5)                            |
 | POST   | /true-cost              | Yes   | `{ offer_ids[], quantity?, fulfilment?, use_my_location? }` — itemised true cost per offer, cheapest flagged |
 | GET    | /true-cost/{offer_id}   | Yes   | `?quantity=&fulfilment=&use_my_location=` — one offer, itemised |
 | GET    | /budget-split           | Yes   | Daily allowance for the active budget + a day-by-day schedule |
@@ -102,11 +110,49 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | GET    | /budget-split/{budget_id} | Yes | The same split for one specific budget |
 | POST   | /compare/basket         | Yes   | `{ items: [{product_id, qty}], fulfilment?, use_my_location? }` — the whole list priced per store (delivery once per order, travel once per trip, nothing imputed) plus the cheapest plan (Phase 4) |
 | GET    | /prices/status          | Yes   | How many prices are confirmed vs seed estimates (Phase 4) |
+| GET    | /shopping-list          | Yes   | The student's list, each line joined to today's offer (Phase 5) |
+| POST   | /shopping-list/items    | Yes   | `{ offer_id, qty? }` — add, or add to the quantity (max 20) |
+| PUT    | /shopping-list/items/{offer_id} | Yes | `{ qty }` — set it; 0 removes the line   |
+| DELETE | /shopping-list/items/{offer_id} | Yes | Remove a line                           |
+| DELETE | /shopping-list          | Yes   | Empty the list                                 |
 
 `GET /search` also accepts `fulfilment=collection|delivery` (Phase 4): price
 filters and sorting use the shelf price when collecting and price + delivery
 when delivered, and stores that can't serve the student that way drop out.
 `POST /recommendations` also accepts `essential_only`.
+
+`GET /search` also accepts `max_distance_km` and `sort=distance` (Phase 5):
+stores within that distance of the student's saved location, nearest first;
+every result carries `distance_km`. "near me" in `q` applies the student's
+`max_distance_km` preference (or 15 km). Without a saved location these
+answer 400 with "Set your location in Profile to search by distance."
+
+**CORS (Phase 5):** the API only answers browsers on the origins in
+`CORS_ORIGINS` (comma-separated, see `.env.example`). The default is the Vite
+dev and preview servers on localhost; set it to the frontend's real address
+for the demo.
+
+## Phase 5 — closing the integration gaps
+
+**Read `docs/PHASE5_GAPS_REPORT.md`.** The gaps the Phase 4 review found, now
+closed:
+
+- **Student location** — `PUT /profile/location` (campus or device location
+  on Profile). Distance search, "near me", proximity ranking and taxi fares in
+  true cost and Compare all use it.
+- **Distance filter** — `GET /search?max_distance_km=&sort=distance`, and
+  every result says how far away the store is.
+- **Maintenance products** — 6 products / 26 listings added through
+  Member 9's generator (existing ids unchanged), plus parser words.
+- **Shopping list on the server** — `/shopping-list`, on the Phase 1
+  `comparison_lists` tables (`sql/005_phase5_shopping_list.sql`). A list saved
+  in a browser by an earlier build is uploaded once.
+- **Deleting** a spend or a budget; **editing** residence and student number.
+- **Recent searches** on For you, from `/recommendations/history`, with clear.
+- **CORS** limited to `CORS_ORIGINS`.
+
+Still open: store prices are modelled estimates (the live-price adapter needs
+an API key), and the slide 18–19 standout features beyond the agreed MVP.
 
 ## Phase 4 — integration, tuning, validation, real prices
 
@@ -403,10 +449,11 @@ pytest                            # backend, no database needed
 cd mintly-react && npm run lint && npm run test:contract && npm run build
 ```
 
-177 tests covering the recommender, true-cost, budget-split, geo, query
+183 tests covering the recommender, true-cost, budget-split, geo, query
 parser, budget arithmetic (`budget_calc`), basket comparison and the live
 price layer (Phase 4 added `test_basket.py`, `test_price_feed.py`,
-`test_phase4_tuning.py` and `test_phase4_validation.py`). They are all pure functions, so
+`test_phase4_tuning.py` and `test_phase4_validation.py`; Phase 5 added the
+spend-deletion rule and the Maintenance parser words). They are all pure functions, so
 **no database or `.env` is needed** — useful for Member 10's QA checklist and
 for CI.
 

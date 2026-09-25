@@ -175,19 +175,19 @@ something was recommended, which a black-box model cannot give them. It is also
 honest — we have no training data yet. The architecture swaps in a trained
 ranker by replacing that one function.
 
-**"Why can't I filter by distance? The synopsis says 25 km."**
-Because the app does not know where the *student* is. `/search` now returns
-store coordinates, but there is no endpoint to save a student's location
-(`user_locations` has no router) and `/search` takes no radius. Rather than
-guess, Search shows the filter as "coming soon", and
-`docs/BACKEND_INTEGRATION.md` §6 specifies the fix. **This is a
-good question to get** — it shows the team knows exactly what is missing.
+**"How does the distance filter know where I am? The synopsis says 25 km."**
+Since Phase 5 the student saves a location on Profile → *Where you are*: a DUT
+campus, or their device's location (`PUT /profile/location`). `/search` then
+takes `max_distance_km` (up to 25 km) and `sort=distance`, and every result
+says how far away the store is. The same location feeds the recommender's
+proximity score and the taxi fares in true cost and Compare. Without one, the
+filter says to add a location instead of guessing.
 
-**"Why is the shopping list not saved to my account?"**
-`comparison_lists` and `comparison_items` are in the schema but have no router
-yet. The list is in `localStorage` and the screen says so. §4 of the integration
-doc specifies the five endpoints; when they land, `client.js` changes and no
-screen does.
+**"Is the shopping list saved to my account?"**
+Yes, since Phase 5: `/shopping-list` stores it in `comparison_lists` /
+`comparison_items`, so it follows the student to any device. A list an
+earlier build saved in the browser is uploaded once on the next sign-in.
+Only `client.js` changed; no screen did.
 
 **"Where does the daily spend figure come from?"**
 `GET /budget-split` — Member 6's Daily Budget Split algorithm, called live.

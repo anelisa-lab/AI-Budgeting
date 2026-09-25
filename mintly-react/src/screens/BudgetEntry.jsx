@@ -81,7 +81,22 @@ const RULES = {
 };
 
 export default function BudgetEntry() {
-  const { budget, saveBudget, supports } = useBudget();
+  const { budget, saveBudget, deleteBudget, supports } = useBudget();
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteBudget() {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Delete this budget and every spend recorded against it? This cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      await deleteBudget();
+      toast.info('Budget deleted. Set up a new one whenever you are ready.');
+    } catch (err) {
+      toast.error(err.message || 'Could not delete the budget.');
+    } finally {
+      setDeleting(false);
+    }
+  }
   const toast = useToast();
   const navigate = useNavigate();
   const formRef = useRef(null);
@@ -398,11 +413,15 @@ export default function BudgetEntry() {
               </Button>
             </div>
 
-            {isEditing && !supports.deleteBudget && (
-              <p className="field__hint">
-                A budget can&apos;t be deleted yet. When your next allowance lands, update
-                the amount and period here.
-              </p>
+            {isEditing && supports.deleteBudget && (
+              <div className="row row--between" style={{ borderTop: '1.5px solid var(--c-line)', paddingTop: 'var(--s-4)' }}>
+                <p className="field__hint" style={{ margin: 0, maxWidth: '40ch' }}>
+                  Set this up by mistake? Deleting removes the budget and its spending.
+                </p>
+                <Button type="button" variant="ghost" size="sm" loading={deleting} onClick={handleDeleteBudget}>
+                  Delete budget
+                </Button>
+              </div>
             )}
           </form>
         </Card>

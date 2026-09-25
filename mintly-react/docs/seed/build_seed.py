@@ -72,17 +72,20 @@ STORES_RAW = [
 ]
 
 # Each chain's real specialism, as a multiplier on the base price.
+# Maintenance (Phase 5) reuses each chain's Homeware multiplier: these stores
+# shelve hardware with homeware, and the basket surveys give no separate
+# hardware figure, so inventing one would be less honest than reusing it.
 MODIFIERS = {
-    "shoprite":   {"Groceries": 0.96, "Toiletries": 0.97, "Stationery": 1.02, "Electronics": 1.06, "Homeware": 1.02},
-    "checkers":   {"Groceries": 1.00, "Toiletries": 0.99, "Stationery": 1.02, "Electronics": 1.05, "Homeware": 1.01},
-    "game":       {"Groceries": 1.02, "Toiletries": 1.00, "Stationery": 0.95, "Electronics": 0.97, "Homeware": 0.93},
-    "picknpay":   {"Groceries": 1.02, "Toiletries": 0.99, "Stationery": 1.01, "Electronics": 1.05, "Homeware": 1.02},
-    "clicks":     {"Groceries": 1.10, "Toiletries": 0.94, "Stationery": 1.04, "Electronics": 1.04, "Homeware": 1.05},
-    "spar":       {"Groceries": 1.02, "Toiletries": 1.02, "Stationery": 1.05, "Electronics": 1.08, "Homeware": 1.05},
-    "foodlovers": {"Groceries": 0.94, "Toiletries": 1.06, "Stationery": 1.08, "Electronics": 1.10, "Homeware": 1.06},
-    "makro":      {"Groceries": 0.92, "Toiletries": 0.92, "Stationery": 0.94, "Electronics": 0.94, "Homeware": 0.92},
-    "incredible": {"Groceries": 1.10, "Toiletries": 1.10, "Stationery": 1.02, "Electronics": 0.99, "Homeware": 1.06},
-    "takealot":   {"Groceries": 1.04, "Toiletries": 0.98, "Stationery": 0.93, "Electronics": 0.92, "Homeware": 0.95},
+    "shoprite":   {"Groceries": 0.96, "Toiletries": 0.97, "Stationery": 1.02, "Electronics": 1.06, "Homeware": 1.02, "Maintenance": 1.02},
+    "checkers":   {"Groceries": 1.00, "Toiletries": 0.99, "Stationery": 1.02, "Electronics": 1.05, "Homeware": 1.01, "Maintenance": 1.01},
+    "game":       {"Groceries": 1.02, "Toiletries": 1.00, "Stationery": 0.95, "Electronics": 0.97, "Homeware": 0.93, "Maintenance": 0.93},
+    "picknpay":   {"Groceries": 1.02, "Toiletries": 0.99, "Stationery": 1.01, "Electronics": 1.05, "Homeware": 1.02, "Maintenance": 1.02},
+    "clicks":     {"Groceries": 1.10, "Toiletries": 0.94, "Stationery": 1.04, "Electronics": 1.04, "Homeware": 1.05, "Maintenance": 1.05},
+    "spar":       {"Groceries": 1.02, "Toiletries": 1.02, "Stationery": 1.05, "Electronics": 1.08, "Homeware": 1.05, "Maintenance": 1.05},
+    "foodlovers": {"Groceries": 0.94, "Toiletries": 1.06, "Stationery": 1.08, "Electronics": 1.10, "Homeware": 1.06, "Maintenance": 1.06},
+    "makro":      {"Groceries": 0.92, "Toiletries": 0.92, "Stationery": 0.94, "Electronics": 0.94, "Homeware": 0.92, "Maintenance": 0.92},
+    "incredible": {"Groceries": 1.10, "Toiletries": 1.10, "Stationery": 1.02, "Electronics": 0.99, "Homeware": 1.06, "Maintenance": 1.06},
+    "takealot":   {"Groceries": 1.04, "Toiletries": 0.98, "Stationery": 0.93, "Electronics": 0.92, "Homeware": 0.95, "Maintenance": 0.95},
 }
 
 GROCERS = ["shoprite", "checkers", "picknpay", "spar", "foodlovers", "makro"]
@@ -156,6 +159,16 @@ ITEMS = [
     ("2-Plate Hotplate", "Salton", "Homeware", "Kitchen", "White", "Compact", "unit", 449.00, "🍳", ["game", "takealot", "makro", "incredible"], 4.0),
     ("Kettle", "Russell Hobbs", "Homeware", "Kitchen", "Silver", "1.7L", "unit", 329.00, "🫖", ["game", "takealot", "makro", "incredible", "checkers"], 4.5),
     ("Storage Crate", "Addis", "Homeware", "Storage", "Clear", "30L", "unit", 129.99, "📦", ["game", "takealot", "makro"], 4.3),
+
+    # ---- Maintenance (Phase 5) -----------------------------------------
+    # Small fixes a student in res does themselves. Appended at the END so
+    # every existing product and listing keeps its id.
+    ("LED Light Bulb", "Eurolux", "Maintenance", "Lighting", "White", "9W E27", "bulb", 29.99, "💡", ["game", "makro", "checkers", "picknpay", "takealot"], 4.3),
+    ("AA Batteries", "Duracell", "Maintenance", "Batteries", "n/a", "4 pack", "pack", 64.99, "🔋", ["game", "makro", "checkers", "picknpay", "clicks", "takealot"], 4.6),
+    ("Duct Tape", "Tesa", "Maintenance", "Repairs", "Silver", "48mm x 10m", "roll", 54.99, "🩹", ["game", "makro", "takealot"], 4.2),
+    ("Super Glue", "Pratley", "Maintenance", "Repairs", "Clear", "3g", "tube", 39.99, "🧴", ["game", "makro", "checkers", "picknpay", "takealot"], 4.4),
+    ("Padlock", "Yale", "Maintenance", "Security", "Brass", "40mm", "unit", 119.99, "🔒", ["game", "makro", "takealot"], 4.5),
+    ("Extension Cord", "Ellies", "Maintenance", "Electrical", "White", "5m", "unit", 139.99, "🔌", ["game", "makro", "takealot", "incredible"], 4.1),
 ]
 
 

@@ -52,6 +52,34 @@ class AuthResponse(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    # Optional, like at sign-up. Omitted = unchanged; "" = clear it.
+    residence: Optional[str] = Field(default=None, max_length=100)
+    student_number: Optional[str] = Field(default=None, max_length=9)
+
+    @field_validator("student_number")
+    @classmethod
+    def validate_student_number(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value == "":
+            return value
+        import re
+
+        if not re.match(STUDENT_NUMBER_PATTERN, value):
+            raise ValueError("Student number must be 8 or 9 digits, with no letters or spaces")
+        return value
+
+
+class LocationIn(BaseModel):
+    """The student's default location — a campus they picked, or their device's."""
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    label: str = Field(default="My location", min_length=1, max_length=100)
+
+
+class LocationOut(BaseModel):
+    latitude: float
+    longitude: float
+    label: str
+    updated_at: Optional[datetime] = None
 
 
 class PreferencesOut(BaseModel):
@@ -137,6 +165,12 @@ class TransactionResult(BaseModel):
     daily_split: Optional["BudgetSplitOut"] = None
 
 
+class TransactionDeleteResult(BaseModel):
+    """DELETE /budgets/{id}/transactions/{tid} — the budget after the refund."""
+    budget: "BudgetOut"
+    daily_split: Optional["BudgetSplitOut"] = None
+
+
 # -------------------------
 # Search (Member 4)
 # -------------------------
@@ -172,6 +206,7 @@ class SearchResultItem(BaseModel):
     price_verified_at: Optional[datetime] = None
     delivery_available: Optional[bool] = None
     collection_available: Optional[bool] = None
+    distance_km: Optional[float] = None           # from the student's saved location
 
 
 class SearchResponse(BaseModel):
@@ -396,6 +431,7 @@ class RecommendationResponse(BaseModel):
 
 # These refer to models declared further down the file.
 TransactionResult.model_rebuild()
+TransactionDeleteResult.model_rebuild()
 SearchResponse.model_rebuild()
 
 
@@ -503,3 +539,40 @@ class PriceStatusOut(BaseModel):
     newest_verification: Optional[datetime] = None
     live_provider_configured: bool
     message: str
+
+
+# -------------------------
+# Shopping list (Phase 5) — /shopping-list
+# -------------------------
+
+class ShoppingListItemIn(BaseModel):
+    offer_id: int
+    qty: int = Field(default=1, ge=1, le=99)
+
+
+class ShoppingListQtyIn(BaseModel):
+    qty: int = Field(ge=0, le=99)     # 0 removes the line
+
+
+class ShoppingListLineOut(BaseModel):
+    offer_id: int
+    product_id: int
+    product_name: str
+    brand: Optional[str] = None
+    size: Optional[str] = None
+    category: Optional[str] = None
+    is_essential: bool = False
+    store_id: int
+    store_name: str
+    store_type: str
+    price: Decimal                    # when it was added
+    current_price: Decimal            # today
+    shipping_cost: Decimal
+    total_cost: Decimal
+    availability_status: str
+    qty: int
+    added_at: datetime
+
+
+class ShoppingListOut(BaseModel):
+    items: List[ShoppingListLineOut]
