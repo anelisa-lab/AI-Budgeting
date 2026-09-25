@@ -98,3 +98,32 @@ Backend code (`app/`, `sql/`, `tests/`) was **not changed**.
 **How it was run:** npm and PyPI were blocked in the test environment. The **unmodified backend** ran against a real Postgres 16 with the project's schema and seed files. Small test-only stand-ins replaced FastAPI, psycopg2, python-jose, passlib and email-validator. The frontend was bundled with esbuild, using React 19 and a minimal router stand-in, and driven by Playwright/Chromium.
 
 **Still to do before merging:** run `npm install && npm run build && npm run dev` with the real packages and click through once.
+
+---
+
+## F. Integration with the Phase 4 backend (after merge)
+
+This frontend was built before the Phase 4 backend (PR #9: `/compare/basket`,
+`?fulfilment=`, `essential_only`, price provenance, student number) was
+merged, and PR #9's own frontend changes never reached `main`. After merging
+both, the frontend was wired to that backend. **Backend code is unchanged —
+identical to `main`.**
+
+| Was (Section D) | Now |
+|---|---|
+| D2 — no whole-basket true cost; Compare did store arithmetic in the browser | Compare uses `POST /compare/basket`: one order per store, delivery once (threshold on the basket), store fees, a store that can't deliver/collect listed separately, split plan only when it wins after the extra trip. `offersForProducts` and the browser store maths are gone. |
+| Search priced everything with delivery | "Getting it" filter sends `?fulfilment=` (default: collect). Results show `effective_cost`; "Best value" ranks on it; embedded picks use the same fulfilment. |
+| For you filtered essentials client-side | `essential_only` sent to the server; defaults to collection like Search and Compare. |
+| D5 — residence and student number not stored | Sent on register (blank ones omitted), shown read-only on Profile, preserved across a name change (`PUT /profile` doesn't return them). |
+| Prices labelled as if live | "Estimated price" / "Confirmed <date>" per offer from `price_source` / `price_verified_at`; Compare says how many are estimates. |
+
+Still backend-side: no endpoint for a student's location (so Compare says taxi
+fares aren't included), no Maintenance products.
+
+**Verified against real FastAPI + Postgres 16:** `pytest` 177/177;
+`npm run test:contract` 54/54 (route table cross-checked against the live
+OpenAPI schema); lint and build clean; Playwright walkthrough — register →
+budget → spend → search (collect/delivered, combined filters) → For you →
+Compare (collect/delivered) → Profile → Settings → every nav link → logout →
+wrong/right password — plus no horizontal overflow on 7 screens at 360, 390,
+768, 1024 and 1440 px.

@@ -30,7 +30,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, Select, Skeleton,
+  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, PriceSourceBadge, Select, Skeleton,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
@@ -42,7 +42,7 @@ import {
   CATALOGUE_CATEGORIES, canonicalCategory, categoryIcon, isWithoutListings,
 } from '../lib/categories.js';
 import {
-  AVAILABILITY_OPTIONS, PAGE_SIZE, PENDING_BACKEND_FILTERS, SORT_OPTIONS,
+  AVAILABILITY_OPTIONS, FULFILMENT_OPTIONS, PAGE_SIZE, PENDING_BACKEND_FILTERS, SORT_OPTIONS,
   activeFilterCount, buildSearchParams, canonicalise, describeFilters, filtersFromUrl,
   filtersToUrl, isRankedSort, rank, recommendationsCanHonour, validateFilters,
 } from '../lib/search.js';
@@ -188,6 +188,9 @@ export default function Search() {
         query: query || undefined,
         category: category || undefined,
         max_price: Number(filters.maxPrice) || undefined,
+        // Priced the same way as the results under them.
+        fulfilment: filters.fulfilment,
+        essential_only: filters.essentialOnly || undefined,
         limit: 3,
       })
       .then((result) => { if (id === recsId.current) setRecs(result); })
@@ -197,7 +200,8 @@ export default function Search() {
         setRecsError(err.message || 'Recommendations are unavailable right now.');
       })
       .finally(() => { if (id === recsId.current) setRecsLoading(false); });
-  }, [token, filters.q, filters.category, filters.maxPrice, recsAllowed, filtersValid]);
+  }, [token, filters.q, filters.category, filters.maxPrice, filters.fulfilment,
+    filters.essentialOnly, recsAllowed, filtersValid]);
 
   /* ------------------------------------------------------------- filters */
 
@@ -260,8 +264,9 @@ export default function Search() {
           What are you looking for?
         </h1>
         <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)', maxWidth: '58ch' }}>
-          Search every listed store at once. Prices are the store&apos;s listed price plus
-          its delivery fee, so the cheapest result is cheapest to your door.
+          Search every listed store at once. Tell UniWallet how you&apos;ll get it: collecting
+          shows the shelf price at stores you can walk into, delivered adds each store&apos;s
+          delivery fee, so the cheapest result really is cheapest for you.
         </p>
       </div>
 
@@ -322,6 +327,17 @@ export default function Search() {
               className="stack"
               noValidate
             >
+              <Field id="fulfilment" label="Getting it">
+                {({ id }) => (
+                  <Select
+                    id={id}
+                    options={FULFILMENT_OPTIONS}
+                    value={filters.fulfilment}
+                    onChange={(e) => commit({ fulfilment: e.target.value })}
+                  />
+                )}
+              </Field>
+
               <Field id="category" label="Category">
                 {({ id }) => (
                   <Select
@@ -391,7 +407,7 @@ export default function Search() {
                 </Field>
               </div>
               <p className="field__hint" style={{ marginTop: 'calc(var(--s-3) * -1)' }}>
-                Price includes delivery.
+                {filters.fulfilment === 'delivery' ? 'Price includes delivery.' : 'Shelf price — you are collecting.'}
                 {budget ? ` You have ${money(remaining)} left this period.` : ''}
               </p>
 
@@ -471,6 +487,7 @@ export default function Search() {
               qtyOf={qtyOf}
               onAdd={handleAdd}
               query={filters.q}
+              fulfilment={filters.fulfilment}
             />
           ) : (filters.q || filters.category) && (
             <p className="field__hint" style={{ marginBottom: 'var(--s-4)' }}>
@@ -552,6 +569,7 @@ export default function Search() {
                   key={offer.offer_id}
                   offer={offer}
                   best={index === 0 && ranked}
+                  fulfilment={filters.fulfilment}
                   qty={qtyOf(offer.offer_id)}
                   onAdd={() => handleAdd(offer)}
                 />
@@ -576,11 +594,11 @@ export default function Search() {
               <div className="row row--between" style={{ marginTop: 'var(--s-5)' }}>
                 <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted-light)', maxWidth: '58ch' }}>
                   {ranked
-                    ? 'Best value ranks each page on total cost, how much of your budget it leaves, '
+                    ? 'Best value ranks each page on what it costs you, how much of your budget it leaves, '
                       + 'delivery cost, availability and your saved preferences. '
                     : 'Shown in the order you chose. '}
-                  Store fees such as card surcharges are added on Compare. Prices come from store
-                  listings — always check the shelf.
+                  Store fees are added on Compare. Prices marked &ldquo;Estimated&rdquo; have not been
+                  confirmed with the store yet — always check the shelf.
                 </p>
                 <Button variant="ghost" onClick={() => navigate('/compare')}>
                   Compare my list →
@@ -600,7 +618,7 @@ export default function Search() {
  * Member 5's recommender, top three. Every pick shows its TRUE cost (item +
  * delivery + store fees) and the backend's plain-English reason.
  */
-function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
+function Recommendations({ recs, loading, error, qtyOf, onAdd, query, fulfilment }) {
   if (loading && !recs) {
     return <Skeleton height={140} radius="var(--r-lg)" />;
   }
@@ -626,15 +644,16 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
         </h2>
         <div className="row" style={{ gap: 'var(--s-2)' }}>
           {survival && <Badge tone="danger">Survival mode · essentials only</Badge>}
-          <Link to="/recommendations" state={{ query }} style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
+          <Link to="/recommendations" state={{ query, fulfilment }} style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
             More picks →
           </Link>
         </div>
       </div>
 
       <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>
-        Priced at true cost — the listed price plus delivery and the store&apos;s own fees —
-        so a pick can cost a little more here than the same listing in the results below.
+        Priced at true cost — the shelf price plus {fulfilment === 'delivery' ? 'delivery' : 'any travel'} and
+        the store&apos;s own fees — so a pick can cost a little more here than the same listing
+        in the results below.
       </p>
       {survival && recs.budget.message && (
         <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>{recs.budget.message}</p>
@@ -667,6 +686,7 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
                       ? <Badge tone="success">Within your budget</Badge>
                       : <Badge tone="danger">Over your remaining budget</Badge>}
                     {r.is_essential && <Badge tone="accent">Essential</Badge>}
+                    <PriceSourceBadge offer={r} />
                   </div>
                   <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)', marginTop: 'var(--s-2)' }}>
                     {r.explanation}
@@ -677,7 +697,7 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
                     <div className="result__price num">{money(r.true_cost)}</div>
                     <p className="result__ship">
                       {r.hidden_cost > 0
-                        ? `true cost · ${money(r.price)} + ${money(r.hidden_cost)} delivery & fees`
+                        ? `true cost · ${money(r.price)} + ${money(r.hidden_cost)} ${r.fulfilment === 'collection' ? 'fees & travel' : 'delivery & fees'}`
                         : 'true cost · no extra fees'}
                     </p>
                   </div>
@@ -729,8 +749,10 @@ function TextFilter({ id, label, value, suggestions, onChange, onCommit }) {
 
 /* ------------------------------------------------------------ result row */
 
-function ResultRow({ offer, best, qty, onAdd }) {
+function ResultRow({ offer, best, fulfilment, qty, onAdd }) {
   const inStock = offer.availability_status === 'available';
+  const delivered = fulfilment === 'delivery';
+  const extra = Math.max(0, Number((offer.effective_cost - offer.price).toFixed(2)));
   return (
     <article className={best ? 'result result--best' : 'result'}>
       <div className="result__icon" aria-hidden="true">
@@ -748,10 +770,11 @@ function ResultRow({ offer, best, qty, onAdd }) {
             {offer.store_type === 'physical' ? 'In store'
               : offer.store_type === 'online' ? 'Online only' : 'Store or online'}
           </Badge>
-          {offer.shipping_cost === 0
+          {delivered && (offer.shipping_cost === 0
             ? <Badge tone="success">No delivery fee</Badge>
-            : <Badge tone="neutral">+{money(offer.shipping_cost)} delivery</Badge>}
+            : <Badge tone="neutral">+{money(offer.shipping_cost)} delivery</Badge>)}
           {offer.is_essential && <Badge tone="accent">Essential</Badge>}
+          <PriceSourceBadge offer={offer} />
           {offer.rating != null && (
             <Badge tone="neutral">
               <span aria-hidden="true">★</span> {offer.rating.toFixed(1)}
@@ -777,11 +800,11 @@ function ResultRow({ offer, best, qty, onAdd }) {
 
       <div className="result__right">
         <div>
-          <div className="result__price num">{money(offer.total_cost)}</div>
+          <div className="result__price num">{money(offer.effective_cost)}</div>
           <p className="result__ship">
-            {offer.shipping_cost > 0
-              ? `${money(offer.price)} + ${money(offer.shipping_cost)} delivery`
-              : 'listed price, no delivery fee'}
+            {extra > 0
+              ? `${money(offer.price)} + ${money(extra)} delivery`
+              : delivered ? 'listed price, no delivery fee' : 'shelf price · you collect'}
           </p>
         </div>
         <Button

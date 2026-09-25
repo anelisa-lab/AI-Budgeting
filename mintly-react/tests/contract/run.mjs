@@ -31,12 +31,12 @@ import {
 // The frontend under test. Plain JS, no JSX, no React — importable as-is.
 process.env.VITE_API_BASE_URL = 'http://localhost:4000';
 const {
-  auth, profile, budgets, budgetSplit, recommendations, transactions, search, trueCost,
+  auth, profile, budgets, budgetSplit, recommendations, transactions, search, trueCost, compare,
 } = await import('../../src/api/client.js');
 const { ApiError } = await import('../../src/api/http.js');
 const {
   buildSearchParams, filtersFromUrl, filtersToUrl, rank,
-  priceListByStore, splitShopTotal, comparableGroups,
+  basketOffersByProduct, itemGroups,
   chosenListTotal, validateFilters, canonicalise, describeFilters, recommendationsCanHonour,
   isRankedSort, DEFAULT_FILTERS,
 } = await import('../../src/lib/search.js');
@@ -153,22 +153,34 @@ const lastRequest = () => captured[captured.length - 1];
 
 console.log('\nAuthentication');
 
-await test('register sends exactly { name, email, password } to POST /auth/register', async () => {
-  installFetch(() => ({ status: 201, body: { user: userOut(), token: TOKEN } }));
+await test('register sends name, email, password, residence and student number', async () => {
+  installFetch(() => ({
+    status: 201,
+    body: { user: userOut({ residence: 'berea', student_number: '22123456' }), token: TOKEN },
+  }));
   const result = await auth.register({
     name: 'Nozibusiso Cindi',
     email: 's221234567@dut4life.ac.za',
     password: 'UniWallet2026',
-    // The register screen holds these two; they must NOT reach the API.
-    studentNumber: '22123456',
-    residence: 'steve-biko',
+    student_number: '22123456',
+    residence: 'berea',
   });
   const req = lastRequest();
   assert.equal(req.path, '/auth/register');
   assert.equal(req.method, 'POST');
-  assert.deepEqual(Object.keys(req.body).sort(), ['email', 'name', 'password']);
+  assert.deepEqual(Object.keys(req.body).sort(), ['email', 'name', 'password', 'residence', 'student_number']);
   assert.equal(result.token, TOKEN);
   assert.equal(result.user.name, 'Nozibusiso Cindi');
+  assert.equal(result.user.residence, 'berea');
+  assert.equal(result.user.student_number, '22123456');
+});
+
+await test('register leaves blank optional fields out instead of sending them empty', async () => {
+  installFetch(() => ({ status: 201, body: { user: userOut(), token: TOKEN } }));
+  await auth.register({
+    name: 'A B', email: 'a@b.ac.za', password: 'UniWallet2026', student_number: '', residence: '',
+  });
+  assert.deepEqual(Object.keys(lastRequest().body).sort(), ['email', 'name', 'password']);
 });
 
 await test('login posts to /auth/login and returns the user and token', async () => {
@@ -494,58 +506,6 @@ await test('stored preferences from the backend influence the ranking', () => {
   );
 });
 
-await test('a store is only "complete" when it stocks every line', () => {
-  const lines = [
-    { product_id: 1, qty: 1, price: 40 },
-    { product_id: 2, qty: 2, price: 20 },
-  ];
-  const offersByProduct = new Map([
-    [1, [
-      { offer_id: 1, product_id: 1, store_id: 10, store_name: 'Full Store', store_type: 'physical', price: 40, shipping_cost: 0, total_cost: 40, product_name: 'A', size: '1kg', availability_status: 'available' },
-      { offer_id: 2, product_id: 1, store_id: 20, store_name: 'Partial Store', store_type: 'physical', price: 30, shipping_cost: 0, total_cost: 30, product_name: 'A', size: '1kg', availability_status: 'available' },
-    ]],
-    [2, [
-      { offer_id: 3, product_id: 2, store_id: 10, store_name: 'Full Store', store_type: 'physical', price: 20, shipping_cost: 0, total_cost: 20, product_name: 'B', size: '2kg', availability_status: 'available' },
-    ]],
-  ]);
-
-  const rows = priceListByStore(lines, offersByProduct);
-  const full = rows.filter((r) => r.full);
-  assert.equal(full.length, 1);
-  assert.equal(full[0].store.store_name, 'Full Store');
-  assert.equal(rows[0].store.store_name, 'Full Store', 'a complete shop outranks a cheaper incomplete one');
-  // Partial Store is cheaper per item but misses a line; it must not come first.
-  const partial = rows.find((r) => r.store.store_name === 'Partial Store');
-  assert.equal(partial.missing, 1);
-  assert.equal(partial.total, null, 'incomplete stores must not receive a synthetic total');
-});
-
-await test('a physical store is not charged delivery; an online one is charged once', () => {
-  const lines = [{ product_id: 1, qty: 1, price: 40 }, { product_id: 2, qty: 1, price: 20 }];
-  const offersByProduct = new Map([
-    [1, [{ offer_id: 1, product_id: 1, store_id: 30, store_name: 'Takealot', store_type: 'online', price: 40, shipping_cost: 60, total_cost: 100, product_name: 'A', availability_status: 'available' }]],
-    [2, [{ offer_id: 2, product_id: 2, store_id: 30, store_name: 'Takealot', store_type: 'online', price: 20, shipping_cost: 60, total_cost: 80, product_name: 'B', availability_status: 'available' }]],
-  ]);
-  const [row] = priceListByStore(lines, offersByProduct);
-  assert.equal(row.subtotal, 60);
-  assert.equal(row.delivery, 60, 'one delivery charge, not one per line');
-  assert.equal(row.total, 120);
-});
-
-await test('the split-shop total buys each line wherever it is cheapest', () => {
-  const lines = [{ product_id: 1, qty: 2, price: 40 }];
-  const offersByProduct = new Map([
-    [1, [
-      { offer_id: 1, product_id: 1, store_id: 10, store_name: 'A', store_type: 'physical', price: 40, shipping_cost: 0, total_cost: 40, product_name: 'Rice', size: '2kg', availability_status: 'available' },
-      { offer_id: 2, product_id: 1, store_id: 20, store_name: 'B', store_type: 'physical', price: 31, shipping_cost: 0, total_cost: 31, product_name: 'Rice', size: '2kg', availability_status: 'available' },
-    ]],
-  ]);
-  assert.equal(splitShopTotal(lines, offersByProduct), 62);
-  const [group] = comparableGroups(lines, offersByProduct);
-  assert.equal(group.saving, 9);
-  assert.equal(group.cheapest.store_name, 'B');
-});
-
 /* ========================================================= PHASE 3 ===== */
 
 console.log('\nPhase 3 — dashboard, Daily Budget Split, recommendations');
@@ -690,20 +650,6 @@ await test('survival threshold round-trips through create, edit and update', () 
   assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '0' }, {}), { survival_threshold: 0 });
 });
 
-await test('the same product added from two stores is one item-by-item group', () => {
-  const offers = [
-    { offer_id: 1, product_id: 5, store_id: 1, product_name: 'Bread', store_name: 'A', price: 20, total_cost: 20, availability_status: 'available' },
-    { offer_id: 2, product_id: 5, store_id: 2, product_name: 'Bread', store_name: 'B', price: 18, total_cost: 18, availability_status: 'available' },
-  ];
-  const lines = [
-    { offer_id: 1, product_id: 5, qty: 1, price: 20 },
-    { offer_id: 2, product_id: 5, qty: 2, price: 18 },
-  ];
-  const groups = comparableGroups(lines, new Map([[5, offers]]));
-  assert.equal(groups.length, 1);
-  assert.equal(groups[0].qty, 3);
-});
-
 /* ========================================================= PHASE 4 ===== */
 
 console.log('\nPhase 4 — search filters, compare accuracy, categories');
@@ -762,27 +708,6 @@ await test('recommendations are hidden when a filter they cannot honour is on', 
   assert.equal(recommendationsCanHonour({ q: 'rice', brand: 'Tastic' }), false);
 });
 
-await test('an out-of-stock listing does not make a store "complete" or cheapest', () => {
-  const lines = [{ offer_id: 1, product_id: 1, qty: 1, price: 10, store_id: 1 }];
-  const map = new Map([[1, [
-    offer({ offer_id: 1, product_id: 1, store_id: 1, store_name: 'Cheap', price: 10, availability_status: 'out_of_stock' }),
-    offer({ offer_id: 2, product_id: 1, store_id: 2, store_name: 'Stocked', price: 12 }),
-  ]]]);
-  const rows = priceListByStore(lines, map);
-  assert.equal(rows[0].store.store_name, 'Stocked');
-  const cheap = rows.find((r) => r.store.store_name === 'Cheap');
-  assert.equal(cheap.full, false);
-  assert.equal(cheap.outOfStock, 1);
-  assert.equal(splitShopTotal(lines, map), 12, 'split shop ignores out-of-stock offers too');
-});
-
-await test('collecting from a store you can walk into has no delivery, even a "mixed" one', () => {
-  const lines = [{ offer_id: 1, product_id: 1, qty: 2, price: 10, store_id: 1 }];
-  const map = new Map([[1, [offer({ offer_id: 1, product_id: 1, store_id: 1, store_name: 'M', store_type: 'mixed', price: 10, shipping_cost: 35 })]]]);
-  assert.equal(priceListByStore(lines, map, { fulfilment: 'collection' })[0].total, 20);
-  assert.equal(priceListByStore(lines, map, { fulfilment: 'delivery' })[0].total, 55);
-});
-
 await test('the list "as chosen" uses live prices and one delivery per store', () => {
   const lines = [
     { offer_id: 1, product_id: 1, qty: 2, price: 9, store_id: 1, store_type: 'physical', shipping_cost: 40 },
@@ -809,6 +734,133 @@ await test('there is one category list, and it includes Maintenance', () => {
   }
   assert.equal(canonicalCategory('maintenance'), 'Maintenance');
   assert.equal(canonicalCategory('groceries'), 'Groceries');
+});
+
+/* ============================================ PHASE 4 BACKEND WIRING ===== */
+
+console.log('\nPhase 4 backend — basket compare, fulfilment, price provenance');
+
+const basketQuote = (over = {}) => ({
+  store_id: 3, store_name: 'Shoprite Warwick Junction', store_type: 'physical', distance_km: null,
+  fulfilment: 'collection', fulfilment_available: true, full: true, stocked: 2, missing_count: 0,
+  lines: [], missing: [], subtotal: dec(60), delivery: dec(0), fees: dec(0), travel: dec(0),
+  total: dec(60), estimate_count: 2, notes: [], ...over,
+});
+
+await test('Compare asks POST /compare/basket for the whole list, one entry per product', async () => {
+  installFetch(() => ({
+    body: {
+      fulfilment: 'delivery', location_known: false,
+      stores: [
+        basketQuote({ store_id: 4, store_name: 'Checkers Berea Centre', fulfilment: 'delivery', delivery: dec(35), total: dec(95) }),
+        basketQuote({ fulfilment: 'collection', fulfilment_available: false, notes: ["Shoprite Warwick Junction doesn't deliver"] }),
+      ],
+      best_single_store_id: 4,
+      best_plan: { total: dec(95), store_count: 1, stores: [basketQuote({ store_id: 4 })], saving_vs_best_single: dec(0) },
+      unavailable: [],
+      items: [{ product_id: 5, product_name: 'Brown Bread · 700g', qty: 3, offers: [
+        { offer_id: 1, store_id: 4, store_name: 'Checkers Berea Centre', price: dec(20), line_total: dec(60), in_stock: true, is_estimate: true, price_source: 'seed_estimate', price_verified_at: null, product_url: null },
+      ] }],
+      prices: { listings: 2, estimates: 2, confirmed: 0, all_confirmed: false },
+    },
+  }));
+  const result = await compare.basket(TOKEN, [
+    { offer_id: 1, product_id: 5, qty: 1 },
+    { offer_id: 2, product_id: 5, qty: 2 },   // same bread from another store
+    { offer_id: 7, product_id: 9, qty: 1 },
+  ], { fulfilment: 'delivery' });
+  const req = lastRequest();
+  assert.equal(req.path, '/compare/basket');
+  assert.deepEqual(req.body.items, [{ product_id: 5, qty: 3 }, { product_id: 9, qty: 1 }]);
+  assert.equal(req.body.fulfilment, 'delivery');
+  assert.equal(result.stores[0].total, 95, 'Decimal strings become numbers');
+  assert.equal(result.stores[0].delivery, 35);
+  assert.equal(result.stores[1].fulfilment_available, false, 'a store that cannot deliver is flagged');
+  assert.equal(result.best_single_store_id, 4);
+  assert.equal(result.best_plan.store_count, 1);
+  assert.equal(result.prices.all_confirmed, false);
+  assert.equal(result.location_known, false);
+});
+
+await test('item by item keeps only in-stock listings, and only products with a choice', () => {
+  const groups = itemGroups({ items: [
+    { product_id: 1, product_name: 'Rice', qty: 2, offers: [
+      { offer_id: 1, store_id: 1, price: 40, line_total: 80, in_stock: true },
+      { offer_id: 2, store_id: 2, price: 31, line_total: 62, in_stock: true },
+      { offer_id: 3, store_id: 3, price: 10, line_total: 20, in_stock: false },
+    ] },
+    { product_id: 2, product_name: 'Soap', qty: 1, offers: [
+      { offer_id: 4, store_id: 1, price: 9, line_total: 9, in_stock: true },
+      { offer_id: 5, store_id: 2, price: 7, line_total: 7, in_stock: false },
+    ] },
+  ] });
+  assert.equal(groups.length, 1, 'soap has only one in-stock listing, so nothing to compare');
+  assert.equal(groups[0].offers.length, 2, 'the out-of-stock R10 rice is not a choice');
+  assert.equal(groups[0].saving, 18);
+});
+
+await test('the list "as chosen" reads today\'s price and stock from the basket response', () => {
+  const lines = [
+    { offer_id: 1, product_id: 1, qty: 2, price: 9, store_id: 1, store_type: 'mixed', shipping_cost: 35 },
+    { offer_id: 3, product_id: 2, qty: 1, price: 5, store_id: 2, store_type: 'physical', shipping_cost: 0 },
+  ];
+  const map = basketOffersByProduct({
+    stores: [{ store_id: 1, store_type: 'mixed' }],
+    items: [
+      { product_id: 1, offers: [{ offer_id: 1, store_id: 1, price: 10, in_stock: true }] },
+      { product_id: 2, offers: [{ offer_id: 3, store_id: 2, price: 5, in_stock: false }] },
+    ],
+  }, lines);
+  const collected = chosenListTotal(lines, map, { fulfilment: 'collection' });
+  assert.equal(collected.items, 20, 'today\'s R10, not the saved R9');
+  assert.equal(collected.delivery, 0, 'collecting from a store you walk into, even a "mixed" one');
+  assert.equal(collected.unavailable.length, 1, 'the out-of-stock line is reported, not priced');
+  assert.equal(chosenListTotal(lines, map, { fulfilment: 'delivery' }).delivery, 35);
+});
+
+await test('search is priced the way the student gets it (?fulfilment=)', async () => {
+  assert.equal(DEFAULT_FILTERS.fulfilment, 'collection');
+  assert.equal(buildSearchParams({}).fulfilment, 'collection');
+  assert.equal(buildSearchParams({ fulfilment: 'delivery' }).fulfilment, 'delivery');
+  assert.equal(buildSearchParams({ fulfilment: 'teleport' }).fulfilment, 'collection');
+  const url = filtersToUrl({ ...DEFAULT_FILTERS, fulfilment: 'delivery' });
+  assert.equal(filtersFromUrl(url).fulfilment, 'delivery', 'survives a refresh');
+  assert.deepEqual(describeFilters({ fulfilment: 'delivery' }).map((c) => c.key), ['fulfilment']);
+
+  installFetch(() => ({ body: { results: [
+    searchResultItem({ price: 19.99, shipping_cost: 35, effective_cost: dec(19.99), price_source: 'seed_estimate' }),
+  ], count: 1, limit: 20, offset: 0 } }));
+  const page = await search.offers(TOKEN, buildSearchParams({ q: 'bread' }));
+  assert.equal(lastRequest().query.fulfilment, 'collection');
+  assert.equal(page.results[0].effective_cost, 19.99, 'shelf price when collecting, not R54.99');
+  assert.equal(page.results[0].total_cost, 54.99);
+  assert.equal(page.results[0].price_is_estimate, true);
+});
+
+await test('"Best value" ranks on what the student pays, not on a delivery they skip', () => {
+  const [top] = rank([
+    { ...searchResultItem({ offer_id: 1, price: 20, shipping_cost: 40 }), price: 20, shipping_cost: 40, total_cost: 60, effective_cost: 20 },
+    { ...searchResultItem({ offer_id: 2, price: 25, shipping_cost: 0 }), price: 25, shipping_cost: 0, total_cost: 25, effective_cost: 25 },
+  ]);
+  assert.equal(top.offer_id, 1, 'collecting, R20 beats R25 whatever the delivery fee');
+});
+
+await test('essentials only and fulfilment reach POST /recommendations', async () => {
+  installFetch(() => ({ body: { results: [], count: 0, budget: {} } }));
+  await recommendations.get(TOKEN, { query: 'soap', fulfilment: 'collection', essential_only: true });
+  assert.equal(lastRequest().body.essential_only, true);
+  assert.equal(lastRequest().body.fulfilment, 'collection');
+  assert.equal(recommendationsCanHonour({ q: 'soap', essentialOnly: true, fulfilment: 'delivery' }), true);
+});
+
+await test('a confirmed price is labelled confirmed; a seed price is an estimate', async () => {
+  installFetch(() => ({ body: { results: [
+    searchResultItem({ offer_id: 1, price_source: 'verified_manual', price_verified_at: '2026-09-20T10:00:00+00:00' }),
+    searchResultItem({ offer_id: 2 }),
+  ], count: 2, limit: 20, offset: 0 } }));
+  const page = await search.offers(TOKEN, {});
+  assert.equal(page.results[0].price_is_estimate, false);
+  assert.equal(page.results[1].price_is_estimate, true, 'no price_source means a seed estimate');
 });
 
 /* ==================================================== NETWORK FAULTS ===== */

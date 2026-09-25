@@ -26,6 +26,7 @@ import * as localList from './localList.js';
 import { API_BASE_URL, ApiError, setUnauthorizedHandler } from './http.js';
 import {
   affordabilityFromApi,
+  basketComparisonFromApi,
   budgetFromApi,
   budgetSplitFromApi,
   budgetToApi,
@@ -47,13 +48,13 @@ export { API_BASE_URL, ApiError, setUnauthorizedHandler };
 
 export const auth = {
   /**
-   * The backend's RegisterRequest is { name, email, password } — nothing else.
-   * The register form also collects a student number and a residence; those
-   * are NOT sent, because the API would silently drop them and the student
-   * would believe they had been saved. See docs/BACKEND_INTEGRATION.md.
+   * RegisterRequest { name, email, password, residence?, student_number? }.
+   * The two optional fields were added to the backend in Phase 4.
    */
-  async register({ name, email, password }) {
-    const payload = await endpoints.register({ name, email, password });
+  async register({ name, email, password, residence, student_number: studentNumber }) {
+    const payload = await endpoints.register({
+      name, email, password, residence, student_number: studentNumber,
+    });
     return { user: userFromApi(payload.user), token: payload.token };
   },
 
@@ -213,6 +214,34 @@ export const trueCost = {
   },
 };
 
+/* ---------------------------------------------------------- compare basket */
+
+/**
+ * POST /compare/basket (Phase 4, app/basket.py). The whole list priced as
+ * ONE order per store — delivery once per order with the free-delivery
+ * threshold judged on the basket, store fees once, travel once per trip —
+ * and the cheapest plan across up to three stores. This replaced the
+ * arithmetic the Compare screen used to do in the browser, which could not
+ * see store charges or which stores deliver.
+ */
+export const compare = {
+  async basket(token, lines, { fulfilment = 'collection' } = {}) {
+    const qtyByProduct = new Map();
+    for (const line of lines) {
+      qtyByProduct.set(line.product_id, (qtyByProduct.get(line.product_id) || 0) + line.qty);
+    }
+    const items = [...qtyByProduct].slice(0, 50)
+      .map(([productId, qty]) => ({ product_id: productId, qty: Math.max(1, Math.min(99, qty)) }));
+    if (items.length === 0) return null;
+    return basketComparisonFromApi(await endpoints.compareBasket(token, { items, fulfilment }));
+  },
+};
+
+/** GET /prices/status — how many catalogue prices are estimates vs confirmed. */
+export const prices = {
+  status: (token) => endpoints.getPriceStatus(token),
+};
+
 /* ------------------------------------------------------------ transactions */
 
 export const transactions = {
@@ -249,44 +278,6 @@ export const search = {
    */
   async offers(token, params) {
     return searchResponseFromApi(await endpoints.search(token, params));
-  },
-
-  /**
-   * Every offer for a set of products, for the store-by-store comparison.
-   *
-   * INTERIM: there is no `GET /products/{id}/offers`, so this searches by
-   * product name (`q` ILIKEs name/brand/category) and keeps the rows whose
-   * product_id matches. It is real backend data, but it costs one request per
-   * distinct product and can miss an offer whose product name differs.
-   * docs/BACKEND_INTEGRATION.md specifies the endpoint that would fix both.
-   */
-  async offersForProducts(token, products) {
-    const unique = [];
-    const seen = new Set();
-    for (const p of products) {
-      if (seen.has(p.product_id)) continue;
-      seen.add(p.product_id);
-      unique.push(p);
-    }
-
-    const responses = await Promise.all(
-      unique.map((p) => this
-        .offers(token, { q: p.product_name, availability: 'any', limit: 100, sort: 'price_asc' })
-        .catch(() => ({ results: [], failed: true }))),
-    );
-
-    const byProduct = new Map();
-    let failed = 0;
-    unique.forEach((p, i) => {
-      if (responses[i].failed) failed += 1;
-      const matches = responses[i].results.filter((r) => r.product_id === p.product_id);
-      byProduct.set(p.product_id, matches);
-    });
-    // Every lookup failing is an outage, not "nobody stocks this" — say so.
-    if (unique.length > 0 && failed === unique.length) {
-      throw new ApiError('Could not load current prices. Check your connection and try again.', { status: 0 });
-    }
-    return byProduct;
   },
 
   /**
@@ -358,8 +349,8 @@ export const system = {
 
 /** Grouped default export, for `import { api } from '../api/client.js'`. */
 export const api = {
-  auth, profile, budgets, budgetSplit, recommendations, trueCost, transactions, search,
-  shoppingList, system,
+  auth, profile, budgets, budgetSplit, recommendations, trueCost, compare, prices,
+  transactions, search, shoppingList, system,
 };
 
 export default api;

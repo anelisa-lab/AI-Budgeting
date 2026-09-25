@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, Select, Skeleton,
+  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, PriceSourceBadge, Select, Skeleton,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
@@ -45,7 +45,11 @@ export default function Recommendations() {
   // Search's "More picks →" hands its query over, so the list continues it.
   const location = useLocation();
   const [query, setQuery] = useState(location.state?.query || '');
-  const [fulfilment, setFulfilment] = useState('delivery');
+  // Collecting is the default everywhere (Search, For you, Compare); Search's
+  // "More picks →" hands over the student's choice.
+  const [fulfilment, setFulfilment] = useState(
+    location.state?.fulfilment === 'delivery' ? 'delivery' : 'collection',
+  );
   const [includeUnaffordable, setIncludeUnaffordable] = useState(false);
   const [category, setCategory] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
@@ -72,6 +76,9 @@ export default function Recommendations() {
         category: category || undefined,
         max_price: maxPrice ? Number(maxPrice) : undefined,
         include_unaffordable: includeUnaffordable,
+        // Applied on the server BEFORE the limit (Phase 4), so ticking it
+        // can't empty the page while essentials exist.
+        essential_only: essentialOnly || undefined,
         limit: 12,
       });
       if (id !== requestId.current) return;
@@ -83,7 +90,7 @@ export default function Recommendations() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [token, fulfilment, category, maxPrice, includeUnaffordable]);
+  }, [token, fulfilment, category, maxPrice, includeUnaffordable, essentialOnly]);
 
   // First load, and again whenever a filter that the BACKEND applies changes
   // (the text query waits for "Find recommendations").
@@ -117,7 +124,6 @@ export default function Recommendations() {
     && response.results.every((r) => !r.matched_query);
 
   const results = (response?.results || [])
-    .filter((rec) => !essentialOnly || rec.is_essential)
     .slice()
     .sort((a, b) => {
       if (sort === 'true_cost_asc') return a.true_cost - b.true_cost;
@@ -321,15 +327,11 @@ export default function Recommendations() {
             icon={isWithoutListings(category) ? categoryIcon(category) : '✨'}
             title={isWithoutListings(category)
               ? `No ${category} items are listed yet`
-              : essentialOnly && (response?.results || []).length > 0
-                ? 'None of these picks are essentials'
-                : 'Nothing ranked yet'}
+              : 'Nothing ranked yet'}
           >
             {isWithoutListings(category)
               ? `None of the stores in the catalogue list ${category.toLowerCase()} products yet, so there is nothing to recommend. Pick another category or search for something specific.`
-              : essentialOnly && (response?.results || []).length > 0
-                ? 'Untick “Essentials only” to see them, or search for an essential like bread, soap or maize meal.'
-                : <>
+              : <>
                   {response?.message ? `${response.message} ` : ''}
                   Try a broader search, or tick &ldquo;Include items over my remaining
                   budget&rdquo; to see more.
@@ -341,7 +343,7 @@ export default function Recommendations() {
           {results.map((rec) => (
             <RecommendationCard
               key={rec.offer_id}
-              rec={{ ...rec, fulfilment }}
+              rec={rec}
               qty={qtyOf(rec.offer_id)}
               onAdd={() => handleAdd(rec)}
             />
@@ -382,6 +384,7 @@ function RecommendationCard({ rec, qty, onAdd }) {
             ? <Badge tone="success">Within your budget</Badge>
             : <Badge tone="danger">Over your remaining budget</Badge>}
           {rec.is_essential && <Badge tone="accent">Essential</Badge>}
+          <PriceSourceBadge offer={rec} />
           {rec.rating != null && (
             // rating_count 0 means "not recorded", not "no reviews".
             <Badge tone="neutral">
