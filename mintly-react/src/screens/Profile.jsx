@@ -5,7 +5,9 @@
  * Covers the functional requirement "allow authenticated users to manage
  * profile and shopping preferences":
  *
- *   PUT /profile              { name }
+ *   GET /profile              { name, email, residence, student_number, ... }
+ *   PUT /profile              { name }   (residence and student number are
+ *                                         set at sign-up and shown read-only)
  *   PUT /profile/preferences  { preferred_categories, preferred_stores, max_distance_km }
  *
  * These are not decoration. The recommender (app/recommender.py) scores
@@ -27,6 +29,7 @@ import { api } from '../api/client.js';
 import * as v from '../lib/validation.js';
 import { CATALOGUE_CATEGORIES, canonicalCategory } from '../lib/categories.js';
 import { fullDate } from '../lib/format.js';
+import { residenceLabel } from '../lib/residences.js';
 
 /** Toggle `value` in a list. */
 const toggle = (list, value) => (list.includes(value)
@@ -188,6 +191,18 @@ export default function Profile() {
                 <Input id={id} value={user?.email || ''} describedBy={describedBy} disabled />
               )}
             </Field>
+            <div className="profile-facts">
+              <Field id="profile-student-number" label="Student number" hint="Added when you signed up.">
+                {({ id, describedBy }) => (
+                  <Input id={id} value={user?.student_number || 'Not provided'} describedBy={describedBy} disabled />
+                )}
+              </Field>
+              <Field id="profile-residence" label="Residence" hint="Added when you signed up.">
+                {({ id, describedBy }) => (
+                  <Input id={id} value={residenceLabel(user?.residence) || 'Not provided'} describedBy={describedBy} disabled />
+                )}
+              </Field>
+            </div>
             <div>
               <Button type="submit" loading={savingName} disabled={name.trim() === (user?.name || '')}>
                 {savingName ? 'Saving…' : 'Save name'}

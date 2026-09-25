@@ -25,18 +25,21 @@ import { request } from './http.js';
 
 /**
  * POST /auth/register  ->  201 { user: UserOut, token: string }
- * Body: RegisterRequest { name: str, email: EmailStr, password: str }
+ * Body: RegisterRequest { name: str, email: EmailStr, password: str,
+ *                         residence?: str (<= 100), student_number?: str (8-9 digits) }
  *
  * The backend rejects passwords under 8 characters with a 400 before Pydantic
- * even runs. It returns 409 when the email is taken.
- *
- * NOTE: RegisterRequest has exactly three fields. Student number and residence
- * are NOT accepted (see docs/BACKEND_INTEGRATION.md, "Backend dependencies").
+ * even runs. It returns 409 when the email is taken, and 422 for a student
+ * number that is not 8 or 9 digits. residence and student_number are optional
+ * (Phase 4, migration 004); a blank one is left out rather than sent empty.
  */
-export function register({ name, email, password }, opts = {}) {
+export function register({ name, email, password, residence, student_number: studentNumber }, opts = {}) {
+  const body = { name, email, password };
+  if (residence) body.residence = residence;
+  if (studentNumber) body.student_number = studentNumber;
   return request('/auth/register', {
     method: 'POST',
-    body: { name, email, password },
+    body,
     fieldHints: { 409: 'email', 400: 'password' },
     ...opts,
   });
@@ -68,7 +71,7 @@ export function logout(token, opts = {}) {
  * PROFILE  —  app/routers/profile.py   (router prefix "/profile")
  * =====================================================================*/
 
-/** GET /profile/  ->  UserOut { id, name, email, created_at } */
+/** GET /profile/  ->  UserOut { id, name, email, residence, student_number, created_at } */
 export function getProfile(token, opts = {}) {
   return request('/profile/', { token, ...opts });
 }
@@ -218,19 +221,26 @@ export function listTransactions(token, budgetId, opts = {}) {
  *
  * Query parameters, exactly as declared in search.py:
  *   q, category, brand, colour, size, store,
- *   min_price, max_price          -> compared against product_offers.total_cost
+ *   min_price, max_price          -> compared against the effective cost (below)
  *   max_shipping_cost             -> product_offers.shipping_cost
  *   availability                  -> 'available' | 'out_of_stock' | 'unknown' | 'any'
  *                                    (default 'available')
  *   essential_only                -> products.is_essential
- *   sort                          -> 'price_asc' | 'price_desc' | 'newest'
- *                                    ('price_*' sorts on TOTAL cost, not item price)
+ *   fulfilment                    -> 'collection' | 'delivery'   (Phase 4)
+ *                                    collection: price/filter/sort on the SHELF
+ *                                    price, only stores you can walk into;
+ *                                    delivery: price + delivery, only stores
+ *                                    that deliver. Omitted: total_cost.
+ *   sort                          -> 'price_asc' | 'price_desc' | 'newest' | 'rating_desc'
+ *                                    ('price_*' sorts on the effective cost)
  *   limit  1..100 (default 20),  offset >= 0 (default 0)
  *
  * SearchResultItem fields:
  *   offer_id, product_id, product_name, brand, category, colour, size,
  *   is_essential, store_id, store_name, store_type, price, shipping_cost,
- *   total_cost, currency, availability_status, product_url
+ *   total_cost, currency, availability_status, product_url,
+ *   effective_cost, price_source, price_verified_at,
+ *   delivery_available, collection_available            (Phase 4)
  */
 export function search(token, params = {}, opts = {}) {
   return request('/search', { token, query: params, ...opts });
@@ -283,12 +293,13 @@ export function checkAffordability(token, { amount }, opts = {}) {
  * }
  * Body: RecommendationRequest — every key optional:
  *   query, category, max_price, fulfilment ('delivery' | 'collection'),
- *   limit 1..50, include_unaffordable, candidate_pool 10..200
+ *   limit 1..50, include_unaffordable, candidate_pool 10..200,
+ *   essential_only (Phase 4 — applied on the server BEFORE the limit)
  */
 export function getRecommendations(token, body = {}, opts = {}) {
   const allowed = [
     'query', 'category', 'max_price', 'fulfilment', 'limit',
-    'include_unaffordable', 'candidate_pool',
+    'include_unaffordable', 'candidate_pool', 'essential_only',
   ];
   const clean = {};
   for (const key of allowed) {
@@ -322,6 +333,52 @@ export function getTrueCost(token, { offer_ids, quantity = 1, fulfilment = 'deli
     token,
     ...opts,
   });
+}
+
+/* =======================================================================
+ * COMPARE  —  app/routers/compare.py   (prefix "/compare")   Phase 4
+ * =====================================================================*/
+
+/**
+ * POST /compare/basket  ->  CompareBasketResponse {
+ *   fulfilment, location_known,
+ *   stores: StoreQuoteOut[] { store_id, store_name, store_type, distance_km,
+ *           fulfilment, fulfilment_available, full, stocked, missing_count,
+ *           lines[], missing[], subtotal, delivery, fees, travel, total,
+ *           estimate_count, notes[] },
+ *   best_single_store_id, best_plan: { total, store_count, stores[], saving_vs_best_single },
+ *   unavailable[], items: [{ product_id, product_name, qty, offers[] }],
+ *   prices: { listings, estimates, confirmed, all_confirmed }
+ * }
+ * Body: CompareBasketRequest { items: [{ product_id, qty 1..99 }] (1..50),
+ *                              fulfilment 'collection' | 'delivery', use_my_location }
+ *
+ * The whole list as ONE order per store: delivery once per order (with the
+ * free-delivery threshold judged on the basket), store fees once, travel once
+ * per trip, nothing imputed for a store that lacks an item. 404 when none of
+ * the products is listed anywhere any more.
+ */
+export function compareBasket(token, { items, fulfilment = 'collection', use_my_location = true }, opts = {}) {
+  return request('/compare/basket', {
+    method: 'POST',
+    body: { items, fulfilment, use_my_location },
+    token,
+    ...opts,
+  });
+}
+
+/* =======================================================================
+ * PRICES  —  app/routers/prices.py   (prefix "/prices")   Phase 4
+ * =====================================================================*/
+
+/**
+ * GET /prices/status  ->  PriceStatusOut {
+ *   by_source: { seed_estimate: n, live_api: n, verified_manual: n },
+ *   newest_verification, live_provider_configured, message
+ * }
+ */
+export function getPriceStatus(token, opts = {}) {
+  return request('/prices/status', { token, ...opts });
 }
 
 /* =======================================================================

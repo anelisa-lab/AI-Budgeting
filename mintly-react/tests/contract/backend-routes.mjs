@@ -45,7 +45,7 @@ export const ROUTES = [
   {
     name: 'register',
     method: 'POST', pattern: /^\/auth\/register$/, auth: false,
-    body: ['name', 'email', 'password'],
+    body: ['name', 'email', 'password', 'residence', 'student_number'],
     requiredBody: ['name', 'email', 'password'],
   },
   {
@@ -120,7 +120,7 @@ export const ROUTES = [
     query: [
       'q', 'category', 'brand', 'colour', 'size', 'store',
       'min_price', 'max_price', 'max_shipping_cost',
-      'availability', 'essential_only', 'sort', 'limit', 'offset', 'page',
+      'availability', 'essential_only', 'fulfilment', 'sort', 'limit', 'offset', 'page',
     ],
   },
   {
@@ -137,7 +137,7 @@ export const ROUTES = [
     method: 'POST', pattern: /^\/recommendations$/, auth: true,
     body: [
       'query', 'category', 'max_price', 'fulfilment', 'limit',
-      'include_unaffordable', 'candidate_pool',
+      'include_unaffordable', 'candidate_pool', 'essential_only',
     ],
     requiredBody: [],
   },
@@ -146,6 +146,16 @@ export const ROUTES = [
     method: 'POST', pattern: /^\/true-cost$/, auth: true,
     body: ['offer_ids', 'quantity', 'fulfilment', 'use_my_location'],
     requiredBody: ['offer_ids'],
+  },
+  {
+    name: 'compareBasket',
+    method: 'POST', pattern: /^\/compare\/basket$/, auth: true,
+    body: ['items', 'fulfilment', 'use_my_location'],
+    requiredBody: ['items'],
+  },
+  {
+    name: 'getPriceStatus',
+    method: 'GET', pattern: /^\/prices\/status$/, auth: true,
   },
 ];
 

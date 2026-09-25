@@ -89,6 +89,8 @@ export const BACKEND_FIELD_TO_FORM_FIELD = {
   amount: 'amount',
   category: 'category',
   is_essential: 'isEssential',
+  student_number: 'studentNumber',
+  residence: 'residence',
 };
 
 /* -------------------------------------------------------------- 401 hookup */
