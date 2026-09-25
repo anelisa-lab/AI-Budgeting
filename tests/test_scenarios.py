@@ -44,21 +44,28 @@ CAMPUS = (-29.8500, 31.0100)
 SEED = Path(__file__).resolve().parents[1] / "mintly-react" / "docs" / "seed" / "products.json"
 
 # Mirrors sql/seed_store_charges.sql, so true cost here matches true cost in a
-# seeded database. Physical stores take a card surcharge; online stores charge
-# a percentage handling fee and a courier fee that falls away over R500.
-PHYSICAL_CHARGES = [
-    ChargeRule(charge_type="card", label="Card payment surcharge",
-               amount=D("3.50"), applies_to="both"),
-    ChargeRule(charge_type="packaging", label="Shopping bag / packaging",
-               amount=D("2.00"), applies_to="collection"),
-]
-ONLINE_CHARGES = [
-    ChargeRule(charge_type="delivery", label="Standard courier delivery",
-               amount=D("60.00"), applies_to="delivery", free_over_amount=D("500.00")),
-    ChargeRule(charge_type="service", label="Online handling fee",
-               calculation="percentage", percentage=D("2.50"), applies_to="both",
-               min_charge=D("5.00"), max_charge=D("45.00")),
-]
+# seeded database.
+#
+# Phase 4 (Member 6): the Phase 2 seed invented a R3.50 card surcharge, a R2
+# bag levy and a 2.5% online handling fee. None of them had a source, and the
+# surcharge alone added R3.50 to every in-store price on the Compare screen.
+# The only store charge left is each store's own delivery fee and free-delivery
+# threshold, taken from Member 9's store table (stores.csv).
+STORES = {s["store_id"]: s for s in json.loads(SEED.read_text())["stores"]}
+
+
+def charges_for(store_id):
+    store = STORES.get(store_id, {})
+    if not store.get("delivery_available"):
+        return []
+    free_over = store.get("free_delivery_over") or None
+    return [
+        ChargeRule(
+            charge_type="delivery", label="Delivery", applies_to="delivery",
+            amount=D(str(store["base_shipping_fee"])),
+            free_over_amount=D(str(free_over)) if free_over else None,
+        )
+    ]
 
 
 def load_catalogue():
@@ -95,6 +102,8 @@ def load_catalogue():
                 rating=D(str(row["rating"])) if row.get("rating") is not None else None,
                 rating_count=0,
                 last_updated=NOW,
+                delivery_available=bool(store.get("delivery_available")),
+                collection_available=bool(store.get("collection_available")),
             )
         )
     return catalogue
@@ -105,7 +114,7 @@ CATALOGUE = load_catalogue()
 
 def make_pricer(fulfilment="delivery"):
     def pricer(candidate, context):
-        charges = ONLINE_CHARGES if candidate.store_type == "online" else PHYSICAL_CHARGES
+        charges = charges_for(candidate.store_id)
         distance_km = None
         if candidate.store_type != "online":
             distance_km = distance_between(
@@ -144,6 +153,7 @@ def budget_row(remaining, end, start="2026-09-01", threshold=None):
 
 
 def run(query, context, limit=5, fulfilment="delivery"):
+    context.fulfilment = fulfilment
     return recommend(
         CATALOGUE, context, parse_query(query),
         pricer=make_pricer(fulfilment), limit=limit, now=NOW,
@@ -328,13 +338,21 @@ def test_scenario_collection_adds_travel_and_drops_delivery():
     collected = run("toothpaste", ctx, limit=5, fulfilment="collection")
     assert delivered and collected
 
+    from app.geo import WALKING_DISTANCE_KM
     for item in collected:
         assert item.breakdown.shipping == D("0.00")
-        if item.candidate.store_type != "online" and item.distance_km:
+        # Phase 4: nothing that can't be collected is recommended for collection.
+        assert item.candidate.store_type != "online"
+        if item.distance_km and item.distance_km > WALKING_DISTANCE_KM:
             assert item.breakdown.travel_cost > 0
             # The explanation must name the taxi fare as a taxi fare, not
             # bundle it into "delivery and fees".
             assert "getting there and back" in item.explanation
+        else:
+            assert item.breakdown.travel_cost == D("0.00")
+
+    # And nothing that doesn't deliver is recommended for delivery.
+    assert all(i.candidate.delivery_available is not False for i in delivered)
 
 
 def test_scenario_store_too_far_is_dropped():

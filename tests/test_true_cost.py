@@ -132,10 +132,60 @@ def test_travel_cost_respects_the_minimum_fare():
     result = store_true_cost(
         offer(price="100.00", store_type="physical"),
         fulfilment="collection",
-        distance_km=0.5,
+        distance_km=2.0,
     )
-    # 0.5 km x R2.50 = R1.25, raised to the R10 minimum, doubled
+    # 2 km x R2.50 = R5, raised to the R10 minimum, doubled. (Under 1.5 km
+    # the student walks — see test_walkable_store_adds_no_travel.)
     assert result.travel_cost == D("20.00")
+
+
+def test_walkable_store_adds_no_travel():
+    result = store_true_cost(
+        offer(price="100.00", store_type="physical"),
+        fulfilment="collection",
+        distance_km=0.6,
+    )
+    assert result.travel_cost == D("0.00")
+    assert result.true_cost == D("100.00")
+    assert any("walking distance" in n for n in result.notes)
+
+
+def test_online_only_store_cannot_be_collected_from():
+    """
+    Phase 4 (Member 6) — found by validating collection prices across
+    scenarios. "Collect from Takealot" used to price as the bare sticker price
+    (no courier, no travel), so the one store you cannot collect from won
+    every collection comparison.
+    """
+    result = store_true_cost(
+        offer(price="100.00", shipping="60.00", store_type="online"),
+        fulfilment="collection",
+    )
+    assert result.fulfilment_available is False
+    assert result.requested_fulfilment == "collection"
+    assert result.fulfilment == "delivery"          # priced the only way it can be had
+    assert result.shipping == D("60.00")
+    assert result.true_cost == D("160.00")
+
+
+def test_store_that_does_not_deliver_is_priced_for_collection():
+    result = store_true_cost(
+        Offer(offer_id=1, price=D("20.00"), store_type="physical",
+              store_name="Shoprite", delivery_available=False),
+        fulfilment="delivery",
+        distance_km=0.6,
+    )
+    assert result.fulfilment_available is False
+    assert result.fulfilment == "collection"
+    assert result.shipping == D("0.00")
+    assert "doesn't deliver" in result.notes[0]
+
+
+def test_cheapest_ignores_offers_that_cannot_be_fulfilled():
+    from app.true_cost import cheapest
+    can = store_true_cost(offer(price="50.00", store_type="physical"), fulfilment="collection")
+    cannot = store_true_cost(offer(price="10.00", store_type="online"), fulfilment="collection")
+    assert cheapest([can, cannot]) is can
 
 
 def test_collection_only_charge_ignored_on_delivery():

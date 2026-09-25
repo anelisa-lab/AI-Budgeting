@@ -34,7 +34,8 @@ pip install -r requirements.txt
 cp .env.example .env              # then fill in your local DATABASE_URL and JWT_SECRET
 psql -U <user> -d <dbname> -f sql/schema.sql
 psql -U <user> -d <dbname> -f mintly-react/docs/seed/seed_backend.sql   # catalogue: 10 stores / 49 products / 257 offers
-psql -U <user> -d <dbname> -f sql/seed_store_charges.sql               # AFTER the catalogue — it matches stores by name
+psql -U <user> -d <dbname> -f sql/seed_store_charges.sql               # AFTER the catalogue — it matches stores by slug
+# Existing database from before Phase 4? Run sql/003_phase4_prices_and_fulfilment.sql FIRST.
 uvicorn app.main:app --reload --port 4000
 ```
 
@@ -99,6 +100,34 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | GET    | /budget-split           | Yes   | Daily allowance for the active budget + a day-by-day schedule |
 | POST   | /budget-split/check     | Yes   | `{ amount }` — "can I afford this today?" |
 | GET    | /budget-split/{budget_id} | Yes | The same split for one specific budget |
+| POST   | /compare/basket         | Yes   | `{ items: [{product_id, qty}], fulfilment?, use_my_location? }` — the whole list priced per store (delivery once per order, travel once per trip, nothing imputed) plus the cheapest plan (Phase 4) |
+| GET    | /prices/status          | Yes   | How many prices are confirmed vs seed estimates (Phase 4) |
+
+`GET /search` also accepts `fulfilment=collection|delivery` (Phase 4): price
+filters and sorting use the shelf price when collecting and price + delivery
+when delivered, and stores that can't serve the student that way drop out.
+`POST /recommendations` also accepts `essential_only`.
+
+## Phase 4 — integration, tuning, validation, real prices
+
+**Read `docs/PHASE4_M5_M6_REPORT.md`.** In short:
+
+- **Member 5:** `scripts/eval_recommender.py` runs 208 searches over the real
+  catalogue. Against the Phase 3 code: overpriced top picks 77 → 3 (R1 704.78
+  → R4.77), picks from stores that can't serve the student 92 → 0, results
+  over a stated ceiling 116 → 0, right product 201 → 208 of 208.
+  Fulfilment-aware weights, a head-noun relevance tier, ceiling enforced on
+  true cost.
+- **Member 6:** `tests/test_phase4_validation.py` checks 4 626 true-cost
+  breakdowns and 392 budget splits. The split was correct; true cost priced
+  Takealot as collectable, Shoprite Warwick as free delivery, a 400 m walk as
+  R20 taxi, and included three unsourced fees. All fixed.
+- **Compare** is now `POST /compare/basket`; **Search** sorts and filters on
+  what the student will actually pay; **every price** is labelled estimate or
+  confirmed.
+- **Prices:** no SA grocer has a public price API. `app/price_feed` loads
+  confirmed prices from `docs/prices/verified_prices.csv` (works now) or a
+  third-party RapidAPI service (written, untested — run `probe` first).
 
 ## Phase 3 — backend
 
@@ -374,8 +403,10 @@ pytest                            # backend, no database needed
 cd mintly-react && npm run lint && npm run test:contract && npm run build
 ```
 
-140 tests covering the recommender, true-cost, budget-split, geo, query
-parser and budget arithmetic (`budget_calc`). They are all pure functions, so
+177 tests covering the recommender, true-cost, budget-split, geo, query
+parser, budget arithmetic (`budget_calc`), basket comparison and the live
+price layer (Phase 4 added `test_basket.py`, `test_price_feed.py`,
+`test_phase4_tuning.py` and `test_phase4_validation.py`). They are all pure functions, so
 **no database or `.env` is needed** — useful for Member 10's QA checklist and
 for CI.
 

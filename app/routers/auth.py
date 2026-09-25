@@ -24,10 +24,11 @@ def register(payload: RegisterRequest):
 
                 password_hash = hash_password(payload.password)
                 cur.execute(
-                    """INSERT INTO users (name, email, password_hash)
-                       VALUES (%s, %s, %s)
-                       RETURNING id, name, email, created_at""",
-                    (payload.name, payload.email, password_hash),
+                    """INSERT INTO users (name, email, password_hash, residence_area_code, student_number)
+                       VALUES (%s, %s, %s, %s, %s)
+                       RETURNING id, name, email, created_at,
+                                 residence_area_code AS residence, student_number""",
+                    (payload.name, payload.email, password_hash, payload.residence, payload.student_number),
                 )
                 user = cur.fetchone()
 
@@ -49,7 +50,9 @@ def login(payload: LoginRequest):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, email, password_hash, created_at FROM users WHERE LOWER(email) = LOWER(%s)",
+                """SELECT id, name, email, password_hash, created_at,
+                          residence_area_code AS residence, student_number
+                   FROM users WHERE LOWER(email) = LOWER(%s)""",
                 (payload.email,),
             )
             user = cur.fetchone()
@@ -60,7 +63,14 @@ def login(payload: LoginRequest):
 
         token = create_access_token(user["id"])
         return AuthResponse(
-            user=UserOut(id=user["id"], name=user["name"], email=user["email"], created_at=user["created_at"]),
+            user=UserOut(
+                id=user["id"],
+                name=user["name"],
+                email=user["email"],
+                residence=user["residence"],
+                student_number=user["student_number"],
+                created_at=user["created_at"],
+            ),
             token=token,
         )
     finally:

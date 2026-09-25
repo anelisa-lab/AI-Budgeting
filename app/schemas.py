@@ -1,13 +1,34 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
+
+# DUT student numbers are 8-9 digits, no letters/spaces — matches
+# mintly-react/src/lib/validation.js's studentNumber() check, and the
+# users.student_number CHECK constraint in schema.sql.
+STUDENT_NUMBER_PATTERN = r"^[0-9]{8,9}$"
 
 
 class RegisterRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     password: str
+    # Both optional: the frontend's residence dropdown and student-number
+    # field can be left blank, and older/other clients that don't send
+    # them at all should still work.
+    residence: Optional[str] = Field(default=None, max_length=100)
+    student_number: Optional[str] = Field(default=None, max_length=9)
+
+    @field_validator("student_number")
+    @classmethod
+    def validate_student_number(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value == "":
+            return None
+        import re
+
+        if not re.match(STUDENT_NUMBER_PATTERN, value):
+            raise ValueError("Student number must be 8 or 9 digits, with no letters or spaces")
+        return value
 
 
 class LoginRequest(BaseModel):
@@ -19,6 +40,8 @@ class UserOut(BaseModel):
     id: int
     name: str
     email: EmailStr
+    residence: Optional[str] = None
+    student_number: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -142,6 +165,13 @@ class SearchResultItem(BaseModel):
     rating_count: int = 0
     last_updated: Optional[datetime] = None
     product_url: Optional[str] = None
+    product_url: Optional[str] = None
+    # Phase 4 (all additive, so older callers keep working)
+    effective_cost: Optional[Decimal] = None     # what ?fulfilment= makes it cost
+    price_source: str = "seed_estimate"          # seed_estimate | live_api | verified_manual
+    price_verified_at: Optional[datetime] = None
+    delivery_available: Optional[bool] = None
+    collection_available: Optional[bool] = None
 
 
 class SearchResponse(BaseModel):
@@ -176,6 +206,10 @@ class TrueCostOut(BaseModel):
     currency: str
     quantity: int
     fulfilment: str
+    # Phase 4: what was asked for, and whether the store can do it. When it
+    # can't, `fulfilment` is the way it was priced instead.
+    requested_fulfilment: Optional[str] = None
+    fulfilment_available: bool = True
     subtotal: Decimal
     shipping: Decimal
     charges: List[ChargeLineOut] = []
@@ -280,6 +314,10 @@ class RecommendationRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
     include_unaffordable: bool = True
     candidate_pool: int = Field(default=60, ge=10, le=200)
+    # Phase 4: applied on the server BEFORE the limit. The For you screen used
+    # to filter the 12 results it got back, so "essentials only" could show
+    # an empty page while essentials existed.
+    essential_only: bool = False
 
 
 class ParsedQueryOut(BaseModel):
@@ -328,6 +366,10 @@ class RecommendedOffer(BaseModel):
     matched_query: bool = True
     explanation: str
     cost_breakdown: TrueCostOut
+    # Phase 4
+    price_source: str = "seed_estimate"
+    price_verified_at: Optional[datetime] = None
+    price_is_estimate: bool = True
 
 
 class BudgetContextOut(BaseModel):
@@ -355,3 +397,109 @@ class RecommendationResponse(BaseModel):
 # These refer to models declared further down the file.
 TransactionResult.model_rebuild()
 SearchResponse.model_rebuild()
+
+
+# -------------------------
+# Basket comparison (Phase 4) — POST /compare/basket
+# -------------------------
+
+class BasketItemIn(BaseModel):
+    product_id: int
+    qty: int = Field(default=1, ge=1, le=99)
+
+
+class CompareBasketRequest(BaseModel):
+    items: List[BasketItemIn] = Field(min_length=1, max_length=50)
+    fulfilment: str = Field(default="collection", pattern="^(delivery|collection)$")
+    use_my_location: bool = True
+
+
+class BasketLineOut(BaseModel):
+    product_id: int
+    product_name: str
+    qty: int
+    offer_id: int
+    price: Decimal
+    line_total: Decimal
+    is_estimate: bool
+    price_source: str
+    price_verified_at: Optional[datetime] = None
+
+
+class MissingLineOut(BaseModel):
+    product_id: int
+    product_name: str
+    reason: Optional[str] = None
+
+
+class StoreQuoteOut(BaseModel):
+    store_id: int
+    store_name: str
+    store_type: str
+    distance_km: Optional[float] = None
+    fulfilment: str
+    fulfilment_available: bool
+    full: bool
+    stocked: int
+    missing_count: int
+    lines: List[BasketLineOut]
+    missing: List[MissingLineOut]
+    subtotal: Decimal
+    delivery: Decimal
+    fees: Decimal
+    travel: Decimal
+    total: Decimal
+    estimate_count: int
+    notes: List[str] = []
+
+
+class BasketPlanOut(BaseModel):
+    total: Decimal
+    store_count: int
+    stores: List[StoreQuoteOut]
+    saving_vs_best_single: Optional[Decimal] = None
+
+
+class ItemOfferOut(BaseModel):
+    offer_id: int
+    store_id: int
+    store_name: str
+    price: Decimal
+    line_total: Decimal
+    in_stock: bool
+    is_estimate: bool
+    price_source: str
+    price_verified_at: Optional[datetime] = None
+    product_url: Optional[str] = None
+
+
+class ItemComparisonOut(BaseModel):
+    product_id: int
+    product_name: str
+    qty: int
+    offers: List[ItemOfferOut]
+
+
+class PriceProvenanceOut(BaseModel):
+    listings: int
+    estimates: int
+    confirmed: int
+    all_confirmed: bool
+
+
+class CompareBasketResponse(BaseModel):
+    fulfilment: str
+    location_known: bool
+    stores: List[StoreQuoteOut]
+    best_single_store_id: Optional[int] = None
+    best_plan: Optional[BasketPlanOut] = None
+    unavailable: List[MissingLineOut] = []
+    items: List[ItemComparisonOut]
+    prices: PriceProvenanceOut
+
+
+class PriceStatusOut(BaseModel):
+    by_source: dict
+    newest_verification: Optional[datetime] = None
+    live_provider_configured: bool
+    message: str

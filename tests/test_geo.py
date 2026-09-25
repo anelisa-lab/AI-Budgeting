@@ -65,7 +65,25 @@ def test_travel_cost_is_a_return_trip():
 
 
 def test_travel_cost_respects_the_minimum_fare():
-    assert estimate_travel_cost(0.4) == D("20.00")     # R10 minimum, both ways
+    # 2 km is past walking distance: 2 x R2.50 = R5, raised to the R10
+    # minimum, both ways.
+    assert estimate_travel_cost(2.0) == D("20.00")
+
+
+def test_walking_distance_costs_nothing():
+    """
+    Phase 4 (Member 6). This test used to assert that a store 400 m away cost
+    R20 in taxi fare. That was the rule working as written and the number
+    being wrong: nobody takes a taxi 400 m, and the R20 was bigger than the
+    bread it was added to.
+    """
+    assert estimate_travel_cost(0.4) == D("0.00")
+    assert estimate_travel_cost(1.5) == D("0.00")      # the boundary walks
+    assert estimate_travel_cost(1.51) == D("20.00")    # just past it rides
+
+
+def test_walking_distance_can_be_overridden():
+    assert estimate_travel_cost(0.4, walking_distance_km=0) == D("20.00")
 
 
 def test_travel_cost_is_zero_without_a_distance():

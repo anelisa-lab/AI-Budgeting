@@ -32,9 +32,12 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash       TEXT NOT NULL,
   phone_number        VARCHAR(30),
   residence_area_code VARCHAR(100),
+  student_number      VARCHAR(9),
   email_verified_at   TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_users_student_number_format
+    CHECK (student_number IS NULL OR student_number ~ '^[0-9]{8,9}$')
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower
@@ -168,6 +171,9 @@ CREATE TABLE IF NOT EXISTS stores (
   latitude          NUMERIC(9,6) CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
   longitude         NUMERIC(9,6) CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
   external_store_id VARCHAR(150),
+  -- Phase 4: NULL = not recorded (falls back to store_type). See 003.
+  delivery_available   BOOLEAN,
+  collection_available BOOLEAN,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -212,11 +218,32 @@ CREATE TABLE IF NOT EXISTS product_offers (
   estimated_delivery_days INTEGER
                        CHECK (estimated_delivery_days IS NULL OR estimated_delivery_days >= 0),
   last_checked_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Phase 4: where the price came from. Only a real source sets
+  -- price_verified_at; a seed_estimate has never been checked.
+  price_source         VARCHAR(20) NOT NULL DEFAULT 'seed_estimate'
+                       CONSTRAINT product_offers_price_source_check
+                       CHECK (price_source IN ('seed_estimate', 'live_api', 'verified_manual')),
+  price_source_detail  TEXT,
+  price_verified_at    TIMESTAMPTZ,
   valid_until          TIMESTAMPTZ,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (store_id, external_product_id)
 );
+
+-- Phase 4: every price a live refresh applied, and what it matched.
+CREATE TABLE IF NOT EXISTS offer_price_history (
+  id            SERIAL PRIMARY KEY,
+  offer_id      INTEGER NOT NULL REFERENCES product_offers(id) ON DELETE CASCADE,
+  price         NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+  price_source  VARCHAR(20) NOT NULL,
+  source_detail TEXT,
+  source_title  TEXT,
+  observed_at   TIMESTAMPTZ NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_offer_price_history_offer
+  ON offer_price_history(offer_id, observed_at DESC);
 
 -- Per-store charges that are NOT part of the listed price: delivery fees,
 -- service/handling fees, card surcharges, packaging levies. Member 6's

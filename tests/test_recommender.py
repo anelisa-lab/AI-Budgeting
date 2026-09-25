@@ -247,12 +247,19 @@ def test_scenario_survival_mode_hides_non_essentials():
 
 
 def test_scenario_nearby_store_beats_one_across_town():
-    """Both R100 in the shop; the one you can walk to wins."""
+    """
+    Both R100 in the shop; the one you can walk to wins.
+
+    Phase 4: this is now explicitly a COLLECTION scenario. Proximity is only
+    weighted when the student goes to the store — when it is delivered, how
+    far away the shop is costs them nothing (see FULFILMENT_WEIGHT_SHIFTS).
+    """
     context = UserContext(
         remaining_amount=D("1000.00"),
         daily_limit=D("200.00"),
         location=(-29.8587, 31.0218),        # Durban city centre
         max_distance_km=20.0,
+        fulfilment="collection",
     )
     results = recommend(
         [

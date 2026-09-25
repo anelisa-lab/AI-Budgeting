@@ -28,6 +28,14 @@ EARTH_RADIUS_KM = 6371.0088
 DEFAULT_TRAVEL_RATE_PER_KM = Decimal("2.50")
 DEFAULT_MINIMUM_FARE = Decimal("10.00")
 
+# Phase 4 (Member 6): at or under this distance the student walks, so
+# collection costs nothing to get there. Before this existed a store 400 m from
+# campus was charged the R10 minimum taxi fare each way — R20 on top of an R18
+# loaf — which made every walk-in store look dearer than it is and pushed the
+# recommender towards stores students would never take a taxi to. 1.5 km is
+# roughly a 20-minute walk; change it here and every estimate follows.
+WALKING_DISTANCE_KM = 1.5
+
 # Past this, a "nearby" store isn't really nearby any more. Used only when the
 # student has not set preferences.max_distance_km.
 DEFAULT_MAX_DISTANCE_KM = 15.0
@@ -125,15 +133,20 @@ def estimate_travel_cost(
     rate_per_km: Optional[Decimal] = None,
     minimum_fare: Optional[Decimal] = None,
     return_trip: bool = True,
+    walking_distance_km: Optional[float] = None,
 ) -> Decimal:
     """
     Rough rand cost of physically getting to a store and back.
 
     Deliberately conservative and clearly labelled as an estimate in the API
     response — it's a budgeting nudge ("this R20 saving costs R24 to fetch"),
-    not a fare quote. Returns 0.00 when the distance is unknown.
+    not a fare quote. Returns 0.00 when the distance is unknown, or when the
+    store is within walking distance (WALKING_DISTANCE_KM).
     """
     if distance_km is None or distance_km <= 0:
+        return Decimal("0.00")
+    walk = WALKING_DISTANCE_KM if walking_distance_km is None else walking_distance_km
+    if distance_km <= walk:
         return Decimal("0.00")
 
     rate = rate_per_km if rate_per_km is not None else DEFAULT_TRAVEL_RATE_PER_KM
