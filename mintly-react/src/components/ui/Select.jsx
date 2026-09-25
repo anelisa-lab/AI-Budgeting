@@ -22,9 +22,14 @@ export default function Select({
         aria-describedby={describedBy}
         {...rest}
       >
-        {options.map((o) => (
+        {options.map((o) => (o.options ? (
+          // { label, options: [...] } renders as a labelled group.
+          <optgroup key={o.label} label={o.label}>
+            {o.options.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </optgroup>
+        ) : (
           <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
+        )))}
       </select>
     </div>
   );

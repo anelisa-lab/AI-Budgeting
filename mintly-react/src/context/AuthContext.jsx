@@ -23,12 +23,21 @@ import {
 } from 'react';
 import { api, setUnauthorizedHandler } from '../api/client.js';
 
-const TOKEN_KEY = 'mintly.token';
+const TOKEN_KEY = 'uniwallet.token';
+const LEGACY_TOKEN_KEY = 'mintly.token';
 const AuthContext = createContext(null);
 
 function readToken() {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    const current = localStorage.getItem(TOKEN_KEY);
+    if (current) return current;
+    const legacy = localStorage.getItem(LEGACY_TOKEN_KEY);
+    if (legacy) {
+      localStorage.setItem(TOKEN_KEY, legacy);
+      localStorage.removeItem(LEGACY_TOKEN_KEY);
+      return legacy;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -47,7 +56,9 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => readToken());
   const [user, setUser] = useState(null);
   const [preferences, setPreferences] = useState(null);
-  const [status, setStatus] = useState('loading'); // loading | ready
+  const [status, setStatus] = useState('loading'); // loading | ready | offline
+  /** Bumped by retrySession() to run the restore again after an outage. */
+  const [attempt, setAttempt] = useState(0);
   const [sessionExpired, setSessionExpired] = useState(false);
 
   /* -------------------------------------------------- global 401 handling */
@@ -79,6 +90,9 @@ export function AuthProvider({ children }) {
         setStatus('ready');
         return;
       }
+      // Only a retry after an outage shows the spinner again; a fresh sign-in
+      // already has the user and should not flicker.
+      setStatus((current) => (current === 'offline' ? 'loading' : current));
       try {
         // GET /profile/ is the real "is this token still good?" call.
         const me = await api.profile.get(token);
@@ -94,16 +108,27 @@ export function AuthProvider({ children }) {
         } catch {
           if (!cancelled) setPreferences(null);
         }
-      } catch {
-        if (!cancelled) signOutLocally();
-      } finally {
         if (!cancelled) setStatus('ready');
+      } catch (err) {
+        if (cancelled) return;
+        // Only a 401 means the token is dead. A network failure or a 5xx
+        // means the SERVER is unwell — signing the student out for that (as
+        // the first version did) threw away a perfectly good session every
+        // time the backend blipped. Keep the token and offer a retry.
+        if (err?.status === 401) {
+          signOutLocally();
+          setStatus('ready');
+        } else {
+          setStatus('offline');
+        }
       }
     }
 
     restore();
     return () => { cancelled = true; };
-  }, [token, signOutLocally]);
+  }, [token, signOutLocally, attempt]);
+
+  const retrySession = useCallback(() => setAttempt((n) => n + 1), []);
 
   /* ------------------------------------------------------------ mutations */
 
@@ -152,6 +177,13 @@ export function AuthProvider({ children }) {
     return updated;
   }, [token]);
 
+  /** Re-fetch preferences (Profile uses this if the session-time load failed). */
+  const reloadPreferences = useCallback(async () => {
+    const prefs = await api.profile.getPreferences(token);
+    setPreferences(prefs);
+    return prefs;
+  }, [token]);
+
   const dismissSessionExpired = useCallback(() => setSessionExpired(false), []);
 
   const value = useMemo(() => ({
@@ -167,8 +199,10 @@ export function AuthProvider({ children }) {
     logout,
     updateProfile,
     updatePreferences,
+    reloadPreferences,
+    retrySession,
   }), [token, user, preferences, status, sessionExpired, dismissSessionExpired,
-       register, login, logout, updateProfile, updatePreferences]);
+       register, login, logout, updateProfile, updatePreferences, reloadPreferences, retrySession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

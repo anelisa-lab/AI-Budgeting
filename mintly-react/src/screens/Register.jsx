@@ -26,18 +26,69 @@ import {
   Alert, Button, Card, Eyebrow, Field, Input, Logo, Select,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import BackendStatus from '../components/layout/BackendStatus.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import * as v from '../lib/validation.js';
 
-/** DUT residences. Not yet accepted by the backend — see the header. */
+/**
+ * DUT residences. Not yet accepted by the backend — see the header.
+ *
+ * Phase 4: the group leader noted the list was incomplete. The DUT-owned
+ * Durban residences use the names on DUT's Student Housing page
+ * (dut.ac.za/support_services/student_housing/student-residence): Alpine
+ * Road, Baltimore Flats, Berea Residence, Campbell Hall, Corlo Court, Hertine
+ * Court, Stratford Hall, Student Village and Walsingham Hall. The Midlands
+ * and leased/accredited names were supplied by the group and are grouped
+ * separately so they are easy to check and extend.
+ */
 const RESIDENCES = [
   { value: '', label: 'Select your residence…' },
-  { value: 'ml-sultan', label: 'ML Sultan Campus Residence' },
-  { value: 'steve-biko', label: 'Steve Biko Campus Residence' },
-  { value: 'ritson', label: 'Ritson Residence' },
-  { value: 'berea', label: 'Berea Residence' },
-  { value: 'new-castle', label: 'Newcastle Campus Residence' },
-  { value: 'off-campus', label: 'Off-campus / private accommodation' },
+  {
+    label: 'DUT residences — Durban',
+    options: [
+      { value: 'alpine-road', label: 'Alpine Road (Overport)' },
+      { value: 'baltimore-flats', label: 'Baltimore Flats (Beachfront)' },
+      { value: 'berea', label: 'Berea Residence' },
+      { value: 'campbell-hall', label: 'Campbell Hall (Glenwood)' },
+      { value: 'corlo-court', label: 'Corlo Court (Berea)' },
+      { value: 'hertine-court', label: 'Hertine Court (Albert Park)' },
+      { value: 'stratford-hall', label: 'Stratford Hall' },
+      { value: 'student-village', label: 'Student Village' },
+      { value: 'walsingham-hall', label: 'Walsingham Hall' },
+    ],
+  },
+  {
+    label: 'Midlands — Indumiso & Pietermaritzburg',
+    options: [
+      { value: 'indumiso-1', label: 'Indumiso Residence 1' },
+      { value: 'indumiso-2', label: 'Indumiso Residence 2' },
+      { value: 'indumiso-3', label: 'Indumiso Residence 3' },
+      { value: 'indumiso-4', label: 'Indumiso Residence 4' },
+      { value: 'indumiso-5', label: 'Indumiso Residence 5' },
+      { value: 'indumiso-6', label: 'Indumiso Residence 6' },
+      { value: 'pebs', label: 'PEBS (Pietermaritzburg)' },
+      { value: 'roseville', label: 'Roseville (Pietermaritzburg)' },
+      { value: 'aloes', label: 'Aloes (Pietermaritzburg)' },
+      { value: '02-jesmond', label: '02 Jesmond (Pietermaritzburg)' },
+    ],
+  },
+  {
+    label: 'Leased & accredited residences',
+    options: [
+      { value: 'winterton', label: 'Winterton (New Student Village)' },
+      { value: 'lynnfield-chestnut', label: 'Lynnfield Estates: Chestnut' },
+      { value: 'boombox', label: 'Boombox Residence' },
+      { value: 'chorley', label: 'Chorley Residence' },
+    ],
+  },
+  {
+    label: 'Not in a residence',
+    options: [
+      { value: 'private', label: 'Private accommodation / digs' },
+      { value: 'home', label: 'Living at home' },
+      { value: 'other', label: 'Other residence (not listed)' },
+    ],
+  },
 ];
 
 /**
@@ -106,11 +157,11 @@ export default function Register() {
     try {
       // Exactly the three fields RegisterRequest declares.
       const user = await register({
-        name: values.name,
-        email: values.email,
+        name: values.name.trim().replace(/\s+/g, ' '),
+        email: values.email.trim(),
         password: values.password,
       });
-      toast.success(`Account created. Welcome to Mintly, ${user.name.split(' ')[0]}.`);
+      toast.success(`Account created. Welcome to UniWallet, ${user.name.split(' ')[0]}.`);
       // Straight to budget setup — an empty dashboard would teach them nothing.
       navigate('/budget', { replace: true });
     } catch (err) {
@@ -128,6 +179,7 @@ export default function Register() {
   return (
     <div className="auth">
       <div className="auth__card">
+        <BackendStatus compact />
         <div className="stack" style={{ justifyItems: 'center', marginBottom: 'var(--s-6)' }}>
           <Logo size={44} />
         </div>
@@ -230,9 +282,8 @@ export default function Register() {
                 Optional — not saved yet
               </legend>
               <p className="field__hint" style={{ marginTop: 0 }}>
-                Res-Mate bulk-buy matching needs these, but the account API does not
-                store them yet. Fill them in if you like; you will be asked again once
-                the backend supports it.
+                These help with future features like bulk-buying with students near
+                you. They are not saved to your account yet, so you can skip them.
               </p>
 
               <Field
@@ -276,7 +327,7 @@ export default function Register() {
                   aria-describedby={errors.terms ? 'terms-error' : undefined}
                 />
                 <span>
-                  I agree that Mintly may store my budget and spending data to give me
+                  I agree that UniWallet may store my budget and spending data to give me
                   recommendations. My spending is never shared with other students in a
                   way that identifies me.
                 </span>

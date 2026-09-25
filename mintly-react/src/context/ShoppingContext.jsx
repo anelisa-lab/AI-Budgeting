@@ -26,18 +26,23 @@ import { useAuth } from './AuthContext.jsx';
 const ShoppingContext = createContext(null);
 
 export function ShoppingProvider({ children }) {
-  const { isAuthenticated } = useAuth();
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [lines, setLines] = useState([]);
   const [ready, setReady] = useState(false);
 
+  // The list belongs to the signed-in account: switch storage whenever the
+  // account changes, and show nothing while signed out.
   useEffect(() => {
     let cancelled = false;
+    api.shoppingList.setOwner(userId);
+    setReady(false);
     api.shoppingList.list()
       .then((rows) => { if (!cancelled) setLines(rows); })
       .catch(() => { if (!cancelled) setLines([]); })
       .finally(() => { if (!cancelled) setReady(true); });
     return () => { cancelled = true; };
-  }, [isAuthenticated]);
+  }, [userId]);
 
   const addOffer = useCallback(async (offer, qty = 1) => {
     setLines(await api.shoppingList.add(offer, qty));

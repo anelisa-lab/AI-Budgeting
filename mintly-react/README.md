@@ -1,4 +1,4 @@
-# Mintly Budget Market — frontend
+# UniWallet — frontend
 
 AI Shopping for Budgeting. Helping NSFAS-funded DUT students budget their
 allowance and find the cheapest place to buy what they need.
@@ -136,17 +136,35 @@ recalculated budget and the server's overspend verdict, and both are used
 verbatim. The one exception — the daily allowance — is labelled on screen and
 listed as a backend dependency.
 
-**Search happens in SQL.** `GET /search` filters, sorts and pages. The frontend
-re-orders the page it was given with a transparent weighted score (`rank()` in
-`lib/search.js`) using the student's budget and their stored preferences; it
-never re-filters, so the result count stays true.
+**Search happens in SQL.** `GET /search` filters, sorts and pages. Only the
+default sort, "Best value for me", re-orders each page with a transparent
+weighted score (`rank()` in `lib/search.js`); every other sort is the backend's
+order untouched, and nothing is ever re-filtered, so the result count stays
+true. Category and store are chosen from lists, and typed brand/colour/size
+values snap to the catalogue's own spelling, because the backend matches them
+exactly.
 
-**What the backend cannot do is visible, not hidden.** The distance radius and
-the rating sort are shown as unavailable with the reason. The shopping list says
-it is saved on this device only. The registration fields the API will not store
-are marked optional under a heading that says so. All ten gaps are specified as
-request/response pairs in `docs/BACKEND_INTEGRATION.md` so the backend team can
-implement them without guessing.
+**One category list.** `src/lib/categories.js` is the only place categories are
+defined (including Maintenance). Search, For you, Profile and the dashboard's
+spending categories all import it.
+
+**Compare never invents a price.** Whole-list totals use today's in-stock
+shelf prices plus one delivery per store; a store that lacks an item gets no
+total. The item-by-item figures are the backend's true cost. See
+`docs/BACKEND_INTEGRATION.md` §10 for why the two differ.
+
+**What the backend cannot do is visible, not hidden.** The distance filter is
+shown as coming soon. The shopping list says it is saved on this device (it is
+kept per account). The registration fields the API will not store are marked
+optional under a heading that says so. Every gap is specified in
+`docs/BACKEND_INTEGRATION.md` so the backend team can implement it without
+guessing.
+
+**Naming.** The app is UniWallet everywhere a student can see. The folder is
+still called `mintly-react` because the backend README and backend tests
+reference that path; renaming it is a one-line change for the backend team
+when they are ready. Old `mintly.*` browser-storage keys are migrated
+automatically, so nobody is signed out by the rename.
 
 **The catalogue is not bundled any more.** `docs/seed/products.json` used to be
 imported by the app and filtered in the browser. It is now seed data for the

@@ -29,24 +29,14 @@ import { useToast } from '../context/ToastContext.jsx';
 import DailyBudgetSplit from '../components/budget/DailyBudgetSplit.jsx';
 import { money, plural, shortDate } from '../lib/format.js';
 import * as v from '../lib/validation.js';
+import { SPENDING_CATEGORIES, categoryIcon, categoryLabel } from '../lib/categories.js';
 
 /**
- * `transactions.category` is a free-text VARCHAR(100) on the backend, so these
- * are the app's suggested values rather than a constraint the API enforces.
+ * `transactions.category` is free text on the backend; the options come from
+ * the app's single category list (lib/categories.js), which also drives
+ * Search, For you and Profile — so "Groceries" means the same thing everywhere.
  */
-const CATEGORIES = [
-  { value: 'Groceries', label: 'Groceries' },
-  { value: 'Toiletries', label: 'Toiletries' },
-  { value: 'Transport', label: 'Transport' },
-  { value: 'Data', label: 'Airtime & data' },
-  { value: 'Stationery', label: 'Stationery' },
-  { value: 'Other', label: 'Other' },
-];
-
-const ICONS = {
-  Groceries: '🛒', Toiletries: '🧼', Transport: '🚕',
-  Data: '📱', Stationery: '📓', Other: '💸',
-};
+const CATEGORIES = SPENDING_CATEGORIES.map(({ value, label }) => ({ value, label }));
 
 /** The one-line read on how the period is going. */
 function healthCopy(health, d) {
@@ -106,7 +96,7 @@ export default function Dashboard() {
   const {
     budget, transactions, loading, error, supports, split, serverHealth,
     savings, spendable, spent, remaining, ratio,
-    daysLeft, dailyAllowance, health, byCategory,
+    daysLeft, dailyAllowance, health, byCategory, recorded,
     addTransaction,
   } = budgetCtx;
 
@@ -122,6 +112,13 @@ export default function Dashboard() {
 
   const topCategories = useMemo(
     () => Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4),
+    [byCategory],
+  );
+  // Bars are a share of everything RECORDED. `spent` is budget-based and is
+  // capped once the balance floors at R0, so using it here let a category's
+  // bar run past 100% after an overspend.
+  const recordedTotal = useMemo(
+    () => Object.values(byCategory).reduce((sum, amt) => sum + amt, 0),
     [byCategory],
   );
 
@@ -208,7 +205,7 @@ export default function Dashboard() {
           title="Set your budget to get started"
           action={<Button size="lg" onClick={() => navigate('/budget')}>Set my budget</Button>}
         >
-          Mintly needs to know what landed and when. Once it does, it will work out a
+          UniWallet needs to know what landed and when. Once it does, it will work out a
           safe daily spend and start finding you cheaper places to shop.
         </EmptyState>
       </Card>
@@ -265,7 +262,7 @@ export default function Dashboard() {
             />
           </div>
           <p className="dash-sub dash-sub--on-dark" style={{ marginTop: 'var(--s-3)' }}>
-            {money(spent)} spent so far
+            {money(spent)} of your budget used
           </p>
         </Card>
 
@@ -289,8 +286,10 @@ export default function Dashboard() {
       {/* Secondary stats */}
       <div className="stat-row">
         <div className="stat">
-          <div className="stat__value num">{money(spent)}</div>
-          <p className="stat__label">Spent this period</p>
+          <div className="stat__value num">{money(recorded)}</div>
+          <p className="stat__label">
+            Recorded spending{recorded > spendable + 0.005 ? ` · ${money(recorded - spendable)} more than budgeted` : ''}
+          </p>
         </div>
         <div className="stat">
           <div className="stat__value num">{transactions.length}</div>
@@ -298,7 +297,7 @@ export default function Dashboard() {
         </div>
         <div className="stat">
           <div className="stat__value num">{money(listTotal)}</div>
-          <p className="stat__label">{plural(listCount, 'item')} in your list</p>
+          <p className="stat__label">{plural(listCount, 'item')} in your list · shelf prices</p>
         </div>
         <div className="stat">
           <div className="stat__value num">{shortDate(budget.cycle_end_date)}</div>
@@ -311,7 +310,7 @@ export default function Dashboard() {
         <Card>
           <h2 className="card__title">Record a spend</h2>
           <p style={{ color: 'var(--c-muted)', fontSize: 'var(--t-sm)', marginTop: 'var(--s-2)' }}>
-            Add what you bought and Mintly updates everything above.
+            Add what you bought and UniWallet updates everything above.
           </p>
           <form onSubmit={submitTransaction} noValidate className="stack" style={{ marginTop: 'var(--s-5)' }}>
             <Field id="description" label="What did you buy?" error={errors.description} required>
@@ -386,13 +385,13 @@ export default function Dashboard() {
                 <div key={cat}>
                   <div className="row row--between" style={{ marginBottom: 'var(--s-1)' }}>
                     <span style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
-                      <span aria-hidden="true">{ICONS[cat] || '💸'}</span> {cat}
+                      <span aria-hidden="true">{categoryIcon(cat)}</span> {categoryLabel(cat)}
                     </span>
                     <span className="num" style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-extra)' }}>
                       {money(amt)}
                     </span>
                   </div>
-                  <Progress value={spent > 0 ? amt / spent : 0} tone="accent" />
+                  <Progress value={recordedTotal > 0 ? amt / recordedTotal : 0} tone="accent" label={`${categoryLabel(cat)}: ${Math.round(recordedTotal > 0 ? (amt / recordedTotal) * 100 : 0)}% of recorded spending`} />
                 </div>
               ))}
             </div>
@@ -411,17 +410,17 @@ export default function Dashboard() {
 
         {transactions.length === 0 ? (
           <EmptyState icon="🧾" title="Nothing recorded yet">
-            Every purchase you add here sharpens what Mintly recommends.
+            Every purchase you add here sharpens what UniWallet recommends.
           </EmptyState>
         ) : (
           <div style={{ marginTop: 'var(--s-4)' }}>
             {transactions.slice(0, 10).map((t) => (
               <div className="txn" key={t.id}>
-                <span className="txn__icon" aria-hidden="true">{ICONS[t.category] || '💸'}</span>
+                <span className="txn__icon" aria-hidden="true">{categoryIcon(t.category)}</span>
                 <div className="grow">
                   <p className="txn__name">{t.item_name}</p>
                   <p className="txn__meta">
-                    {t.category || 'Uncategorised'} · {shortDate(t.transaction_date)}
+                    {categoryLabel(t.category)} · {shortDate(t.transaction_date)}
                     {t.is_essential && ' · essential'}
                   </p>
                 </div>
@@ -436,9 +435,8 @@ export default function Dashboard() {
 
             {!supports.deleteTransaction && (
               <p style={{ color: 'var(--c-muted-light)', fontSize: 'var(--t-xs)', marginTop: 'var(--s-4)' }}>
-                Recorded spending cannot be removed yet — the backend has no
-                <code> DELETE /budgets/&#123;id&#125;/transactions/&#123;txn_id&#125;</code> route.
-                It is listed in docs/BACKEND_INTEGRATION.md as a backend dependency.
+                Recorded spending can&apos;t be edited or removed yet, so double-check the
+                amount before you add it.
               </p>
             )}
           </div>

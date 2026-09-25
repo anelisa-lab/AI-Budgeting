@@ -150,7 +150,7 @@ export const ROUTES = [
 ];
 
 /** app/routers/search.py sort_map keys. Anything else falls back to price_asc. */
-export const SORT_VALUES = ['price_asc', 'price_desc', 'newest'];
+export const SORT_VALUES = ['price_asc', 'price_desc', 'newest', 'rating_desc'];
 /** search.py availability check. */
 export const AVAILABILITY_VALUES = ['available', 'out_of_stock', 'unknown', 'any'];
 

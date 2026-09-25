@@ -25,6 +25,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import * as v from '../lib/validation.js';
+import { CATALOGUE_CATEGORIES, canonicalCategory } from '../lib/categories.js';
+import { fullDate } from '../lib/format.js';
 
 /** Toggle `value` in a list. */
 const toggle = (list, value) => (list.includes(value)
@@ -33,7 +35,7 @@ const toggle = (list, value) => (list.includes(value)
 
 export default function Profile() {
   const {
-    token, user, preferences, updateProfile, updatePreferences,
+    token, user, preferences, updateProfile, updatePreferences, reloadPreferences,
   } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -65,29 +67,36 @@ export default function Profile() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const rows = [];
-      for (let offset = 0, more = true; more && offset < 1000; offset += 100) {
-        // eslint-disable-next-line no-await-in-loop
-        const page = await api.search.offers(token, { availability: 'any', limit: 100, offset });
-        rows.push(...page.results);
-        more = page.has_more;
-      }
-      return rows;
-    })()
-      .then((rows) => {
-        if (cancelled) return;
-        const unique = (field) => [...new Set(rows.map((o) => o[field]).filter(Boolean))].sort();
-        setCatalogue({ categories: unique('category'), stores: unique('store_name') });
+    api.search.catalogueFacets(token)
+      .then((f) => {
+        if (!cancelled) setCatalogue({ categories: f.categories, stores: f.stores });
       })
       .catch((err) => { if (!cancelled) setCatalogueError(err.message || 'Could not load stores.'); });
     return () => { cancelled = true; };
   }, [token]);
 
-  const categoryOptions = useMemo(
-    () => [...new Set([...catalogue.categories, ...categories])].sort(),
-    [catalogue.categories, categories],
-  );
+  // Preferences are loaded with the session; if that load failed, saving now
+  // would overwrite the stored ones with blanks — so fetch them again first.
+  const [prefsState, setPrefsState] = useState(preferences ? 'ready' : 'loading');
+  useEffect(() => {
+    if (preferences) { setPrefsState('ready'); return undefined; }
+    let cancelled = false;
+    setPrefsState('loading');
+    reloadPreferences()
+      .then(() => { if (!cancelled) setPrefsState('ready'); })
+      .catch(() => { if (!cancelled) setPrefsState('error'); });
+    return () => { cancelled = true; };
+  }, [preferences, reloadPreferences]);
+
+  // The app's category list (which includes Maintenance) plus anything else
+  // the live catalogue or the saved preferences contain.
+  const categoryOptions = useMemo(() => {
+    const out = CATALOGUE_CATEGORIES.map((c) => c.value);
+    for (const c of [...catalogue.categories, ...categories]) {
+      if (!out.some((x) => x.toLowerCase() === String(c).toLowerCase())) out.push(c);
+    }
+    return out;
+  }, [catalogue.categories, categories]);
   const storeOptions = useMemo(
     () => [...new Set([...catalogue.stores, ...stores])].sort(),
     [catalogue.stores, stores],
@@ -95,15 +104,15 @@ export default function Profile() {
 
   async function saveName(event) {
     event.preventDefault();
-    const error = v.required(name, 'Your name');
+    const error = v.fullName(name) || (name.trim().length > 100 ? 'Keep your name under 100 characters.' : null);
     setNameError(error);
     if (error) return;
     setSavingName(true);
     try {
-      await updateProfile({ name: name.trim() });
+      await updateProfile({ name: name.trim().replace(/\s+/g, ' ') });
       toast.success('Name updated.');
     } catch (err) {
-      setNameError(err.message || 'Could not update your name.');
+      setNameError(err.fieldErrors?.name || err.message || 'Could not update your name.');
     } finally {
       setSavingName(false);
     }
@@ -120,10 +129,14 @@ export default function Profile() {
     setDistanceError(error);
     if (error) return;
 
+    if (prefsState !== 'ready') {
+      toast.error('Your saved preferences have not loaded yet, so nothing was changed. Try again in a moment.');
+      return;
+    }
     setSavingPrefs(true);
     try {
       await updatePreferences({
-        preferred_categories: categories,
+        preferred_categories: categories.map(canonicalCategory),
         preferred_stores: stores,
         // Omitted when blank: the backend keeps what it had rather than
         // clearing it, so a blank box never silently changes the radius.
@@ -146,7 +159,7 @@ export default function Profile() {
             Profile &amp; preferences
           </h1>
           <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)' }}>
-            Tell Mintly where you like to shop and what you usually buy. Your
+            Tell UniWallet where you like to shop and what you usually buy. Your
             recommendations are ranked with these.
           </p>
         </div>
@@ -166,13 +179,17 @@ export default function Profile() {
                 />
               )}
             </Field>
-            <Field id="profile-email" label="Email" hint="Your email is your sign-in and cannot be changed here.">
+            <Field
+              id="profile-email"
+              label="Email"
+              hint={`Your email is your sign-in and cannot be changed here.${user?.created_at ? ` Member since ${fullDate(user.created_at)}.` : ''}`}
+            >
               {({ id, describedBy }) => (
                 <Input id={id} value={user?.email || ''} describedBy={describedBy} disabled />
               )}
             </Field>
             <div>
-              <Button type="submit" loading={savingName}>
+              <Button type="submit" loading={savingName} disabled={name.trim() === (user?.name || '')}>
                 {savingName ? 'Saving…' : 'Save name'}
               </Button>
             </div>
@@ -182,6 +199,12 @@ export default function Profile() {
         <Card>
           <form onSubmit={savePreferences} noValidate className="stack">
             <h2 className="card__title">Shopping preferences</h2>
+
+            {prefsState === 'error' && (
+              <Alert tone="warning" title="Could not load your saved preferences">
+                Refresh the page to try again. Saving is paused so your saved choices are not overwritten.
+              </Alert>
+            )}
 
             {catalogueError && (
               <Alert tone="warning" title="Could not load the store list">
@@ -233,13 +256,14 @@ export default function Profile() {
             <Field
               id="profile-distance"
               label="How far will you travel?"
-              hint="In kilometres from your residence. Stores further than this rank lower."
+              hint="Saved to your account for recommendations. Distance only counts once your location is on record, which the app cannot set yet. Leave blank to keep what is saved."
               error={distanceError}
             >
               {({ id, describedBy, invalid }) => (
                 <Input
                   id={id}
                   inputMode="decimal"
+                  suffix="km"
                   placeholder="e.g. 5"
                   value={distance}
                   invalid={invalid}
@@ -250,7 +274,7 @@ export default function Profile() {
             </Field>
 
             <div className="row" style={{ gap: 'var(--s-3)' }}>
-              <Button type="submit" loading={savingPrefs}>
+              <Button type="submit" loading={savingPrefs} disabled={prefsState !== 'ready'}>
                 {savingPrefs ? 'Saving…' : 'Save preferences'}
               </Button>
               <Button type="button" variant="ghost" onClick={() => navigate('/recommendations')}>
