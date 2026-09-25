@@ -7,7 +7,7 @@ checks the invariants that must hold for EVERY input, over a grid:
 
   true cost        every real catalogue offer x delivery/collection x
                    quantity 1/2/5 x walkable/taxi/unknown distance
-                   (257 x 2 x 3 x 3 = 4 626 breakdowns)
+                   (283 x 2 x 3 x 3 = 5 094 breakdowns)
   budget split     7 balances x 7 cycle lengths x 4 spend patterns x
                    with/without a survival threshold (392 splits),
                    plus payout day and a lapsed cycle
@@ -104,7 +104,7 @@ def test_true_cost_invariants_over_the_whole_catalogue():
         delivery_lines = [c for c in b.charges if c.charge_type == "delivery" and not c.waived]
         if b.shipping > 0:
             assert not delivery_lines, where
-    assert checked == 257 * 2 * 3 * 3
+    assert checked == 283 * 2 * 3 * 3   # 257 + 26 Maintenance listings (Phase 5)
 
 
 def test_free_delivery_threshold_is_tested_against_the_order_not_the_item():

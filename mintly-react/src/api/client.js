@@ -26,6 +26,8 @@ import * as localList from './localList.js';
 import { API_BASE_URL, ApiError, setUnauthorizedHandler } from './http.js';
 import {
   affordabilityFromApi,
+  basketComparisonFromApi,
+  locationFromApi,
   budgetFromApi,
   budgetSplitFromApi,
   budgetToApi,
@@ -34,6 +36,7 @@ import {
   preferencesFromApi,
   recommendationsFromApi,
   searchResponseFromApi,
+  shoppingListFromApi,
   transactionFromApi,
   transactionResultFromApi,
   transactionToApi,
@@ -47,13 +50,13 @@ export { API_BASE_URL, ApiError, setUnauthorizedHandler };
 
 export const auth = {
   /**
-   * The backend's RegisterRequest is { name, email, password } — nothing else.
-   * The register form also collects a student number and a residence; those
-   * are NOT sent, because the API would silently drop them and the student
-   * would believe they had been saved. See docs/BACKEND_INTEGRATION.md.
+   * RegisterRequest { name, email, password, residence?, student_number? }.
+   * The two optional fields were added to the backend in Phase 4.
    */
-  async register({ name, email, password }) {
-    const payload = await endpoints.register({ name, email, password });
+  async register({ name, email, password, residence, student_number: studentNumber }) {
+    const payload = await endpoints.register({
+      name, email, password, residence, student_number: studentNumber,
+    });
     return { user: userFromApi(payload.user), token: payload.token };
   },
 
@@ -82,9 +85,28 @@ export const profile = {
     return userFromApi(await endpoints.getProfile(token));
   },
 
-  /** PUT /profile/ accepts `name` only. */
-  async update(token, { name }) {
-    return userFromApi(await endpoints.updateProfile(token, { name }));
+  /**
+   * PUT /profile/ — name, and optionally residence / student number
+   * (undefined = leave as is, '' = clear).
+   */
+  async update(token, { name, residence, student_number: studentNumber }) {
+    return userFromApi(await endpoints.updateProfile(token, {
+      name, residence, student_number: studentNumber,
+    }));
+  },
+
+  /** The student's saved location (Phase 5), or null. */
+  async getLocation(token) {
+    return locationFromApi(await endpoints.getLocation(token));
+  },
+
+  async setLocation(token, { latitude, longitude, label }) {
+    return locationFromApi(await endpoints.setLocation(token, { latitude, longitude, label }));
+  },
+
+  async clearLocation(token) {
+    await endpoints.clearLocation(token);
+    return null;
   },
 
   async getPreferences(token) {
@@ -119,7 +141,15 @@ export const budgets = {
    * GET /budgets/dashboard — budget, Daily Budget Split, health warnings and
    * the latest transactions in one call. Same 404-means-null rule as above.
    */
-  async getDashboard(token, { recent } = {}) {
+  async getDashboard(token, { recent, knownActive = false } = {}) {
+    // A brand-new student has no budget, and asking the dashboard for one
+    // answers 404 — which every browser prints as a red console error on the
+    // very first screen after registering. GET /budgets answers [] instead, so
+    // ask that first unless the caller already knows a budget exists.
+    if (!knownActive) {
+      const all = await endpoints.listBudgets(token);
+      if (!Array.isArray(all) || !all.some((b) => b.status === 'active')) return null;
+    }
     try {
       return dashboardFromApi(await endpoints.getBudgetDashboard(token, { recent }));
     } catch (err) {
@@ -136,6 +166,11 @@ export const budgets = {
   /** Form values in, BudgetCreateRequest out. */
   async create(token, formValues) {
     return budgetFromApi(await endpoints.createBudget(token, budgetToApi(formValues)));
+  },
+
+  /** DELETE /budgets/{id} — the budget and every spend recorded against it. */
+  async remove(token, budgetId) {
+    await endpoints.deleteBudget(token, budgetId);
   },
 
   /**
@@ -184,6 +219,38 @@ export const recommendations = {
   async get(token, body) {
     return recommendationsFromApi(await endpoints.getRecommendations(token, body));
   },
+
+  /**
+   * Past searches and what was recommended for them (Phase 5 "Recent
+   * searches"). Runs without a query (the default For you list) are skipped,
+   * and a query searched twice is shown once, newest first.
+   */
+  async history(token, { limit = 20 } = {}) {
+    const payload = await endpoints.getRecommendationHistory(token, { limit });
+    const seen = new Set();
+    const out = [];
+    for (const run of payload?.runs || []) {
+      const query = String(run.query_text || '').trim();
+      if (!query || seen.has(query.toLowerCase())) continue;
+      seen.add(query.toLowerCase());
+      out.push({
+        id: run.id,
+        query,
+        created_at: run.created_at || null,
+        top: (run.items || []).slice(0, 3).map((i) => ({
+          offer_id: i.offer_id,
+          product_name: i.product_name,
+          store_name: i.store_name,
+          total_cost: Number(i.total_cost_snapshot) || 0,
+        })),
+      });
+    }
+    return out;
+  },
+
+  async clearHistory(token) {
+    await endpoints.clearRecommendationHistory(token);
+  },
 };
 
 /* --------------------------------------------------------------- true cost */
@@ -203,6 +270,34 @@ export const trueCost = {
       fulfilment,
     }));
   },
+};
+
+/* ---------------------------------------------------------- compare basket */
+
+/**
+ * POST /compare/basket (Phase 4, app/basket.py). The whole list priced as
+ * ONE order per store — delivery once per order with the free-delivery
+ * threshold judged on the basket, store fees once, travel once per trip —
+ * and the cheapest plan across up to three stores. This replaced the
+ * arithmetic the Compare screen used to do in the browser, which could not
+ * see store charges or which stores deliver.
+ */
+export const compare = {
+  async basket(token, lines, { fulfilment = 'collection' } = {}) {
+    const qtyByProduct = new Map();
+    for (const line of lines) {
+      qtyByProduct.set(line.product_id, (qtyByProduct.get(line.product_id) || 0) + line.qty);
+    }
+    const items = [...qtyByProduct].slice(0, 50)
+      .map(([productId, qty]) => ({ product_id: productId, qty: Math.max(1, Math.min(99, qty)) }));
+    if (items.length === 0) return null;
+    return basketComparisonFromApi(await endpoints.compareBasket(token, { items, fulfilment }));
+  },
+};
+
+/** GET /prices/status — how many catalogue prices are estimates vs confirmed. */
+export const prices = {
+  status: (token) => endpoints.getPriceStatus(token),
 };
 
 /* ------------------------------------------------------------ transactions */
@@ -229,6 +324,18 @@ export const transactions = {
     );
     return transactionResultFromApi(payload);
   },
+
+  /**
+   * DELETE a recorded spend (Phase 5). Returns { budget, daily_split } — the
+   * authoritative state after the money goes back, like create() does.
+   */
+  async remove(token, budgetId, transactionId) {
+    const payload = await endpoints.deleteTransaction(token, budgetId, transactionId);
+    return {
+      budget: budgetFromApi(payload?.budget),
+      daily_split: payload?.daily_split ? budgetSplitFromApi(payload.daily_split) : null,
+    };
+  },
 };
 
 /* ------------------------------------------------------------------ search */
@@ -244,53 +351,93 @@ export const search = {
   },
 
   /**
-   * Every offer for a set of products, for the store-by-store comparison.
-   *
-   * INTERIM: there is no `GET /products/{id}/offers`, so this searches by
-   * product name (`q` ILIKEs name/brand/category) and keeps the rows whose
-   * product_id matches. It is real backend data, but it costs one request per
-   * distinct product and can miss an offer whose product name differs.
-   * docs/BACKEND_INTEGRATION.md specifies the endpoint that would fix both.
+   * The values the catalogue actually uses for store, brand, colour, size and
+   * category, so Search can offer real choices instead of free text that has
+   * to match the backend's ILIKE exactly ("PnP" or "2 kg" used to return
+   * nothing). Built from GET /search itself — there is no facets endpoint —
+   * by walking the pages once per session; the answer is cached per token.
    */
-  async offersForProducts(token, products) {
-    const unique = [];
-    const seen = new Set();
-    for (const p of products) {
-      if (seen.has(p.product_id)) continue;
-      seen.add(p.product_id);
-      unique.push(p);
+  catalogueFacets(token) {
+    if (!facetCache.has(token)) {
+      const load = (async () => {
+        const rows = [];
+        for (let offset = 0, more = true; more && offset < 2000; offset += 100) {
+          // eslint-disable-next-line no-await-in-loop
+          const page = await this.offers(token, { availability: 'any', limit: 100, offset });
+          rows.push(...page.results);
+          more = page.has_more;
+        }
+        const unique = (field) => [...new Set(
+          rows.map((o) => o[field]).filter((v) => v && String(v).toLowerCase() !== 'n/a'),
+        )].sort((a, b) => String(a).localeCompare(String(b)));
+        return {
+          categories: unique('category'),
+          stores: unique('store_name'),
+          brands: unique('brand'),
+          colours: unique('colour'),
+          sizes: unique('size'),
+          total: rows.length,
+        };
+      })();
+      // A failed load must not be cached forever.
+      load.catch(() => facetCache.delete(token));
+      facetCache.set(token, load);
     }
-
-    const responses = await Promise.all(
-      unique.map((p) => this
-        .offers(token, { q: p.product_name, availability: 'any', limit: 100, sort: 'price_asc' })
-        .catch(() => ({ results: [] }))),
-    );
-
-    const byProduct = new Map();
-    unique.forEach((p, i) => {
-      const matches = responses[i].results.filter((r) => r.product_id === p.product_id);
-      byProduct.set(p.product_id, matches);
-    });
-    return byProduct;
+    return facetCache.get(token);
   },
 };
+
+const facetCache = new Map();
 
 /* ----------------------------------------------------------- shopping list */
 
 /**
- * Device-local. NOT a backend resource yet — localList.js explains why and
- * the Compare screen tells the student. Kept behind this namespace so that
- * replacing it with real endpoints is a change to this block alone.
+ * Server-side since Phase 5 (/shopping-list), so the list follows the
+ * student to any device. The first time a student signs in after the move,
+ * whatever was saved in this browser's localStorage (localList.js) is
+ * uploaded once and then cleared, so nobody loses the list they had.
  */
+let listToken = null;
+let listUserId = null;
+
+async function uploadDeviceList(token) {
+  const saved = await localList.list();
+  if (!saved.length) return;
+  for (const line of saved) {
+    // eslint-disable-next-line no-await-in-loop
+    await endpoints.addShoppingListItem(token, { offer_id: line.offer_id, qty: line.qty })
+      .catch(() => null); // an offer that no longer exists is simply dropped
+  }
+  await localList.clear();
+}
+
 export const shoppingList = {
-  list: () => localList.list(),
-  add: (offer, qty) => localList.add(offer, qty),
-  setQty: (offerId, qty) => localList.setQty(offerId, qty),
-  remove: (offerId) => localList.remove(offerId),
-  clear: () => localList.clear(),
-  /** True while the list is device-local; drives the banner on Compare. */
-  isLocalOnly: true,
+  /** Called by ShoppingContext whenever the signed-in account changes. */
+  setOwner(userId, token) {
+    listUserId = userId;
+    listToken = userId ? token : null;
+    localList.setOwner(userId);
+  },
+  async list() {
+    if (!listToken) return [];
+    await uploadDeviceList(listToken);
+    return shoppingListFromApi(await endpoints.getShoppingList(listToken));
+  },
+  async add(offer, qty = 1) {
+    return shoppingListFromApi(await endpoints.addShoppingListItem(listToken, { offer_id: offer.offer_id, qty }));
+  },
+  async setQty(offerId, qty) {
+    return shoppingListFromApi(await endpoints.setShoppingListQty(listToken, offerId, Math.max(0, Math.round(qty))));
+  },
+  async remove(offerId) {
+    return shoppingListFromApi(await endpoints.removeShoppingListItem(listToken, offerId));
+  },
+  async clear() {
+    return shoppingListFromApi(await endpoints.clearShoppingList(listToken));
+  },
+  /** False since Phase 5: the list is saved to the account. */
+  isLocalOnly: false,
+  get ownerId() { return listUserId; },
 };
 
 /* ------------------------------------------------------------------ health */
@@ -304,8 +451,8 @@ export const system = {
 
 /** Grouped default export, for `import { api } from '../api/client.js'`. */
 export const api = {
-  auth, profile, budgets, budgetSplit, recommendations, trueCost, transactions, search,
-  shoppingList, system,
+  auth, profile, budgets, budgetSplit, recommendations, trueCost, compare, prices,
+  transactions, search, shoppingList, system,
 };
 
 export default api;

@@ -23,6 +23,7 @@ export function fullName(value) {
   if (base) return base;
   const trimmed = value.trim();
   if (trimmed.length < 2) return 'Please enter your full name.';
+  if (trimmed.length > 100) return 'Keep your name under 100 characters.';
   if (!/^[\p{L}\s'-]+$/u.test(trimmed)) {
     return 'Names can only contain letters, spaces, hyphens and apostrophes.';
   }

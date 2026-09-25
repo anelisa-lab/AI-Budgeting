@@ -190,3 +190,13 @@ def test_r_ending_a_word_is_not_a_rand_amount():
     assert "paper" in parsed.keywords
     assert parse_query("soap R25").max_price == Decimal("25")
 
+
+
+def test_maintenance_words_map_to_the_maintenance_category():
+    # Phase 5: the catalogue gained a Maintenance category; its words must
+    # map to the exact catalogue spelling, like every other category.
+    for query, sub in (("light bulb", "Lighting"), ("padlock for my room", "Security"),
+                       ("duct tape", "Repairs"), ("AA batteries", "Batteries")):
+        parsed = parse_query(query)
+        assert parsed.category == "Maintenance", query
+        assert parsed.subcategory == sub, query

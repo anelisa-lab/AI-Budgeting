@@ -146,6 +146,13 @@ browser subtraction goes negative.
 
 ## Backend dependencies
 
+> **Phase 5 status:** §2–4 (shopping list, deleting spends and budgets), §6
+> (student location and distance), §8 (residence and student number) and §11
+> (Maintenance products) are now **closed**, and §10 (whole-basket true cost)
+> was closed in Phase 4 by `POST /compare/basket` — see
+> `../../docs/PHASE5_GAPS_REPORT.md` for the routes and screens. The sections
+> below are kept as the record of what was asked for.
+
 Nothing in this list is faked in the frontend. Each one is either visibly
 marked as unavailable on screen or handled by a device-local store that says so.
 
@@ -219,23 +226,26 @@ such route it searches by product **name** and filters on `product_id`, which
 costs one request per distinct product and can miss an offer whose product name
 differs. `api.search.offersForProducts` is the single function that changes.
 
-### 6. Store location and distance
+### 6. Distance filter and the student's location — backend/AI team
 
-`stores.latitude` / `stores.longitude` exist but `SearchResultItem` does not
-carry them, so the distance radius — the Project Synopsis's "within a
-25-kilometre range" — cannot be applied. Either:
+`SearchResultItem` now carries `store_latitude` / `store_longitude`, but a
+distance filter still needs the **student's** position, and there is no
+endpoint to save one: `user_locations` exists in the schema with no router.
+The recommender's proximity score and the travel part of true cost silently
+fall back to "unknown distance" for every student created through the app.
+Needed:
 
-- add `store_latitude` / `store_longitude` to `SearchResultItem`, or
-- better, accept `?lat=&lng=&radius_km=` on `/search` and filter in SQL, since
-  the schema already has `user_locations` for the student's own position.
+```
+PUT /profile/location   { latitude, longitude } or { residence_area_code }
+GET /search?...&radius_km=5    (filter in SQL using user_locations)
+```
+Until then Search shows "Distance from campus — coming soon", and Profile says
+the saved travel distance only counts once a location is on record.
 
-The Search screen lists this under "Not available yet" with the reason.
+### 7. Store rating — CLOSED
 
-### 7. Store rating
-
-There is no rating column anywhere in `sql/schema.sql`, so results cannot be
-ranked or sorted by it. The ranker no longer scores it. If the team wants it,
-`stores.rating NUMERIC(2,1)` plus the field on `SearchResultItem` is all it needs.
+`product_offers.rating` / `rating_count` now exist and `/search` sorts by
+`rating_desc`. Search offers "Best rated" and shows the rating on every result.
 
 ### 8. Student number and residence at registration
 
@@ -252,24 +262,66 @@ class RegisterRequest(BaseModel):
     residence_area_code: Optional[str] = None # already in the schema
 ```
 Until then the register form keeps both fields, marks them optional under a
-heading that says they are not saved yet, and **does not send them** — a field
-the API silently drops is worse than one that admits it.
+heading that says they are not saved yet, and **does not send them**. Phase 4
+expanded the residence list (grouped: DUT Durban residences with the names on
+DUT's Student Housing page, Midlands, leased/accredited, not in a residence).
+The values in `Register.jsx` are ready to be sent as `residence_area_code`.
 
 ### 9. Facet values for the filters
 
-`/search` has no endpoint returning the distinct categories, colours, sizes or
-stores in the catalogue, so those filters are free-text (which the backend
-ILIKEs) with suggestions drawn from the results on screen and labelled as such.
-A `GET /search/facets` returning distinct values would let them become proper
-dropdowns.
+There is still no `GET /search/facets`. Phase 4 builds the store list and the
+brand/colour/size suggestions from the **whole** catalogue instead of the page
+on screen: `api.search.catalogueFacets()` walks `/search` once per session
+(3 requests for 257 offers) and caches the answer. A facets endpoint would
+replace that one function.
 
-### 10. Order-level delivery cost
+### 10. Order-level delivery and a whole-basket true cost — backend/AI team
 
-`shipping_cost` is per offer, and `stores` has no delivery rule. Charging every
-line's shipping would bill a student one delivery per item, so Compare charges a
-physical store nothing (you collect) and an online store the largest single
-`shipping_cost` among the lines bought there. A real rule — a per-store base fee
-and free-delivery threshold — belongs in the backend.
+`shipping_cost` is per offer and `POST /true-cost` prices every offer as its
+**own** order. There is no way to ask "what does this whole list cost at
+Makro, as one order": store fees such as the R3.50 card surcharge are per
+order, and free-delivery thresholds depend on the basket total. The frontend
+does not re-implement Member 6's calculator to fake it. Instead Compare shows:
+
+- whole-list totals = shelf prices + ONE delivery per store (the largest
+  listed `shipping_cost`), labelled "shelf prices" and excluding store fees;
+- item-by-item = the backend's true cost, labelled "if bought on its own".
+
+Needed to show one reconciled basket figure:
+
+```
+POST /true-cost/basket  { items: [{ offer_id, quantity }], fulfilment }
+  -> { stores: [{ store_id, subtotal, shipping, charges[], travel_cost, true_cost, missing: [...] }] }
+```
+
+### 11. Maintenance category has no products — data team
+
+Maintenance is now a first-class category in the frontend (`src/lib/categories.js`:
+Search, For you, Profile preferences, and spending categories). The seeded
+catalogue has **no** products with `category = 'Maintenance'`, so a
+Maintenance search or recommendation is empty; the screens say "No Maintenance
+items are listed yet" rather than show a blank page. The data team needs to add
+real Maintenance listings (bulbs, batteries, extension leads, cleaning and
+repair items…) with real prices, and `app/query_parser.py` should map words like
+"maintenance", "repair", "bulb", "battery" to it. The frontend deliberately does
+not invent products or prices for it.
+
+### 12. Search/recommendation wording and parsing issues — backend team
+
+Found while testing Phase 4 against the real backend:
+
+- `GET /search?availability=out_of_stock` with no other filter answers
+  `"No products are in the catalogue yet."` — wrong; `availability` is not in
+  `active_filters` in `search.py`. The frontend no longer shows the backend's
+  `message` text (it also said "availability=any", which is developer wording).
+- `q=milk 2L` returns 0 results although Full Cream Milk (size 2L) exists: the
+  parser leaves "2l" in `keywords` (not in `size`), and every keyword must
+  appear in the name/brand/category. `q=milk` works.
+- `recommendations` `meets_budget` means "within the remaining balance for the
+  period", not "within today's allowance" — the frontend badge now says
+  "Within your budget" to match.
+- The seed has every offer `available`, so out-of-stock handling can only be
+  tested with unit tests (it is, in `tests/contract/run.mjs`).
 
 ---
 

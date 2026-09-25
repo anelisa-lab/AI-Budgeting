@@ -31,13 +31,19 @@ import {
 // The frontend under test. Plain JS, no JSX, no React — importable as-is.
 process.env.VITE_API_BASE_URL = 'http://localhost:4000';
 const {
-  auth, profile, budgets, budgetSplit, recommendations, transactions, search, trueCost,
+  auth, profile, budgets, budgetSplit, recommendations, transactions, search, trueCost, compare,
+  shoppingList,
 } = await import('../../src/api/client.js');
 const { ApiError } = await import('../../src/api/http.js');
 const {
   buildSearchParams, filtersFromUrl, filtersToUrl, rank,
-  priceListByStore, splitShopTotal, comparableGroups,
+  basketOffersByProduct, itemGroups,
+  chosenListTotal, validateFilters, canonicalise, describeFilters, recommendationsCanHonour,
+  isRankedSort, DEFAULT_FILTERS,
 } = await import('../../src/lib/search.js');
+const {
+  CATALOGUE_CATEGORIES, SPENDING_CATEGORIES, canonicalCategory, CATEGORIES_WITHOUT_LISTINGS,
+} = await import('../../src/lib/categories.js');
 const {
   budgetToApi, budgetToFormValues, budgetUpdateToApi, daysBetween,
 } = await import('../../src/api/normalise.js');
@@ -148,27 +154,39 @@ const lastRequest = () => captured[captured.length - 1];
 
 console.log('\nAuthentication');
 
-await test('register sends exactly { name, email, password } to POST /auth/register', async () => {
-  installFetch(() => ({ status: 201, body: { user: userOut(), token: TOKEN } }));
+await test('register sends name, email, password, residence and student number', async () => {
+  installFetch(() => ({
+    status: 201,
+    body: { user: userOut({ residence: 'berea', student_number: '22123456' }), token: TOKEN },
+  }));
   const result = await auth.register({
     name: 'Nozibusiso Cindi',
     email: 's221234567@dut4life.ac.za',
-    password: 'Mintly2026',
-    // The register screen holds these two; they must NOT reach the API.
-    studentNumber: '22123456',
-    residence: 'steve-biko',
+    password: 'UniWallet2026',
+    student_number: '22123456',
+    residence: 'berea',
   });
   const req = lastRequest();
   assert.equal(req.path, '/auth/register');
   assert.equal(req.method, 'POST');
-  assert.deepEqual(Object.keys(req.body).sort(), ['email', 'name', 'password']);
+  assert.deepEqual(Object.keys(req.body).sort(), ['email', 'name', 'password', 'residence', 'student_number']);
   assert.equal(result.token, TOKEN);
   assert.equal(result.user.name, 'Nozibusiso Cindi');
+  assert.equal(result.user.residence, 'berea');
+  assert.equal(result.user.student_number, '22123456');
+});
+
+await test('register leaves blank optional fields out instead of sending them empty', async () => {
+  installFetch(() => ({ status: 201, body: { user: userOut(), token: TOKEN } }));
+  await auth.register({
+    name: 'A B', email: 'a@b.ac.za', password: 'UniWallet2026', student_number: '', residence: '',
+  });
+  assert.deepEqual(Object.keys(lastRequest().body).sort(), ['email', 'name', 'password']);
 });
 
 await test('login posts to /auth/login and returns the user and token', async () => {
   installFetch(() => ({ status: 200, body: { user: userOut(), token: TOKEN } }));
-  const result = await auth.login({ email: 'a@b.ac.za', password: 'Mintly2026' });
+  const result = await auth.login({ email: 'a@b.ac.za', password: 'UniWallet2026' });
   assert.equal(lastRequest().path, '/auth/login');
   assert.deepEqual(Object.keys(lastRequest().body).sort(), ['email', 'password']);
   assert.equal(result.user.id, 1);
@@ -193,7 +211,7 @@ await test('a 409 from register lands on the email field', async () => {
     status: 409, body: httpError('An account with that email already exists'),
   }));
   await assert.rejects(
-    () => auth.register({ name: 'A B', email: 'taken@dut4life.ac.za', password: 'Mintly2026' }),
+    () => auth.register({ name: 'A B', email: 'taken@dut4life.ac.za', password: 'UniWallet2026' }),
     (err) => {
       assert.equal(err.fieldErrors.email, 'An account with that email already exists');
       return true;
@@ -210,7 +228,7 @@ await test("Pydantic's 422 is mapped onto the form fields that produced it", asy
     ),
   }));
   await assert.rejects(
-    () => auth.register({ name: 'A B', email: 'nope', password: 'Mintly2026' }),
+    () => auth.register({ name: 'A B', email: 'nope', password: 'UniWallet2026' }),
     (err) => {
       assert.equal(err.status, 422);
       // `total_amount` is the backend's name; `amount` is the input's id.
@@ -418,6 +436,7 @@ await test('search results are coerced, including the generated total_cost', asy
   assert.equal(typeof offer.price, 'number');
   assert.equal(offer.total_cost, 49.99);
   assert.equal(page.count, 1);
+  assert.equal(page.results[0].rating, null);
 });
 
 await test('only sorts the backend implements are ever sent', () => {
@@ -445,11 +464,12 @@ await test('the backend limit cap of 100 is respected', () => {
 await test('filters survive a round-trip through the URL', () => {
   const filters = {
     q: 'rice', category: 'Groceries', brand: 'Tastic', colour: '', size: '2kg',
-    store: 'Shoprite', maxPrice: '60', freeShippingOnly: true, essentialOnly: false,
+    store: 'Shoprite', minPrice: '40', maxPrice: '60', freeShippingOnly: true, essentialOnly: false,
     availability: 'any', sort: 'price_desc',
   };
   const back = filtersFromUrl(new URLSearchParams(filtersToUrl(filters).toString()));
   assert.equal(back.q, 'rice');
+  assert.equal(back.minPrice, '40');
   assert.equal(back.maxPrice, '60');
   assert.equal(back.freeShippingOnly, true);
   assert.equal(back.essentialOnly, false);
@@ -487,64 +507,12 @@ await test('stored preferences from the backend influence the ranking', () => {
   );
 });
 
-await test('a store is only "complete" when it stocks every line', () => {
-  const lines = [
-    { product_id: 1, qty: 1, price: 40 },
-    { product_id: 2, qty: 2, price: 20 },
-  ];
-  const offersByProduct = new Map([
-    [1, [
-      { offer_id: 1, product_id: 1, store_id: 10, store_name: 'Full Store', store_type: 'physical', price: 40, shipping_cost: 0, total_cost: 40, product_name: 'A', size: '1kg' },
-      { offer_id: 2, product_id: 1, store_id: 20, store_name: 'Partial Store', store_type: 'physical', price: 30, shipping_cost: 0, total_cost: 30, product_name: 'A', size: '1kg' },
-    ]],
-    [2, [
-      { offer_id: 3, product_id: 2, store_id: 10, store_name: 'Full Store', store_type: 'physical', price: 20, shipping_cost: 0, total_cost: 20, product_name: 'B', size: '2kg' },
-    ]],
-  ]);
-
-  const rows = priceListByStore(lines, offersByProduct);
-  const full = rows.filter((r) => r.full);
-  assert.equal(full.length, 1);
-  assert.equal(full[0].store.store_name, 'Full Store');
-  assert.equal(rows[0].store.store_name, 'Full Store', 'a complete shop outranks a cheaper incomplete one');
-  // Partial Store is cheaper per item but misses a line; it must not come first.
-  const partial = rows.find((r) => r.store.store_name === 'Partial Store');
-  assert.equal(partial.missing, 1);
-  assert.ok(partial.total < full[0].total, 'and its total really is lower — which is the trap');
-});
-
-await test('a physical store is not charged delivery; an online one is charged once', () => {
-  const lines = [{ product_id: 1, qty: 1, price: 40 }, { product_id: 2, qty: 1, price: 20 }];
-  const offersByProduct = new Map([
-    [1, [{ offer_id: 1, product_id: 1, store_id: 30, store_name: 'Takealot', store_type: 'online', price: 40, shipping_cost: 60, total_cost: 100, product_name: 'A' }]],
-    [2, [{ offer_id: 2, product_id: 2, store_id: 30, store_name: 'Takealot', store_type: 'online', price: 20, shipping_cost: 60, total_cost: 80, product_name: 'B' }]],
-  ]);
-  const [row] = priceListByStore(lines, offersByProduct);
-  assert.equal(row.subtotal, 60);
-  assert.equal(row.delivery, 60, 'one delivery charge, not one per line');
-  assert.equal(row.total, 120);
-});
-
-await test('the split-shop total buys each line wherever it is cheapest', () => {
-  const lines = [{ product_id: 1, qty: 2, price: 40 }];
-  const offersByProduct = new Map([
-    [1, [
-      { offer_id: 1, product_id: 1, store_id: 10, store_name: 'A', store_type: 'physical', price: 40, shipping_cost: 0, total_cost: 40, product_name: 'Rice', size: '2kg' },
-      { offer_id: 2, product_id: 1, store_id: 20, store_name: 'B', store_type: 'physical', price: 31, shipping_cost: 0, total_cost: 31, product_name: 'Rice', size: '2kg' },
-    ]],
-  ]);
-  assert.equal(splitShopTotal(lines, offersByProduct), 62);
-  const [group] = comparableGroups(lines, offersByProduct);
-  assert.equal(group.saving, 9);
-  assert.equal(group.cheapest.store_name, 'B');
-});
-
 /* ========================================================= PHASE 3 ===== */
 
 console.log('\nPhase 3 — dashboard, Daily Budget Split, recommendations');
 
 await test('GET /budgets/dashboard is coerced into budget, split and health', async () => {
-  installFetch(() => ({
+  installFetch((req) => (req.path === '/budgets' ? { body: [budgetOut()] } : {
     body: {
       budget: budgetOut({ daily_limit: dec(78.62), budget_mode: 'normal' }),
       daily_split: budgetSplitOut(),
@@ -556,6 +524,7 @@ await test('GET /budgets/dashboard is coerced into budget, split and health', as
     },
   }));
   const dash = await budgets.getDashboard(TOKEN);
+  assert.equal(captured[0].path, '/budgets', 'checks for an active budget first');
   assert.equal(lastRequest().path, '/budgets/dashboard');
   assert.equal(dash.budget.remaining_amount, 1650);
   assert.equal(dash.split.daily_limit, 78.62);
@@ -568,7 +537,13 @@ await test('GET /budgets/dashboard is coerced into budget, split and health', as
 
 await test('a 404 from GET /budgets/dashboard is the empty state, not an error', async () => {
   installFetch(() => ({ status: 404, body: httpError('No active budget') }));
+  assert.equal(await budgets.getDashboard(TOKEN, { knownActive: true }), null);
+});
+
+await test('a student with no active budget never triggers the 404 at all', async () => {
+  installFetch((req) => (req.path === '/budgets' ? { body: [budgetOut({ status: 'closed' })] } : { status: 500, body: httpError('should not be called') }));
   assert.equal(await budgets.getDashboard(TOKEN), null);
+  assert.equal(captured.length, 1, 'only GET /budgets is asked');
 });
 
 await test('tomorrow_limit stays null on payout day instead of becoming 0', async () => {
@@ -676,18 +651,332 @@ await test('survival threshold round-trips through create, edit and update', () 
   assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '0' }, {}), { survival_threshold: 0 });
 });
 
-await test('the same product added from two stores is one item-by-item group', () => {
-  const offers = [
-    { offer_id: 1, product_id: 5, store_id: 1, product_name: 'Bread', store_name: 'A', price: 20, total_cost: 20 },
-    { offer_id: 2, product_id: 5, store_id: 2, product_name: 'Bread', store_name: 'B', price: 18, total_cost: 18 },
-  ];
+/* ========================================================= PHASE 4 ===== */
+
+console.log('\nPhase 4 — search filters, compare accuracy, categories');
+
+const offer = (o) => ({
+  product_name: 'Item', size: '1kg', shipping_cost: 0, availability_status: 'available',
+  store_type: 'physical', ...o, total_cost: (o.price ?? 0) + (o.shipping_cost ?? 0),
+});
+
+await test('"Best value" is the default and is sent to the backend as price_asc', () => {
+  assert.equal(DEFAULT_FILTERS.sort, 'best');
+  assert.equal(buildSearchParams({}).sort, 'price_asc');
+  assert.ok(isRankedSort('best'));
+});
+
+await test('"Total cost: low to high" is NOT re-ranked by the app', () => {
+  assert.equal(isRankedSort('price_asc'), false);
+  assert.equal(buildSearchParams({ sort: 'price_asc' }).sort, 'price_asc');
+  assert.equal(buildSearchParams({ sort: 'rating_desc' }).sort, 'rating_desc');
+});
+
+await test('a minimum above the maximum is caught before any request is made', () => {
+  assert.ok(validateFilters({ minPrice: '100', maxPrice: '50' }).minPrice);
+  assert.deepEqual(validateFilters({ minPrice: '10', maxPrice: '50' }), {});
+  assert.deepEqual(validateFilters({ minPrice: '', maxPrice: '' }), {});
+});
+
+await test('typed brand/size/store values snap to the catalogue spelling', () => {
+  assert.equal(canonicalise('2 kg', ['1kg', '2kg']), '2kg');
+  assert.equal(canonicalise('tastic', ['Tastic', 'Albany']), 'Tastic');
+  assert.equal(canonicalise('Something new', ['Tastic']), 'Something new');
+  assert.equal(canonicalise('  ', ['Tastic']), '');
+});
+
+await test('combined filters all reach the backend together', () => {
+  const p = buildSearchParams({
+    q: 'rice', category: 'Groceries', brand: 'Tastic', size: '2kg', store: 'Shoprite Warwick Junction',
+    minPrice: '10', maxPrice: '60', freeShippingOnly: true, essentialOnly: true, availability: 'any', sort: 'price_desc',
+  });
+  assert.deepEqual(
+    { q: p.q, category: p.category, brand: p.brand, size: p.size, store: p.store, min: p.min_price, max: p.max_price, ship: p.max_shipping_cost, ess: p.essential_only, av: p.availability, sort: p.sort },
+    { q: 'rice', category: 'Groceries', brand: 'Tastic', size: '2kg', store: 'Shoprite Warwick Junction', min: 10, max: 60, ship: 0, ess: true, av: 'any', sort: 'price_desc' },
+  );
+});
+
+await test('active filters become removable chips, and clearing resets them', () => {
+  const chips = describeFilters({ q: 'rice', store: 'Makro', essentialOnly: true });
+  assert.deepEqual(chips.map((c) => c.key), ['q', 'store', 'essentialOnly']);
+  assert.deepEqual(chips[1].reset, { store: '' });
+  assert.equal(describeFilters(DEFAULT_FILTERS).length, 0);
+});
+
+await test('recommendations are hidden when a filter they cannot honour is on', () => {
+  assert.equal(recommendationsCanHonour({ q: 'rice', category: 'Groceries', maxPrice: '50' }), true);
+  assert.equal(recommendationsCanHonour({ q: 'rice', store: 'Shoprite' }), false);
+  assert.equal(recommendationsCanHonour({ q: 'rice', brand: 'Tastic' }), false);
+});
+
+await test('the list "as chosen" uses live prices and one delivery per store', () => {
   const lines = [
-    { offer_id: 1, product_id: 5, qty: 1, price: 20 },
-    { offer_id: 2, product_id: 5, qty: 2, price: 18 },
+    { offer_id: 1, product_id: 1, qty: 2, price: 9, store_id: 1, store_type: 'physical', shipping_cost: 40 },
+    { offer_id: 2, product_id: 2, qty: 1, price: 30, store_id: 1, store_type: 'physical', shipping_cost: 40 },
+    { offer_id: 3, product_id: 3, qty: 1, price: 5, store_id: 2, store_type: 'physical', shipping_cost: 0 },
   ];
-  const groups = comparableGroups(lines, new Map([[5, offers]]));
-  assert.equal(groups.length, 1);
-  assert.equal(groups[0].qty, 3);
+  const map = new Map([
+    [1, [offer({ offer_id: 1, product_id: 1, store_id: 1, price: 10, shipping_cost: 40 })]],
+    [2, [offer({ offer_id: 2, product_id: 2, store_id: 1, price: 30, shipping_cost: 35 })]],
+    [3, [offer({ offer_id: 3, product_id: 3, store_id: 2, price: 5, availability_status: 'out_of_stock' })]],
+  ]);
+  const delivered = chosenListTotal(lines, map, { fulfilment: 'delivery' });
+  assert.equal(delivered.items, 50, 'today\'s price (R10), not the saved R9');
+  assert.equal(delivered.delivery, 40, 'one delivery for store 1, the larger fee');
+  assert.equal(delivered.total, 90);
+  assert.equal(delivered.unavailable.length, 1, 'the out-of-stock line is reported, not priced');
+  assert.equal(chosenListTotal(lines, map, { fulfilment: 'collection' }).total, 50);
+});
+
+await test('there is one category list, and it includes Maintenance', () => {
+  assert.ok(CATALOGUE_CATEGORIES.some((c) => c.value === 'Maintenance'));
+  for (const c of CATALOGUE_CATEGORIES) {
+    assert.ok(SPENDING_CATEGORIES.some((x) => x.value === c.value), `${c.value} is also a spending category`);
+  }
+  assert.equal(canonicalCategory('maintenance'), 'Maintenance');
+  assert.equal(canonicalCategory('groceries'), 'Groceries');
+});
+
+/* ============================================ PHASE 4 BACKEND WIRING ===== */
+
+console.log('\nPhase 4 backend — basket compare, fulfilment, price provenance');
+
+const basketQuote = (over = {}) => ({
+  store_id: 3, store_name: 'Shoprite Warwick Junction', store_type: 'physical', distance_km: null,
+  fulfilment: 'collection', fulfilment_available: true, full: true, stocked: 2, missing_count: 0,
+  lines: [], missing: [], subtotal: dec(60), delivery: dec(0), fees: dec(0), travel: dec(0),
+  total: dec(60), estimate_count: 2, notes: [], ...over,
+});
+
+await test('Compare asks POST /compare/basket for the whole list, one entry per product', async () => {
+  installFetch(() => ({
+    body: {
+      fulfilment: 'delivery', location_known: false,
+      stores: [
+        basketQuote({ store_id: 4, store_name: 'Checkers Berea Centre', fulfilment: 'delivery', delivery: dec(35), total: dec(95) }),
+        basketQuote({ fulfilment: 'collection', fulfilment_available: false, notes: ["Shoprite Warwick Junction doesn't deliver"] }),
+      ],
+      best_single_store_id: 4,
+      best_plan: { total: dec(95), store_count: 1, stores: [basketQuote({ store_id: 4 })], saving_vs_best_single: dec(0) },
+      unavailable: [],
+      items: [{ product_id: 5, product_name: 'Brown Bread · 700g', qty: 3, offers: [
+        { offer_id: 1, store_id: 4, store_name: 'Checkers Berea Centre', price: dec(20), line_total: dec(60), in_stock: true, is_estimate: true, price_source: 'seed_estimate', price_verified_at: null, product_url: null },
+      ] }],
+      prices: { listings: 2, estimates: 2, confirmed: 0, all_confirmed: false },
+    },
+  }));
+  const result = await compare.basket(TOKEN, [
+    { offer_id: 1, product_id: 5, qty: 1 },
+    { offer_id: 2, product_id: 5, qty: 2 },   // same bread from another store
+    { offer_id: 7, product_id: 9, qty: 1 },
+  ], { fulfilment: 'delivery' });
+  const req = lastRequest();
+  assert.equal(req.path, '/compare/basket');
+  assert.deepEqual(req.body.items, [{ product_id: 5, qty: 3 }, { product_id: 9, qty: 1 }]);
+  assert.equal(req.body.fulfilment, 'delivery');
+  assert.equal(result.stores[0].total, 95, 'Decimal strings become numbers');
+  assert.equal(result.stores[0].delivery, 35);
+  assert.equal(result.stores[1].fulfilment_available, false, 'a store that cannot deliver is flagged');
+  assert.equal(result.best_single_store_id, 4);
+  assert.equal(result.best_plan.store_count, 1);
+  assert.equal(result.prices.all_confirmed, false);
+  assert.equal(result.location_known, false);
+});
+
+await test('item by item keeps only in-stock listings, and only products with a choice', () => {
+  const groups = itemGroups({ items: [
+    { product_id: 1, product_name: 'Rice', qty: 2, offers: [
+      { offer_id: 1, store_id: 1, price: 40, line_total: 80, in_stock: true },
+      { offer_id: 2, store_id: 2, price: 31, line_total: 62, in_stock: true },
+      { offer_id: 3, store_id: 3, price: 10, line_total: 20, in_stock: false },
+    ] },
+    { product_id: 2, product_name: 'Soap', qty: 1, offers: [
+      { offer_id: 4, store_id: 1, price: 9, line_total: 9, in_stock: true },
+      { offer_id: 5, store_id: 2, price: 7, line_total: 7, in_stock: false },
+    ] },
+  ] });
+  assert.equal(groups.length, 1, 'soap has only one in-stock listing, so nothing to compare');
+  assert.equal(groups[0].offers.length, 2, 'the out-of-stock R10 rice is not a choice');
+  assert.equal(groups[0].saving, 18);
+});
+
+await test('the list "as chosen" reads today\'s price and stock from the basket response', () => {
+  const lines = [
+    { offer_id: 1, product_id: 1, qty: 2, price: 9, store_id: 1, store_type: 'mixed', shipping_cost: 35 },
+    { offer_id: 3, product_id: 2, qty: 1, price: 5, store_id: 2, store_type: 'physical', shipping_cost: 0 },
+  ];
+  const map = basketOffersByProduct({
+    stores: [{ store_id: 1, store_type: 'mixed' }],
+    items: [
+      { product_id: 1, offers: [{ offer_id: 1, store_id: 1, price: 10, in_stock: true }] },
+      { product_id: 2, offers: [{ offer_id: 3, store_id: 2, price: 5, in_stock: false }] },
+    ],
+  }, lines);
+  const collected = chosenListTotal(lines, map, { fulfilment: 'collection' });
+  assert.equal(collected.items, 20, 'today\'s R10, not the saved R9');
+  assert.equal(collected.delivery, 0, 'collecting from a store you walk into, even a "mixed" one');
+  assert.equal(collected.unavailable.length, 1, 'the out-of-stock line is reported, not priced');
+  assert.equal(chosenListTotal(lines, map, { fulfilment: 'delivery' }).delivery, 35);
+});
+
+await test('search is priced the way the student gets it (?fulfilment=)', async () => {
+  assert.equal(DEFAULT_FILTERS.fulfilment, 'collection');
+  assert.equal(buildSearchParams({}).fulfilment, 'collection');
+  assert.equal(buildSearchParams({ fulfilment: 'delivery' }).fulfilment, 'delivery');
+  assert.equal(buildSearchParams({ fulfilment: 'teleport' }).fulfilment, 'collection');
+  const url = filtersToUrl({ ...DEFAULT_FILTERS, fulfilment: 'delivery' });
+  assert.equal(filtersFromUrl(url).fulfilment, 'delivery', 'survives a refresh');
+  assert.deepEqual(describeFilters({ fulfilment: 'delivery' }).map((c) => c.key), ['fulfilment']);
+
+  installFetch(() => ({ body: { results: [
+    searchResultItem({ price: 19.99, shipping_cost: 35, effective_cost: dec(19.99), price_source: 'seed_estimate' }),
+  ], count: 1, limit: 20, offset: 0 } }));
+  const page = await search.offers(TOKEN, buildSearchParams({ q: 'bread' }));
+  assert.equal(lastRequest().query.fulfilment, 'collection');
+  assert.equal(page.results[0].effective_cost, 19.99, 'shelf price when collecting, not R54.99');
+  assert.equal(page.results[0].total_cost, 54.99);
+  assert.equal(page.results[0].price_is_estimate, true);
+});
+
+await test('"Best value" ranks on what the student pays, not on a delivery they skip', () => {
+  const [top] = rank([
+    { ...searchResultItem({ offer_id: 1, price: 20, shipping_cost: 40 }), price: 20, shipping_cost: 40, total_cost: 60, effective_cost: 20 },
+    { ...searchResultItem({ offer_id: 2, price: 25, shipping_cost: 0 }), price: 25, shipping_cost: 0, total_cost: 25, effective_cost: 25 },
+  ]);
+  assert.equal(top.offer_id, 1, 'collecting, R20 beats R25 whatever the delivery fee');
+});
+
+await test('essentials only and fulfilment reach POST /recommendations', async () => {
+  installFetch(() => ({ body: { results: [], count: 0, budget: {} } }));
+  await recommendations.get(TOKEN, { query: 'soap', fulfilment: 'collection', essential_only: true });
+  assert.equal(lastRequest().body.essential_only, true);
+  assert.equal(lastRequest().body.fulfilment, 'collection');
+  assert.equal(recommendationsCanHonour({ q: 'soap', essentialOnly: true, fulfilment: 'delivery' }), true);
+});
+
+await test('a confirmed price is labelled confirmed; a seed price is an estimate', async () => {
+  installFetch(() => ({ body: { results: [
+    searchResultItem({ offer_id: 1, price_source: 'verified_manual', price_verified_at: '2026-09-20T10:00:00+00:00' }),
+    searchResultItem({ offer_id: 2 }),
+  ], count: 2, limit: 20, offset: 0 } }));
+  const page = await search.offers(TOKEN, {});
+  assert.equal(page.results[0].price_is_estimate, false);
+  assert.equal(page.results[1].price_is_estimate, true, 'no price_source means a seed estimate');
+});
+
+/* ================================================= PHASE 5 BACKEND ===== */
+
+console.log('\nPhase 5 — location, distance, deletes, server list, history');
+
+await test('location is read, saved and cleared on /profile/location', async () => {
+  installFetch((req) => {
+    if (req.method === 'GET') return { body: null };
+    if (req.method === 'DELETE') return { status: 204 };
+    return { body: { latitude: '-29.854700', longitude: '31.008400', label: req.body.label, updated_at: null } };
+  });
+  assert.equal(await profile.getLocation(TOKEN), null, 'no saved location is null, not an error');
+  const saved = await profile.setLocation(TOKEN, { latitude: -29.8547, longitude: 31.0084, label: 'Steve Biko Campus (Durban)' });
+  assert.deepEqual(lastRequest().body, { latitude: -29.8547, longitude: 31.0084, label: 'Steve Biko Campus (Durban)' });
+  assert.equal(saved.latitude, -29.8547, 'Decimal strings become numbers');
+  assert.equal(await profile.clearLocation(TOKEN), null);
+  assert.equal(lastRequest().method, 'DELETE');
+});
+
+await test('profile update sends residence / student number only when given', async () => {
+  installFetch(() => ({ body: userOut({ residence: 'berea', student_number: '22123456' }) }));
+  await profile.update(TOKEN, { name: 'A B' });
+  assert.deepEqual(Object.keys(lastRequest().body), ['name']);
+  const u = await profile.update(TOKEN, { name: 'A B', residence: 'berea', student_number: '' });
+  assert.deepEqual(lastRequest().body, { name: 'A B', residence: 'berea', student_number: '' }, "'' clears it");
+  assert.equal(u.residence, 'berea');
+});
+
+await test('distance filter and "nearest first" reach GET /search', async () => {
+  assert.equal(buildSearchParams({ maxDistance: '5' }).max_distance_km, 5);
+  assert.equal(buildSearchParams({ maxDistance: '7' }).max_distance_km, undefined, 'only offered distances');
+  assert.equal(buildSearchParams({ sort: 'distance' }).sort, 'distance');
+  const url = filtersToUrl({ ...DEFAULT_FILTERS, maxDistance: '1.5' });
+  assert.equal(filtersFromUrl(url).maxDistance, '1.5');
+  assert.deepEqual(describeFilters({ maxDistance: '3' }).map((c) => c.key), ['maxDistance']);
+  assert.equal(recommendationsCanHonour({ q: 'bread', maxDistance: '3' }), false);
+
+  installFetch(() => ({ body: { results: [searchResultItem({ distance_km: 0.53 })], count: 1, limit: 20, offset: 0 } }));
+  const page = await search.offers(TOKEN, buildSearchParams({ q: 'bread', maxDistance: '3', sort: 'distance' }));
+  assert.equal(lastRequest().query.max_distance_km, '3');
+  assert.equal(page.results[0].distance_km, 0.53);
+});
+
+await test('deleting a spend uses the server\'s budget, not a local sum', async () => {
+  installFetch(() => ({ body: { budget: budgetOut({ remaining_amount: dec(1650) }), daily_split: budgetSplitOut() } }));
+  const result = await transactions.remove(TOKEN, 7, 31);
+  assert.equal(lastRequest().method, 'DELETE');
+  assert.equal(lastRequest().path, '/budgets/7/transactions/31');
+  assert.equal(result.budget.remaining_amount, 1650);
+  assert.ok(result.daily_split);
+
+  installFetch(() => ({ status: 204 }));
+  await budgets.remove(TOKEN, 7);
+  assert.equal(lastRequest().path, '/budgets/7');
+  assert.equal(lastRequest().method, 'DELETE');
+});
+
+const listLine = (over = {}) => ({
+  offer_id: 101, product_id: 11, product_name: 'Super Maize Meal', brand: 'Ace', size: '2.5kg',
+  category: 'Groceries', is_essential: true, store_id: 3, store_name: 'Shoprite Warwick Junction',
+  store_type: 'physical', price: dec(40.49), current_price: dec(41.99), shipping_cost: dec(0),
+  total_cost: dec(41.99), availability_status: 'available', qty: 2, added_at: '2026-09-25T10:00:00+00:00',
+  ...over,
+});
+
+await test('the shopping list lives on the server and a device list is uploaded once', async () => {
+  const store = { 'uniwallet.shoppingList.v3.u1': JSON.stringify([{ offer_id: 101, qty: 2 }]) };
+  globalThis.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+  installFetch((req) => ({ body: { items: req.method === 'DELETE' && req.path === '/shopping-list' ? [] : [listLine()] } }));
+  shoppingList.setOwner(1, TOKEN);
+  const lines = await shoppingList.list();
+  const posts = captured.filter((r) => r.method === 'POST');
+  assert.equal(posts.length, 1, 'the device list is uploaded');
+  assert.deepEqual(posts[0].body, { offer_id: 101, qty: 2 });
+  assert.equal(lines[0].price, 40.49, 'price when added (Compare shows "was")');
+  assert.equal(lines[0].current_price, 41.99);
+  assert.equal(shoppingList.isLocalOnly, false);
+
+  captured = [];
+  await shoppingList.list();
+  assert.equal(captured.filter((r) => r.method === 'POST').length, 0, 'and only once');
+
+  await shoppingList.setQty(101, 0);
+  assert.deepEqual(lastRequest().body, { qty: 0 }, '0 removes the line');
+  await shoppingList.add({ offer_id: 5 }, 1);
+  assert.deepEqual(lastRequest().body, { offer_id: 5, qty: 1 });
+  await shoppingList.clear();
+  assert.equal(lastRequest().path, '/shopping-list');
+  shoppingList.setOwner(null, null);
+  delete globalThis.localStorage;
+});
+
+await test('recent searches skip blank runs, show each query once, and can be cleared', async () => {
+  installFetch((req) => (req.method === 'DELETE' ? { status: 204 } : { body: { runs: [
+    { id: 3, query_text: 'bread', created_at: '2026-09-25T10:00:00+00:00', items: [
+      { offer_id: 1, rank: 1, product_name: 'Brown Bread', store_name: 'Checkers', total_cost_snapshot: '18.99' },
+    ] },
+    { id: 2, query_text: null, created_at: null, items: [] },
+    { id: 1, query_text: 'Bread', created_at: null, items: [] },
+  ] } }));
+  const rows = await recommendations.history(TOKEN);
+  assert.equal(lastRequest().query.limit, '20');
+  assert.deepEqual(rows.map((r) => r.query), ['bread']);
+  assert.equal(rows[0].top[0].total_cost, 18.99);
+  await recommendations.clearHistory(TOKEN);
+  assert.equal(lastRequest().method, 'DELETE');
+});
+
+await test('Maintenance is a category with listings now', () => {
+  assert.equal(CATEGORIES_WITHOUT_LISTINGS.length, 0);
 });
 
 /* ==================================================== NETWORK FAULTS ===== */

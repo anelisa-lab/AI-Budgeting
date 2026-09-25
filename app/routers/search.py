@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import get_connection
 from app.dependencies import get_current_user_id
+from app.geo import DEFAULT_MAX_DISTANCE_KM, EARTH_RADIUS_KM, fetch_user_location
 from app.query_parser import parse_query, word_pattern
 from app.schemas import ParsedQueryOut, SearchResponse, SearchResultItem
 
@@ -75,6 +76,17 @@ router = APIRouter(prefix="/search", tags=["search"])
 # R30" filter hid it entirely. That was the "filter doesn't work" report.
 # Every result also carries price_source / price_verified_at, so the screen
 # can say whether a price is a confirmed one or a seed estimate.
+# Phase 5 — distance:
+#   ?max_distance_km=N    only stores within N km of the student's saved
+#                         location (PUT /profile/location). Online-only stores
+#                         have no address, so they drop out of a distance
+#                         search.
+#   ?sort=distance        nearest store first
+#   "near me" in q        the student's max_distance_km preference (or
+#                         geo.DEFAULT_MAX_DISTANCE_KM) when a location is saved
+# Every result carries distance_km (null when either end has no location).
+# Asking for a distance filter or sort without a saved location is a 400 that
+# says how to fix it, rather than an empty page.
 AVAILABILITY_VALUES = ("available", "out_of_stock", "unknown", "any")
 FULFILMENT_VALUES = ("collection", "delivery")
 CAN_COLLECT = "COALESCE(s.collection_available, s.store_type <> 'online')"
@@ -84,7 +96,26 @@ SORT_MAP = {
     "price_desc": "{cost} DESC, o.id ASC",
     "newest": "o.last_checked_at DESC NULLS LAST, o.id ASC",
     "rating_desc": "o.rating DESC NULLS LAST, {cost} ASC, o.id ASC",
+    "distance": "{distance} ASC NULLS LAST, {cost} ASC, o.id ASC",
 }
+
+
+def _distance_sql(location) -> str:
+    """Haversine distance (km) from the student to each store, in SQL.
+
+    The coordinates come from our own user_locations row as floats, so they
+    are formatted in rather than bound — the expression appears in both the
+    SELECT and the WHERE, and inlining keeps the placeholder order simple.
+    """
+    if location is None:
+        return "NULL::float"
+    lat, lon = float(location[0]), float(location[1])
+    return (
+        f"({EARTH_RADIUS_KM!r} * 2 * ASIN(SQRT("
+        f"POWER(SIN(RADIANS(s.latitude::float - {lat!r}) / 2), 2) + "
+        f"COS(RADIANS({lat!r})) * COS(RADIANS(s.latitude::float)) * "
+        f"POWER(SIN(RADIANS(s.longitude::float - {lon!r}) / 2), 2))))"
+    )
 
 
 def _clean(value: Optional[str]) -> Optional[str]:
@@ -118,6 +149,7 @@ def search_offers(
     availability: str = "available",
     essential_only: bool = False,
     fulfilment: Optional[str] = None,
+    max_distance_km: Optional[float] = Query(default=None, gt=0, le=500),
     sort: Optional[str] = None,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -177,6 +209,27 @@ def search_offers(
     if page is not None:
         offset = (page - 1) * limit
 
+    # --- where the student is (only looked up when something needs it) -----
+    location = None
+    nearby = bool(parsed and parsed.nearby_only)
+    if max_distance_km is not None or sort == "distance" or nearby:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                location = fetch_user_location(cur, user_id)
+                if nearby and max_distance_km is None and location is not None:
+                    cur.execute("SELECT max_distance_km FROM preferences WHERE user_id = %s", (user_id,))
+                    pref = cur.fetchone()
+                    max_distance_km = float(pref["max_distance_km"]) if pref and pref["max_distance_km"] else DEFAULT_MAX_DISTANCE_KM
+        finally:
+            conn.close()
+        if location is None and (max_distance_km is not None or sort == "distance"):
+            raise HTTPException(
+                status_code=400,
+                detail="Set your location in Profile to search by distance.",
+            )
+    distance = _distance_sql(location)
+
     cost = "o.price" if fulfilment == "collection" else "o.total_cost"
 
     conditions = []
@@ -223,6 +276,10 @@ def search_offers(
     elif fulfilment == "delivery":
         conditions.append(CAN_DELIVER)
         active_filters.append("stores that deliver")
+    if max_distance_km is not None:
+        conditions.append(f"s.latitude IS NOT NULL AND s.longitude IS NOT NULL AND {distance} <= %s")
+        params.append(max_distance_km)
+        active_filters.append(f"within {max_distance_km:g} km")
     if min_price is not None:
         conditions.append(f"{cost} >= %s")
         params.append(min_price)
@@ -243,7 +300,7 @@ def search_offers(
         active_filters.append("essentials only")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    order_by = SORT_MAP[sort].format(cost=cost)
+    order_by = SORT_MAP[sort].format(cost=cost, distance=distance)
 
     base_from = """
         FROM product_offers o
@@ -270,6 +327,7 @@ def search_offers(
                             o.availability_status, o.rating, o.rating_count,
                             o.last_checked_at AS last_updated, o.product_url,
                             {cost} AS effective_cost,
+                            ROUND(({distance})::numeric, 2)::float AS distance_km,
                             o.price_source, o.price_verified_at,
                             s.delivery_available, s.collection_available
                         {base_from}

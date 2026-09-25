@@ -48,8 +48,8 @@ export const NSFAS = {
  * those controls honestly instead of offering a button that cannot work.
  */
 export const BACKEND_SUPPORTS = {
-  deleteBudget: false,
-  deleteTransaction: false,
+  deleteBudget: true,       // DELETE /budgets/{id} (Phase 5)
+  deleteTransaction: true,  // DELETE /budgets/{id}/transactions/{tid} (Phase 5)
   serverDailyLimit: true, // GET /budgets/dashboard carries the split — see refresh
 };
 
@@ -117,7 +117,7 @@ export function BudgetProvider({ children }) {
 
   /** Health warnings are server-computed, so re-read them after a change. */
   const refreshHealth = useCallback(() => {
-    api.budgets.getDashboard(token, { recent: 0 })
+    api.budgets.getDashboard(token, { recent: 0, knownActive: true })
       .then((dash) => {
         if (!dash) return;
         setSplit(dash.split);
@@ -166,6 +166,30 @@ export function BudgetProvider({ children }) {
     return result;
   }, [budget, token, refreshHealth]);
 
+  /**
+   * DELETE a recorded spend. The server gives the money back (capped so
+   * undoing an overspend can't create money) and returns the budget and the
+   * recalculated split — used as-is, never a local addition.
+   */
+  const deleteTransaction = useCallback(async (transactionId) => {
+    if (!budget) return;
+    const result = await api.transactions.remove(token, budget.id, transactionId);
+    setTransactions((list) => list.filter((t) => t.id !== transactionId));
+    setBudget(result.budget);
+    if (result.daily_split) setSplit(result.daily_split);
+    refreshHealth();
+  }, [budget, token, refreshHealth]);
+
+  /** DELETE the active budget and its spends; the student starts afresh. */
+  const deleteBudget = useCallback(async () => {
+    if (!budget) return;
+    await api.budgets.remove(token, budget.id);
+    setBudget(null);
+    setTransactions([]);
+    setSplit(null);
+    setServerHealth(null);
+  }, [budget, token]);
+
   /* -------------------------------------------------------------- derived */
 
   const derived = useMemo(() => {
@@ -183,8 +207,15 @@ export function BudgetProvider({ children }) {
     const periodDays = budget
       ? Math.max(1, daysBetween(budget.cycle_start_date, budget.cycle_end_date))
       : 0;
-    const daysLeft = budget ? Math.max(0, daysUntil(budget.cycle_end_date)) : 0;
-    const daysGone = Math.max(0, periodDays - daysLeft);
+    // Counted the way the backend's Daily Budget Split counts it (today AND
+    // payout day, never below 1 — app/budget_split.py days_remaining), and
+    // taken from the split itself when it is there. The first version counted
+    // one day fewer, so the dashboard said "30 days left" beside the split's
+    // "31 days until your next payout".
+    const daysLeft = budget
+      ? (split?.days_remaining ?? Math.max(1, daysUntil(budget.cycle_end_date) + 1))
+      : 0;
+    const daysGone = Math.max(0, periodDays + 1 - daysLeft);
 
     // GET /budget-split (app/routers/budget_split.py) is the source of truth
     // once it answers; budget.daily_limit is a second, older path to the same
@@ -212,7 +243,9 @@ export function BudgetProvider({ children }) {
     else if (split?.mode === 'survival') health = 'tight';
 
     const byCategory = {};
+    let recorded = 0;
     for (const t of transactions) {
+      recorded += t.amount;
       const key = t.category || 'Other';
       byCategory[key] = Number(((byCategory[key] || 0) + t.amount).toFixed(2));
     }
@@ -235,6 +268,7 @@ export function BudgetProvider({ children }) {
       onPace: Number(onPace.toFixed(2)),
       health,
       byCategory,
+      recorded: Number(recorded.toFixed(2)),
       splitMessage: split?.message ?? null,
       survival: split?.mode === 'survival',
       overToday: split ? split.spent_today > split.daily_limit : false,
@@ -252,10 +286,12 @@ export function BudgetProvider({ children }) {
     refresh,
     saveBudget,
     addTransaction,
+    deleteTransaction,
+    deleteBudget,
     supports: BACKEND_SUPPORTS,
     ...derived,
   }), [budget, transactions, split, serverHealth, loading, loaded, error, refresh,
-       saveBudget, addTransaction, derived]);
+       saveBudget, addTransaction, deleteTransaction, deleteBudget, derived]);
 
   return <BudgetContext.Provider value={value}>{children}</BudgetContext.Provider>;
 }

@@ -283,12 +283,15 @@ export function offerFromApi(r) {
     product_name: r.product_name,
     brand: r.brand || null,
     category: r.category || null,
+    subcategory: r.subcategory || null,
     colour: r.colour || null,
     size: r.size || null,
     is_essential: Boolean(r.is_essential),
     store_id: r.store_id,
     store_name: r.store_name,
     store_type: r.store_type,            // 'online' | 'physical' | 'mixed'
+    store_latitude: numOrNull(r.store_latitude),
+    store_longitude: numOrNull(r.store_longitude),
     price,
     shipping_cost: shipping,
     // total_cost is a GENERATED column server-side (price + shipping_cost);
@@ -296,7 +299,37 @@ export function offerFromApi(r) {
     total_cost: r.total_cost == null ? price + shipping : num(r.total_cost),
     currency: r.currency || 'ZAR',
     availability_status: r.availability_status || 'unknown',
+    rating: numOrNull(r.rating),
+    rating_count: num(r.rating_count, 0),
+    last_updated: r.last_updated || null,
     product_url: r.product_url || null,
+    // Phase 4 backend. effective_cost is what ?fulfilment= made the offer
+    // cost: the shelf price when collecting, price + delivery when delivered.
+    // Without ?fulfilment= it is absent, so fall back to total_cost.
+    effective_cost: r.effective_cost == null
+      ? (r.total_cost == null ? price + shipping : num(r.total_cost))
+      : num(r.effective_cost),
+    ...priceProvenance(r),
+    delivery_available: r.delivery_available ?? null,
+    collection_available: r.collection_available ?? null,
+    // Phase 5: km from the student's saved location; null when unknown.
+    distance_km: numOrNull(r.distance_km),
+  };
+}
+
+/**
+ * Where a price came from. Every seeded price is a modelled estimate; only a
+ * price confirmed with the store (price_source 'live_api' or
+ * 'verified_manual', with a price_verified_at date) is shown as confirmed.
+ * The backend decides this — the screens only label it.
+ */
+export function priceProvenance(r) {
+  const source = r?.price_source || 'seed_estimate';
+  const verifiedAt = r?.price_verified_at || null;
+  return {
+    price_source: source,
+    price_verified_at: verifiedAt,
+    price_is_estimate: r?.price_is_estimate ?? (source === 'seed_estimate' || !verifiedAt),
   };
 }
 
@@ -339,6 +372,7 @@ export function recommendationFromApi(r) {
     distance_km: numOrNull(r.distance_km),
     rating: numOrNull(r.rating),
     rating_count: num(r.rating_count, 0),
+    last_updated: r.last_updated || null,
     score: num(r.score),
     component_scores: r.component_scores || {},
     meets_budget: Boolean(r.meets_budget),
@@ -352,6 +386,11 @@ export function recommendationFromApi(r) {
     total_cost: num(r.price) + num(cb.shipping),
     availability_status: 'available',
     product_url: r.product_url || null,
+    // How it was priced. A store that can't serve the student the way they
+    // asked is priced the only way it can be (Phase 4 true-cost rule 7).
+    fulfilment: cb.fulfilment || null,
+    fulfilment_available: cb.fulfilment_available !== false,
+    ...priceProvenance(r),
   };
 }
 
@@ -402,6 +441,87 @@ export function trueCostFromApi(t) {
     notes: Array.isArray(t.notes) ? t.notes : [],
     product_name: t.product_name || null,
     store_name: t.store_name || null,
+    requested_fulfilment: t.requested_fulfilment || null,
+    fulfilment_available: t.fulfilment_available !== false,
+  };
+}
+
+/* ------------------------------------------------------ basket comparison */
+
+function basketLineFromApi(l) {
+  return {
+    product_id: l.product_id,
+    product_name: l.product_name,
+    qty: num(l.qty, 1),
+    offer_id: l.offer_id,
+    price: num(l.price),
+    line_total: num(l.line_total),
+    is_estimate: l.is_estimate !== false,
+  };
+}
+
+/** StoreQuoteOut — the whole list as ONE order at one store. */
+export function storeQuoteFromApi(q) {
+  return {
+    store_id: q.store_id,
+    store_name: q.store_name,
+    store_type: q.store_type,
+    distance_km: numOrNull(q.distance_km),
+    fulfilment: q.fulfilment,
+    fulfilment_available: q.fulfilment_available !== false,
+    full: Boolean(q.full),
+    stocked: num(q.stocked, 0),
+    missing_count: num(q.missing_count, 0),
+    lines: Array.isArray(q.lines) ? q.lines.map(basketLineFromApi) : [],
+    missing: Array.isArray(q.missing) ? q.missing : [],
+    subtotal: num(q.subtotal),
+    delivery: num(q.delivery),
+    fees: num(q.fees),
+    travel: num(q.travel),
+    total: num(q.total),
+    estimate_count: num(q.estimate_count, 0),
+    notes: Array.isArray(q.notes) ? q.notes : [],
+  };
+}
+
+/** CompareBasketResponse — POST /compare/basket. */
+export function basketComparisonFromApi(payload) {
+  const plan = payload?.best_plan;
+  const prices = payload?.prices || {};
+  return {
+    fulfilment: payload?.fulfilment || 'collection',
+    location_known: Boolean(payload?.location_known),
+    stores: Array.isArray(payload?.stores) ? payload.stores.map(storeQuoteFromApi) : [],
+    best_single_store_id: payload?.best_single_store_id ?? null,
+    best_plan: plan ? {
+      total: num(plan.total),
+      store_count: num(plan.store_count, 0),
+      stores: Array.isArray(plan.stores) ? plan.stores.map(storeQuoteFromApi) : [],
+      saving_vs_best_single: numOrNull(plan.saving_vs_best_single),
+    } : null,
+    unavailable: Array.isArray(payload?.unavailable) ? payload.unavailable : [],
+    items: Array.isArray(payload?.items) ? payload.items.map((it) => ({
+      product_id: it.product_id,
+      product_name: it.product_name,
+      qty: num(it.qty, 1),
+      offers: Array.isArray(it.offers) ? it.offers.map((o) => ({
+        offer_id: o.offer_id,
+        store_id: o.store_id,
+        store_name: o.store_name,
+        price: num(o.price),
+        line_total: num(o.line_total),
+        in_stock: Boolean(o.in_stock),
+        is_estimate: o.is_estimate !== false,
+        price_verified_at: o.price_verified_at || null,
+        product_url: o.product_url || null,
+      })) : [],
+    })) : [],
+    prices: {
+      listings: num(prices.listings, 0),
+      estimates: num(prices.estimates, 0),
+      confirmed: num(prices.confirmed, 0),
+      all_confirmed: Boolean(prices.all_confirmed),
+    },
   };
 }
 
@@ -416,13 +536,15 @@ export function trueCostResponseFromApi(payload) {
 
 /* ------------------------------------------------------------------ user */
 
-/** UserOut { id, name, email, created_at }. */
+/** UserOut { id, name, email, residence, student_number, created_at }. */
 export function userFromApi(u) {
   if (!u) return null;
   return {
     id: u.id,
     name: u.name,
     email: u.email,
+    residence: u.residence || null,
+    student_number: u.student_number || null,
     created_at: u.created_at || null,
   };
 }
@@ -433,5 +555,51 @@ export function preferencesFromApi(p) {
     preferred_categories: Array.isArray(p?.preferred_categories) ? p.preferred_categories : [],
     preferred_stores: Array.isArray(p?.preferred_stores) ? p.preferred_stores : [],
     max_distance_km: numOrNull(p?.max_distance_km),
+  };
+}
+
+/* ---------------------------------------------------------- shopping list */
+
+/**
+ * ShoppingListLineOut — one line on the server-side list (Phase 5). `price`
+ * is what the offer cost when it was added (so Compare can say "was R9");
+ * `current_price` is today's.
+ */
+export function shoppingLineFromApi(l) {
+  return {
+    offer_id: l.offer_id,
+    product_id: l.product_id,
+    product_name: l.product_name,
+    brand: l.brand || null,
+    size: l.size || null,
+    category: l.category || null,
+    is_essential: Boolean(l.is_essential),
+    store_id: l.store_id,
+    store_name: l.store_name,
+    store_type: l.store_type,
+    price: num(l.price),
+    current_price: num(l.current_price),
+    shipping_cost: num(l.shipping_cost),
+    total_cost: num(l.total_cost),
+    availability_status: l.availability_status || 'unknown',
+    qty: num(l.qty, 1),
+    added_at: l.added_at || null,
+  };
+}
+
+export function shoppingListFromApi(payload) {
+  return Array.isArray(payload?.items) ? payload.items.map(shoppingLineFromApi) : [];
+}
+
+/* --------------------------------------------------------------- location */
+
+/** LocationOut, or null when the student hasn't set one. */
+export function locationFromApi(l) {
+  if (!l || l.latitude == null || l.longitude == null) return null;
+  return {
+    latitude: num(l.latitude),
+    longitude: num(l.longitude),
+    label: l.label || 'My location',
+    updated_at: l.updated_at || null,
   };
 }

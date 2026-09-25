@@ -13,12 +13,22 @@
  * being tried, so the fix is obvious.
  */
 
-import { useEffect, useState } from 'react';
-import { Alert } from '../ui/index.js';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Button } from '../ui/index.js';
 import { api, API_BASE_URL } from '../../api/client.js';
 
-export default function BackendStatus() {
+/** true in `npm run dev`, false in a production build. */
+const IS_DEV = Boolean(import.meta.env?.DEV);
+
+export default function BackendStatus({ compact = false }) {
   const [state, setState] = useState('checking'); // checking | up | down
+
+  const check = useCallback(() => {
+    setState('checking');
+    return api.system.health()
+      .then(() => setState('up'))
+      .catch(() => setState('down'));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,11 +41,24 @@ export default function BackendStatus() {
   if (state !== 'down') return null;
 
   return (
-    <div style={{ padding: 'var(--s-3) var(--s-4) 0' }}>
-      <Alert tone="danger" title={`The backend is not responding at ${API_BASE_URL}`}>
-        Start it with <code>uvicorn app.main:app --reload --port 4000</code>, or set{' '}
-        <code>VITE_API_BASE_URL</code> in <code>.env.local</code> if it is running
-        somewhere else. Nothing on the screens below will load until it answers.
+    <div
+      style={compact
+        ? { marginBottom: 'var(--s-5)' }
+        : { padding: 'var(--s-3) var(--gutter) 0', maxWidth: 'var(--page-max)', margin: '0 auto' }}
+    >
+      <Alert tone="danger" title="UniWallet can't reach its server">
+        Your budget, search and prices will not load until it is back. Check your
+        internet connection, then try again.
+        {IS_DEV && (
+          <span style={{ display: 'block', marginTop: 'var(--s-2)', fontSize: 'var(--t-xs)' }}>
+            Developer note: nothing is answering at <code>{API_BASE_URL}</code>. Start the
+            backend with <code>uvicorn app.main:app --reload --port 4000</code> or set{' '}
+            <code>VITE_API_BASE_URL</code> in <code>.env.local</code>.
+          </span>
+        )}
+        <div style={{ marginTop: 'var(--s-3)' }}>
+          <Button size="sm" onClick={check}>Try again</Button>
+        </div>
       </Alert>
     </div>
   );

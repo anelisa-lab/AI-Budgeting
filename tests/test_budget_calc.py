@@ -208,3 +208,45 @@ def test_health_exactly_at_daily_limit_is_not_a_warning():
 def test_health_rejects_negative_remaining():
     with pytest.raises(ValueError):
         calculate_budget_health(Decimal("1000"), Decimal("-1"), Decimal("0"))
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: deleting a recorded spend
+# ---------------------------------------------------------------------------
+
+from app.budget_calc import calculate_transaction_removal  # noqa: E402
+
+
+def test_deleting_a_spend_gives_the_money_back():
+    # R1000 spendable, R300 spent (R100 of it the one being deleted) -> R700 left
+    assert calculate_transaction_removal(
+        Decimal("700"), Decimal("100"), Decimal("1000"), Decimal("200")
+    ) == Decimal("800")
+
+
+def test_deleting_part_of_an_overspend_does_not_create_money():
+    # R1000 spendable, R1100 spent -> remaining floored at 0. Deleting R50
+    # still leaves R1050 spent, so there is still nothing left.
+    assert calculate_transaction_removal(
+        Decimal("0"), Decimal("50"), Decimal("1000"), Decimal("1050")
+    ) == Decimal("0")
+
+
+def test_deleting_the_overspending_purchase_returns_only_what_was_really_left():
+    # R1000 spendable, R900 spent, then a R300 purchase floors remaining at 0.
+    # Deleting the R300 puts back R100 — what was left before it — not R300.
+    assert calculate_transaction_removal(
+        Decimal("0"), Decimal("300"), Decimal("1000"), Decimal("900")
+    ) == Decimal("100")
+
+
+def test_deleting_a_spend_never_lowers_remaining():
+    # A raised total already lifted remaining above the ledger figure.
+    assert calculate_transaction_removal(
+        Decimal("50"), Decimal("10"), Decimal("1050"), Decimal("1090")
+    ) == Decimal("50")
+
+
+def test_removal_rejects_negative_amounts():
+    with pytest.raises(ValueError):
+        calculate_transaction_removal(Decimal("10"), Decimal("-1"), Decimal("100"), Decimal("0"))

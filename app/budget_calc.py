@@ -48,6 +48,31 @@ def calculate_transaction_impact(
     )
 
 
+
+def calculate_transaction_removal(
+    remaining_amount: Decimal,
+    transaction_amount: Decimal,
+    spendable_amount: Decimal,
+    spent_after_removal: Decimal,
+) -> Decimal:
+    """
+    remaining_amount after a recorded spend is deleted (Phase 5).
+
+    Adding the amount straight back is wrong after an overspend: remaining is
+    floored at 0 when a purchase goes over, so the floor already "absorbed"
+    part of it. Deleting a R100 spend from a budget that is R100 overspent
+    must leave R0, not R100.
+
+    So the refund is capped by the ledger — what is left of the spendable
+    amount (total - savings) once every OTHER spend is counted — and a
+    deletion never LOWERS remaining (a raised total may already have lifted
+    it above the ledger figure; deleting a spend must not take that away).
+    """
+    if transaction_amount < 0 or remaining_amount < 0:
+        raise ValueError("amounts cannot be negative")
+    ledger = max(spendable_amount - spent_after_removal, Decimal("0"))
+    return max(remaining_amount, min(remaining_amount + transaction_amount, ledger))
+
 def calculate_budget_update(
     current_total: Decimal,
     current_remaining: Decimal,

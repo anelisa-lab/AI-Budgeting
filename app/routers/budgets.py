@@ -1,12 +1,13 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, Response, status
 import psycopg2.errors
 
 from app.budget_calc import (
     calculate_budget_health,
     calculate_budget_update,
     calculate_transaction_impact,
+    calculate_transaction_removal,
 )
 from app.budget_split import build_split
 from app.database import get_connection
@@ -20,6 +21,7 @@ from app.schemas import (
     BudgetOut,
     BudgetWithSplitOut,
     TransactionCreateRequest,
+    TransactionDeleteResult,
     TransactionOut,
     TransactionResult,
 )
@@ -337,3 +339,73 @@ def list_transactions(budget_id: int, user_id: int = Depends(get_current_user_id
         return [TransactionOut(**t) for t in transactions]
     finally:
         conn.close()
+
+
+# -------------------------
+# Deleting (Phase 5)
+# -------------------------
+# A student who logs R45 instead of R4.50, or logs the same bread twice, had no
+# way to undo it — and a wrong spend skews the Daily Budget Split for the rest
+# of the cycle. Budgets could not be removed either.
+
+@router.delete("/{budget_id}/transactions/{transaction_id}", response_model=TransactionDeleteResult)
+def delete_transaction(budget_id: int, transaction_id: int, user_id: int = Depends(get_current_user_id)):
+    """
+    Remove a recorded spend and give the money back to the budget — capped by
+    what the other spends leave (see budget_calc.calculate_transaction_removal),
+    so undoing an overspend can't create money. Returns the budget and the
+    recalculated Daily Budget Split, like recording a spend does.
+    """
+    conn = get_connection()
+    try:
+        with conn, conn.cursor() as cur:
+            budget = _get_owned_budget(cur, budget_id, user_id)
+            cur.execute(
+                """DELETE FROM transactions WHERE id = %s AND budget_id = %s AND user_id = %s
+                   RETURNING amount""",
+                (transaction_id, budget_id, user_id),
+            )
+            deleted = cur.fetchone()
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Transaction not found")
+            cur.execute(
+                """SELECT COALESCE(SUM(amount), 0) AS spent FROM transactions
+                   WHERE budget_id = %s AND transaction_status <> 'voided'""",
+                (budget_id,),
+            )
+            spent_after = cur.fetchone()["spent"]
+            new_remaining = calculate_transaction_removal(
+                remaining_amount=budget["remaining_amount"],
+                transaction_amount=deleted["amount"],
+                spendable_amount=budget["total_amount"] - budget["savings_amount"],
+                spent_after_removal=spent_after,
+            )
+            cur.execute(
+                "UPDATE budgets SET remaining_amount = %s, updated_at = NOW() WHERE id = %s RETURNING *",
+                (new_remaining, budget_id),
+            )
+            updated = cur.fetchone()
+            split = _fresh_split(cur, updated) if updated["status"] == "active" else None
+        return TransactionDeleteResult(
+            budget=BudgetOut(**updated),
+            daily_split=split_to_out(split) if split else None,
+        )
+    finally:
+        conn.close()
+
+
+@router.delete("/{budget_id}", status_code=204)
+def delete_budget(budget_id: int, user_id: int = Depends(get_current_user_id)):
+    """
+    Delete a budget and every spend recorded against it. For a budget set up
+    by mistake; the student can then create a fresh one.
+    """
+    conn = get_connection()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM budgets WHERE id = %s AND user_id = %s RETURNING id", (budget_id, user_id))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Budget not found")
+    finally:
+        conn.close()
+    return Response(status_code=204)

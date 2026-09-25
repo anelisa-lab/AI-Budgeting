@@ -33,6 +33,7 @@ import Search from './screens/Search.jsx';
 import Recommendations from './screens/Recommendations.jsx';
 import Compare from './screens/Compare.jsx';
 import Profile from './screens/Profile.jsx';
+import Settings from './screens/Settings.jsx';
 import NotFound from './screens/NotFound.jsx';
 
 import { useAuth } from './context/AuthContext.jsx';
@@ -47,6 +48,9 @@ import { useAuth } from './context/AuthContext.jsx';
 function PublicOnly({ children, to = '/dashboard' }) {
   const { isAuthenticated, status } = useAuth();
   if (status === 'loading') return null;
+  // A stored session the server could not confirm: send the student to the
+  // app, where ProtectedRoute explains the outage and offers a retry.
+  if (status === 'offline') return <Navigate to={to} replace />;
   return isAuthenticated ? <Navigate to={to} replace /> : children;
 }
 
@@ -84,6 +88,10 @@ export default function App() {
       <Route
         path="/profile"
         element={<ProtectedRoute><AppShell><Profile /></AppShell></ProtectedRoute>}
+      />
+      <Route
+        path="/settings"
+        element={<ProtectedRoute><AppShell><Settings /></AppShell></ProtectedRoute>}
       />
 
       <Route path="*" element={<AppShell><NotFound /></AppShell>} />

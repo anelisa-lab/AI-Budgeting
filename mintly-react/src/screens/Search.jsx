@@ -1,39 +1,36 @@
 /**
  * Search + results screen.
  *
- * WHAT CHANGED
- * ------------
- * This screen used to filter a bundled 257-row array in the browser. It now
- * calls GET /search on the backend, which does the filtering, sorting and
- * paging in SQL against product_offers joined to products and stores.
+ * Calls GET /search on the backend, which filters, sorts and pages in SQL
+ * against product_offers joined to products and stores. Every filter maps to
+ * a query parameter search.py declares — the mapping is `buildSearchParams`
+ * in lib/search.js, in one place.
  *
- * Consequences worth knowing before you edit this file:
+ * PHASE 4 — why filtered searches used to come back empty, and what changed
+ * ------------------------------------------------------------------------
+ *  - Category, brand, colour and size are matched by the backend with ILIKE
+ *    and NO wildcards, so free text had to match the catalogue exactly:
+ *    "Grocer", "2 kg" or "PnP" returned nothing. Category and store are now
+ *    real choices (the store list comes from the live catalogue), and brand,
+ *    colour and size suggest — and snap to — the catalogue's own spelling.
+ *  - A minimum above the maximum used to reach the backend as a 400 and blank
+ *    the page with "Could not search". It is now caught on the field.
+ *  - "Total cost: low to high" used to be silently re-ranked. Ranking is now
+ *    its own sort, "Best value for me"; every other sort is the backend's
+ *    order untouched.
+ *  - Results page through the WHOLE result set (offset paging) instead of
+ *    stopping at 100.
+ *  - "Recommended for you" is hidden while a filter it cannot honour is on
+ *    (store, brand, …) instead of showing picks that contradict the results.
+ *  - An empty result lists the active filters as one-click removable chips.
  *
- *  - Every filter here maps to a query parameter search.py actually declares.
- *    The mapping is in lib/search.js `buildSearchParams`, in one place.
- *  - The filters the backend CANNOT do (distance from campus, store rating)
- *    are shown as unavailable rather than quietly dropped, so the gap is
- *    visible. They are specified as backend work in docs/BACKEND_INTEGRATION.md.
- *  - Category / colour / size are free text, because the backend ILIKEs them
- *    and there is no facet endpoint to populate a dropdown from. The datalist
- *    suggestions are built from the results currently on screen and are
- *    labelled as such — they describe this page, not the catalogue.
- *  - GET /search requires a Bearer token, so this screen is correctly behind
- *    <ProtectedRoute>.
- *
- * Filters still live in the URL, so a search can be shared and survives a
- * refresh.
- *
- * PHASE 3: "Recommended for you" above the results is Member 5's recommender
- * (POST /recommendations). It ranks on TRUE cost against today's allowance,
- * explains every pick, and in survival mode returns essentials only. It runs
- * whenever there is a search word or a category to recommend for.
+ * Filters live in the URL, so a search can be shared and survives a refresh.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, Select, Skeleton,
+  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, PriceSourceBadge, Select, Skeleton,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
@@ -42,10 +39,16 @@ import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import { money, plural } from '../lib/format.js';
 import {
-  AVAILABILITY_OPTIONS, PAGE_SIZE, PENDING_BACKEND_FILTERS,
-  SORT_OPTIONS, activeFilterCount, buildSearchParams, filtersFromUrl, filtersToUrl,
-  rank, suggestionsFrom,
+  CATALOGUE_CATEGORIES, canonicalCategory, categoryIcon, isWithoutListings,
+} from '../lib/categories.js';
+import {
+  AVAILABILITY_OPTIONS, DISTANCE_OPTIONS, FULFILMENT_OPTIONS, PAGE_SIZE, SORT_OPTIONS,
+  activeFilterCount, buildSearchParams, canonicalise, describeFilters, filtersFromUrl,
+  filtersToUrl, isRankedSort, rank, recommendationsCanHonour, validateFilters,
 } from '../lib/search.js';
+
+const TEXT_KEYS = ['q', 'brand', 'colour', 'size', 'minPrice', 'maxPrice'];
+const draftFrom = (f) => Object.fromEntries(TEXT_KEYS.map((k) => [k, f[k]]));
 
 export default function Search() {
   const { token, preferences } = useAuth();
@@ -57,74 +60,135 @@ export default function Search() {
 
   const filters = useMemo(() => filtersFromUrl(params), [params]);
 
-  const [offers, setOffers] = useState([]);
+  // The saved location (Profile → "Where you are") decides whether distance
+  // filtering and "Nearest store first" can be offered (Phase 5).
+  const [hasLocation, setHasLocation] = useState(null); // null = not known yet
+  useEffect(() => {
+    let cancelled = false;
+    api.profile.getLocation(token)
+      .then((l) => { if (!cancelled) setHasLocation(Boolean(l)); })
+      .catch(() => { if (!cancelled) setHasLocation(false); });
+    return () => { cancelled = true; };
+  }, [token]);
+  const filterErrors = useMemo(() => validateFilters(filters), [filters]);
+  const filtersValid = Object.keys(filterErrors).length === 0;
+
+  /** Pages as the backend returned them; ranking is applied per page at render. */
+  const [pages, setPages] = useState([]);
   const [count, setCount] = useState(0);
-  const [limit, setLimit] = useState(PAGE_SIZE);
+  const [nextOffset, setNextOffset] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
-  /** The backend's own wording when nothing matched. */
-  const [emptyMessage, setEmptyMessage] = useState(null);
+  const [moreError, setMoreError] = useState(null);
 
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState(null);
 
-  // Local draft for the free-text boxes so typing does not fire a request per
+  // What the catalogue really contains, for the store list and suggestions.
+  const [facets, setFacets] = useState(null);
+  const [facetsError, setFacetsError] = useState(false);
+
+  // Filters are folded away on phones so the results are not pushed below a
+  // screen-and-a-half of form. Desktop always shows them (CSS).
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // Local draft for the typed boxes so typing does not fire a request per
   // keystroke; they commit to the URL on submit or blur.
-  const [draft, setDraft] = useState({
-    q: filters.q, category: filters.category, brand: filters.brand,
-    colour: filters.colour, size: filters.size, store: filters.store,
-    maxPrice: filters.maxPrice,
-  });
+  const [draft, setDraft] = useState(() => draftFrom(filters));
+  useEffect(() => { setDraft(draftFrom(filters)); }, [filters]);
+
   useEffect(() => {
-    setDraft({
-      q: filters.q, category: filters.category, brand: filters.brand,
-      colour: filters.colour, size: filters.size, store: filters.store,
-      maxPrice: filters.maxPrice,
-    });
-  }, [filters]);
+    if (!token) return undefined;
+    let cancelled = false;
+    api.search.catalogueFacets(token)
+      .then((f) => { if (!cancelled) { setFacets(f); setFacetsError(false); } })
+      .catch(() => { if (!cancelled) setFacetsError(true); });
+    return () => { cancelled = true; };
+  }, [token]);
 
   /* ------------------------------------------------------------ fetching */
 
   // Guards against an older response landing after a newer one and
   // overwriting it — the classic search race.
   const requestId = useRef(0);
+  const ranked = isRankedSort(filters.sort);
+  const ceiling = Number(filters.maxPrice) || remaining || dailyAllowance || 0;
 
-  const runSearch = useCallback(async (activeFilters, pageLimit) => {
+  /** Rank one page on its own, so loading more never reshuffles what is on screen. */
+  const orderPage = useCallback(
+    (page) => (ranked ? rank(page, { budget: ceiling, preferences }) : page),
+    [ranked, ceiling, preferences],
+  );
+
+  const runSearch = useCallback(async () => {
     if (!token) return;
     const id = ++requestId.current;
+    setMoreError(null);
+    if (!filtersValid) {
+      // Nothing to ask the backend: the field error says what to fix.
+      setPages([]); setCount(0); setNextOffset(null); setError(null); setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const query = buildSearchParams(activeFilters, { limit: pageLimit, offset: 0 });
-      const page = await api.search.offers(token, query);
+      const page = await api.search.offers(token, buildSearchParams(filters, { limit: PAGE_SIZE, offset: 0 }));
       if (id !== requestId.current) return; // a newer search has started
-      setOffers(page.results);
+      setPages([page.results]);
       setCount(page.count);
-      setEmptyMessage(page.message);
+      setNextOffset(page.has_more ? page.offset + page.results.length : null);
     } catch (err) {
       if (id !== requestId.current) return;
-      setOffers([]);
+      setPages([]);
       setCount(0);
-      setEmptyMessage(null);
+      setNextOffset(null);
       setError(err.message || 'Could not search right now.');
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [token]);
+  }, [token, filters, filtersValid]);
 
-  useEffect(() => { setLimit(PAGE_SIZE); }, [params]);
-  useEffect(() => { runSearch(filters, limit); }, [runSearch, filters, limit]);
+  useEffect(() => { runSearch(); }, [runSearch]);
+
+  // Each page is ranked on its own, so loading more never reshuffles what is
+  // already on screen.
+  const offers = useMemo(() => pages.flatMap(orderPage), [pages, orderPage]);
+
+  async function loadMore() {
+    if (nextOffset == null || loadingMore) return;
+    const id = requestId.current;
+    setLoadingMore(true);
+    setMoreError(null);
+    try {
+      const page = await api.search.offers(token, buildSearchParams(filters, { limit: PAGE_SIZE, offset: nextOffset }));
+      if (id !== requestId.current) return;
+      setPages((list) => {
+        const seen = new Set(list.flat().map((o) => o.offer_id));
+        return [...list, page.results.filter((o) => !seen.has(o.offer_id))];
+      });
+      setCount(page.count);
+      setNextOffset(page.has_more ? page.offset + page.results.length : null);
+    } catch (err) {
+      if (id === requestId.current) setMoreError(err.message || 'Could not load more results.');
+    } finally {
+      if (id === requestId.current) setLoadingMore(false);
+    }
+  }
 
   /* ----------------------------------------------------- recommendations */
 
+  const recsAllowed = recommendationsCanHonour(filters);
   const recsId = useRef(0);
   useEffect(() => {
     const query = filters.q.trim();
     const category = filters.category.trim();
-    if (!token || (!query && !category)) {
+    if (!token || (!query && !category) || !recsAllowed || !filtersValid) {
+      recsId.current += 1;
       setRecs(null);
       setRecsError(null);
+      setRecsLoading(false);
       return;
     }
     const id = ++recsId.current;
@@ -135,6 +199,9 @@ export default function Search() {
         query: query || undefined,
         category: category || undefined,
         max_price: Number(filters.maxPrice) || undefined,
+        // Priced the same way as the results under them.
+        fulfilment: filters.fulfilment,
+        essential_only: filters.essentialOnly || undefined,
         limit: 3,
       })
       .then((result) => { if (id === recsId.current) setRecs(result); })
@@ -144,51 +211,61 @@ export default function Search() {
         setRecsError(err.message || 'Recommendations are unavailable right now.');
       })
       .finally(() => { if (id === recsId.current) setRecsLoading(false); });
-  }, [token, filters.q, filters.category, filters.maxPrice]);
+  }, [token, filters.q, filters.category, filters.maxPrice, filters.fulfilment,
+    filters.essentialOnly, recsAllowed, filtersValid]);
 
   /* ------------------------------------------------------------- filters */
 
   function commit(patch) {
-    setParams(filtersToUrl({ ...filters, ...patch }), { replace: true });
+    // Anything typed but not yet applied goes along too, so changing the
+    // category never throws away a search word still sitting in the box.
+    const next = { ...filters, ...draft, ...patch };
+    // Snap typed values to the catalogue's own spelling (see canonicalise).
+    if (facets) {
+      next.brand = canonicalise(next.brand, facets.brands);
+      next.colour = canonicalise(next.colour, facets.colours);
+      next.size = canonicalise(next.size, facets.sizes);
+      next.store = canonicalise(next.store, facets.stores);
+    }
+    next.category = canonicalCategory(next.category);
+    setParams(filtersToUrl(next), { replace: true });
   }
 
   function clearAll() {
     setParams(new URLSearchParams(), { replace: true });
-    setDraft({ q: '', category: '', brand: '', colour: '', size: '', store: '', maxPrice: '' });
+    setDraft(draftFrom(filtersFromUrl(new URLSearchParams())));
   }
 
   const activeCount = activeFilterCount(filters);
+  const chips = describeFilters(filters);
 
-  /* ------------------------------------------------------------- ranking */
+  const categoryOptions = useMemo(() => {
+    const known = CATALOGUE_CATEGORIES.map((c) => ({ value: c.value, label: c.label }));
+    const extra = (facets?.categories || [])
+      .filter((c) => !known.some((k) => k.value.toLowerCase() === c.toLowerCase()))
+      .map((c) => ({ value: c, label: c }));
+    const current = filters.category && ![...known, ...extra].some((o) => o.value === filters.category)
+      ? [{ value: filters.category, label: filters.category }] : [];
+    return [{ value: '', label: 'Any category' }, ...known, ...extra, ...current];
+  }, [facets, filters.category]);
 
-  /**
-   * The backend returns the page in its own sort order. `rank` re-orders that
-   * page by value, budget fit, delivery cost, availability and the student's
-   * stored preferences — it never re-filters, so the count above stays true.
-   *
-   * Re-ranking only makes sense when the student has not asked for a specific
-   * order; if they picked "high to low", respect it.
-   */
-  const shouldRank = filters.sort === 'price_asc';
-  const ceiling = Number(filters.maxPrice) || remaining || dailyAllowance || 0;
-  const results = useMemo(
-    () => (shouldRank ? rank(offers, { budget: ceiling, preferences }) : offers),
-    [shouldRank, offers, ceiling, preferences],
-  );
-
-  const categorySuggestions = useMemo(() => suggestionsFrom(offers, 'category'), [offers]);
-  const colourSuggestions = useMemo(() => suggestionsFrom(offers, 'colour'), [offers]);
-  const sizeSuggestions = useMemo(() => suggestionsFrom(offers, 'size'), [offers]);
-  const storeSuggestions = useMemo(() => suggestionsFrom(offers, 'store_name'), [offers]);
+  const storeOptions = useMemo(() => {
+    const list = facets?.stores || [];
+    const current = filters.store && !list.includes(filters.store)
+      ? [{ value: filters.store, label: filters.store }] : [];
+    return [{ value: '', label: 'Any store' }, ...list.map((s) => ({ value: s, label: s })), ...current];
+  }, [facets, filters.store]);
 
   async function handleAdd(offer) {
     try {
       await addOffer(offer, 1);
-      toast.success(`${offer.product_name} added to your list.`);
+      toast.success(`${offer.product_name} (${offer.store_name}) added to your list.`);
     } catch (err) {
       toast.error(err.message || 'Could not add that item.');
     }
   }
+
+  const noListingsCategory = isWithoutListings(filters.category);
 
   return (
     <div className="stack stack--loose">
@@ -198,23 +275,52 @@ export default function Search() {
           What are you looking for?
         </h1>
         <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)', maxWidth: '58ch' }}>
-          Type what you need and set your ceiling. Every match is priced on total cost —
-          the item plus what it costs to get it to you.
+          Search every listed store at once. Tell UniWallet how you&apos;ll get it: collecting
+          shows the shelf price at stores you can walk into, delivered adds each store&apos;s
+          delivery fee, so the cheapest result really is cheapest for you.
         </p>
       </div>
+
+      {/* ------------------------------------------------ keyword bar */}
+      <form
+        className="search-bar"
+        role="search"
+        onSubmit={(e) => { e.preventDefault(); commit({ q: draft.q }); }}
+      >
+        <label className="sr-only" htmlFor="q">Search for a product</label>
+        <Input
+          id="q"
+          type="search"
+          placeholder="rice, soap, calculator, bread under R20…"
+          value={draft.q}
+          onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))}
+          autoComplete="off"
+        />
+        <Button type="submit">Search</Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="search-bar__filters"
+          aria-expanded={filtersOpen}
+          aria-controls="search-filters"
+          onClick={() => setFiltersOpen((o) => !o)}
+        >
+          Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+        </Button>
+      </form>
 
       {error && (
         <Alert tone="danger" title="Could not search">
           {error}
           <div style={{ marginTop: 'var(--s-3)' }}>
-            <Button size="sm" onClick={() => runSearch(filters, limit)}>Try again</Button>
+            <Button size="sm" onClick={runSearch}>Try again</Button>
           </div>
         </Alert>
       )}
 
       <div className="search-grid">
         {/* ------------------------------------------------ filter rail */}
-        <div className="filters">
+        <div className={filtersOpen ? 'filters filters--open' : 'filters'} id="search-filters">
           <Card className="stack">
             <div className="row row--between">
               <h2 style={{ fontSize: 'var(--t-md)', fontFamily: 'var(--font-sans)', fontWeight: 'var(--fw-extra)' }}>
@@ -222,76 +328,136 @@ export default function Search() {
               </h2>
               {activeCount > 0 && (
                 <Button variant="quiet" size="sm" onClick={clearAll}>
-                  Clear ({activeCount})
+                  Clear all ({activeCount})
                 </Button>
               )}
             </div>
 
-            <form onSubmit={(e) => { e.preventDefault(); commit(draft); }} className="stack">
-              <Field id="q" label="Search" hint="Matched against product name, brand and category.">
-                {({ id, describedBy }) => (
-                  <Input
+            <form
+              onSubmit={(e) => { e.preventDefault(); commit(draft); setFiltersOpen(false); }}
+              className="stack"
+              noValidate
+            >
+              <Field id="fulfilment" label="Getting it">
+                {({ id }) => (
+                  <Select
                     id={id}
-                    type="search"
-                    placeholder="rice, soap, calculator…"
-                    value={draft.q}
-                    describedBy={describedBy}
-                    onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))}
-                    onBlur={() => commit({ q: draft.q })}
+                    options={FULFILMENT_OPTIONS}
+                    value={filters.fulfilment}
+                    onChange={(e) => commit({ fulfilment: e.target.value })}
                   />
                 )}
               </Field>
 
               <Field
-                id="max"
-                label="My budget for this"
-                hint={budget
-                  ? `You have ${money(remaining)} left this period.`
-                  : 'Set a budget to get better suggestions.'}
+                id="maxDistance"
+                label="Distance"
+                hint={hasLocation === false
+                  ? <>Add where you are in <Link to="/profile">Profile</Link> to use this.</>
+                  : 'From your saved location. Online-only stores have no distance.'}
               >
                 {({ id, describedBy }) => (
-                  <Input
+                  <Select
                     id={id}
-                    inputMode="decimal"
-                    prefix="R"
-                    placeholder="No limit"
-                    value={draft.maxPrice}
                     describedBy={describedBy}
-                    onChange={(e) => setDraft((d) => ({ ...d, maxPrice: e.target.value.replace(/[^\d.]/g, '') }))}
-                    onBlur={() => commit({ maxPrice: draft.maxPrice })}
+                    options={DISTANCE_OPTIONS}
+                    value={filters.maxDistance}
+                    disabled={hasLocation === false && !filters.maxDistance}
+                    onChange={(e) => commit({ maxDistance: e.target.value })}
                   />
                 )}
               </Field>
 
-              <TextFilter
-                id="category" label="Category" value={draft.category}
-                suggestions={categorySuggestions}
-                onChange={(value) => setDraft((d) => ({ ...d, category: value }))}
-                onCommit={(value) => commit({ category: value })}
-              />
+              <Field id="category" label="Category">
+                {({ id }) => (
+                  <Select
+                    id={id}
+                    options={categoryOptions}
+                    value={filters.category}
+                    onChange={(e) => commit({ category: e.target.value })}
+                  />
+                )}
+              </Field>
+
+              <Field
+                id="store"
+                label="Store"
+                hint={facetsError ? 'Could not load the store list — type a store name instead.' : undefined}
+              >
+                {({ id, describedBy }) => (facetsError ? (
+                  <Input
+                    id={id}
+                    placeholder="Any store"
+                    defaultValue={filters.store}
+                    key={filters.store}
+                    describedBy={describedBy}
+                    onBlur={(e) => commit({ store: e.target.value })}
+                  />
+                ) : (
+                  <Select
+                    id={id}
+                    options={storeOptions}
+                    value={filters.store}
+                    disabled={!facets}
+                    onChange={(e) => commit({ store: e.target.value })}
+                  />
+                ))}
+              </Field>
+
+              <div className="filter-pair">
+                <Field id="min" label="Min price" error={filterErrors.minPrice}>
+                  {({ id, describedBy, invalid }) => (
+                    <Input
+                      id={id}
+                      inputMode="decimal"
+                      prefix="R"
+                      placeholder="0"
+                      value={draft.minPrice}
+                      invalid={invalid}
+                      describedBy={describedBy}
+                      onChange={(e) => setDraft((d) => ({ ...d, minPrice: e.target.value.replace(/[^\d.]/g, '') }))}
+                      onBlur={() => commit({ minPrice: draft.minPrice })}
+                    />
+                  )}
+                </Field>
+                <Field id="max" label="Max price" error={filterErrors.maxPrice}>
+                  {({ id, describedBy, invalid }) => (
+                    <Input
+                      id={id}
+                      inputMode="decimal"
+                      prefix="R"
+                      placeholder="No limit"
+                      value={draft.maxPrice}
+                      invalid={invalid}
+                      describedBy={describedBy}
+                      onChange={(e) => setDraft((d) => ({ ...d, maxPrice: e.target.value.replace(/[^\d.]/g, '') }))}
+                      onBlur={() => commit({ maxPrice: draft.maxPrice })}
+                    />
+                  )}
+                </Field>
+              </div>
+              <p className="field__hint" style={{ marginTop: 'calc(var(--s-3) * -1)' }}>
+                {filters.fulfilment === 'delivery' ? 'Price includes delivery.' : 'Shelf price — you are collecting.'}
+                {budget ? ` You have ${money(remaining)} left this period.` : ''}
+              </p>
+
               <TextFilter
                 id="brand" label="Brand" value={draft.brand}
-                suggestions={suggestionsFrom(offers, 'brand')}
+                suggestions={facets?.brands || []}
                 onChange={(value) => setDraft((d) => ({ ...d, brand: value }))}
                 onCommit={(value) => commit({ brand: value })}
               />
               <TextFilter
                 id="colour" label="Colour" value={draft.colour}
-                suggestions={colourSuggestions}
+                suggestions={facets?.colours || []}
                 onChange={(value) => setDraft((d) => ({ ...d, colour: value }))}
                 onCommit={(value) => commit({ colour: value })}
               />
               <TextFilter
                 id="size" label="Size / pack" value={draft.size}
-                suggestions={sizeSuggestions}
+                suggestions={facets?.sizes || []}
                 onChange={(value) => setDraft((d) => ({ ...d, size: value }))}
                 onCommit={(value) => commit({ size: value })}
-              />
-              <TextFilter
-                id="store" label="Store" value={draft.store}
-                suggestions={storeSuggestions}
-                onChange={(value) => setDraft((d) => ({ ...d, store: value }))}
-                onCommit={(value) => commit({ store: value })}
               />
 
               <Field id="availability" label="Availability">
@@ -326,117 +492,140 @@ export default function Search() {
                 </label>
               </div>
 
-              {/* Submit exists for keyboard users; blur commits for the rest. */}
+              {/* Typed boxes commit on blur; this applies them all at once
+                  (and is what Enter does from any box). */}
               <Button type="submit" variant="secondary" size="sm" block>
                 Apply filters
               </Button>
             </form>
-          </Card>
 
-          {/* Honest about what the API cannot do yet. */}
-          <Card className="stack" style={{ marginTop: 'var(--s-4)' }}>
-            <h2 style={{ fontSize: 'var(--t-sm)', fontFamily: 'var(--font-sans)', fontWeight: 'var(--fw-extra)' }}>
-              Not available yet
-            </h2>
-            {PENDING_BACKEND_FILTERS.map((f) => (
-              <div key={f.id}>
-                <p style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)', color: 'var(--c-muted)' }}>
-                  {f.label}
-                </p>
-                <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted-light)', marginTop: 'var(--s-1)' }}>
-                  {f.reason}
-                </p>
-              </div>
-            ))}
           </Card>
         </div>
 
         {/* --------------------------------------------------- results */}
         <div>
-          <Recommendations
-            recs={recs}
-            loading={recsLoading}
-            error={recsError}
-            qtyOf={qtyOf}
-            onAdd={handleAdd}
-            query={filters.q}
-          />
+          {recsAllowed ? (
+            <Recommendations
+              recs={recs}
+              loading={recsLoading}
+              error={recsError}
+              qtyOf={qtyOf}
+              onAdd={handleAdd}
+              query={filters.q}
+              fulfilment={filters.fulfilment}
+            />
+          ) : (filters.q || filters.category) && (
+            <p className="field__hint" style={{ marginBottom: 'var(--s-4)' }}>
+              Personal picks are hidden while store, brand or other detailed filters are on.{' '}
+              <Link to="/recommendations" state={{ query: filters.q }}>See picks for “{filters.q || filters.category}” →</Link>
+            </p>
+          )}
 
           <div className="results-head">
-            <p className="results-count">
+            <p className="results-count" aria-live="polite">
               {loading
                 ? 'Searching…'
-                : `${plural(count, 'match', 'matches')}${filters.q ? ` for “${filters.q}”` : ''}`}
+                : !filtersValid
+                  ? 'Fix the highlighted filter to search.'
+                  : `${plural(count, 'match', 'matches')}${filters.q ? ` for “${filters.q}”` : ''}`}
             </p>
             <div style={{ minWidth: 220 }}>
               <label className="sr-only" htmlFor="sort">Sort results</label>
               <Select
                 id="sort"
-                options={SORT_OPTIONS}
+                options={SORT_OPTIONS
+                  .filter((o) => !o.needsLocation || hasLocation || filters.sort === o.value)
+                  .map(({ value, label }) => ({ value, label }))}
                 value={filters.sort}
                 onChange={(e) => commit({ sort: e.target.value })}
               />
             </div>
           </div>
 
+          {chips.length > 0 && (
+            <div className="chips" style={{ marginBottom: 'var(--s-4)' }} aria-label="Active filters">
+              {chips.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  className="chip chip--removable"
+                  onClick={() => commit(c.reset)}
+                  aria-label={`Remove filter ${c.label}`}
+                >
+                  {c.label} <span aria-hidden="true">✕</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {loading ? (
-            <div className="stack stack--tight">
+            <div className="stack stack--tight" aria-busy="true">
               {[0, 1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} height={104} radius="var(--r-lg)" />
               ))}
             </div>
-          ) : results.length === 0 ? (
+          ) : !filtersValid ? (
+            <Card>
+              <EmptyState icon="↕️" title="Check your price range">
+                {filterErrors.minPrice || filterErrors.maxPrice}
+              </EmptyState>
+            </Card>
+          ) : error ? null : offers.length === 0 ? (
             <Card>
               <EmptyState
-                icon="🔍"
-                title="Nothing matched those filters"
+                icon={noListingsCategory ? categoryIcon(filters.category) : '🔍'}
+                title={noListingsCategory
+                  ? `No ${filters.category} items are listed yet`
+                  : 'Nothing matched all of those filters'}
                 action={activeCount > 0
                   ? <Button onClick={clearAll}>Clear all filters</Button>
                   : undefined}
               >
-                {emptyMessage ? `${emptyMessage} ` : ''}
-                Try raising your budget, searching for a more general word — “soap”
-                rather than a brand name — or allowing out-of-stock results.
+                {noListingsCategory
+                  ? `${filters.category} is a category you can budget and record spending for, but none of the stores in the catalogue list ${filters.category.toLowerCase()} products yet. `
+                  : chips.length > 1
+                    ? 'Remove one filter at a time using the chips above to widen the search. '
+                    : ''}
+                Try a more general word — “soap” rather than a brand — or a higher maximum price.
               </EmptyState>
             </Card>
           ) : (
             <div className="stack stack--tight">
-              {results.map((offer, index) => (
+              {offers.map((offer, index) => (
                 <ResultRow
                   key={offer.offer_id}
                   offer={offer}
-                  best={index === 0 && shouldRank}
+                  best={index === 0 && ranked}
+                  fulfilment={filters.fulfilment}
                   qty={qtyOf(offer.offer_id)}
                   onAdd={() => handleAdd(offer)}
                 />
               ))}
 
-              {results.length < count && (
+              {moreError && (
+                <Alert tone="danger" title="Could not load more results">{moreError}</Alert>
+              )}
+
+              {nextOffset != null && (
                 <Button
                   variant="ghost"
                   block
-                  // The backend caps `limit` at 100, so the page grows to that
-                  // and no further; beyond it, narrowing the filters is the
-                  // honest answer rather than an offset walk that re-ranks
-                  // each page against a different set.
-                  disabled={limit >= 100}
-                  onClick={() => setLimit((n) => Math.min(100, n + PAGE_SIZE))}
+                  loading={loadingMore}
+                  onClick={loadMore}
                   style={{ marginTop: 'var(--s-3)' }}
                 >
-                  {limit >= 100
-                    ? `Showing the first 100 of ${count} — narrow your filters to see the rest`
-                    : `Show more — ${count - results.length} left`}
+                  {loadingMore ? 'Loading…' : `Show more — ${count - offers.length} left`}
                 </Button>
               )}
 
               <div className="row row--between" style={{ marginTop: 'var(--s-5)' }}>
                 <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted-light)', maxWidth: '58ch' }}>
-                  {shouldRank
-                    ? 'Ranked on total cost, how much of your budget it leaves, delivery cost, '
-                      + 'availability and your saved preferences. Prices come from the store '
-                      + 'listings — always check the shelf.'
-                    : 'Sorted by the backend in the order you chose. Prices come from the store '
-                      + 'listings — always check the shelf.'}
+                  {ranked
+                    ? 'Best value ranks each page on what it costs you, how much of your budget it leaves, '
+                      + 'delivery cost, availability and your saved preferences. '
+                    : 'Shown in the order you chose. '}
+                  Store fees are added on Compare. Prices marked &ldquo;Estimated&rdquo; have not been
+                  confirmed with the store yet — always check the shelf.
                 </p>
                 <Button variant="ghost" onClick={() => navigate('/compare')}>
                   Compare my list →
@@ -454,18 +643,19 @@ export default function Search() {
 
 /**
  * Member 5's recommender, top three. Every pick shows its TRUE cost (item +
- * delivery + fees) and the backend's plain-English reason — the presentation
- * promises "justification provided for recommendations wherever possible".
+ * delivery + store fees) and the backend's plain-English reason.
  */
-function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
+function Recommendations({ recs, loading, error, qtyOf, onAdd, query, fulfilment }) {
   if (loading && !recs) {
     return <Skeleton height={140} radius="var(--r-lg)" />;
   }
   if (error) {
     return (
-      <Alert tone="warning" title="Recommendations unavailable">
-        {error} The search results below still work.
-      </Alert>
+      <div style={{ marginBottom: 'var(--s-5)' }}>
+        <Alert tone="warning" title="Recommendations unavailable">
+          {error} The search results below still work.
+        </Alert>
+      </div>
     );
   }
   if (!recs) return null;
@@ -481,12 +671,17 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
         </h2>
         <div className="row" style={{ gap: 'var(--s-2)' }}>
           {survival && <Badge tone="danger">Survival mode · essentials only</Badge>}
-          <Link to="/recommendations" state={{ query }} style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
+          <Link to="/recommendations" state={{ query, fulfilment }} style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
             More picks →
           </Link>
         </div>
       </div>
 
+      <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>
+        Priced at true cost — the shelf price plus {fulfilment === 'delivery' ? 'delivery' : 'any travel'} and
+        the store&apos;s own fees — so a pick can cost a little more here than the same listing
+        in the results below.
+      </p>
       {survival && recs.budget.message && (
         <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)' }}>{recs.budget.message}</p>
       )}
@@ -510,14 +705,15 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
                 <div>
                   <h3 className="result__name">{r.product_name}</h3>
                   <p className="result__meta">
-                    {[r.brand, r.store_name, r.distance_km != null ? `${r.distance_km} km` : null]
+                    {[r.brand, r.size, r.store_name, r.distance_km != null ? `${r.distance_km} km` : null]
                       .filter(Boolean).join(' · ')}
                   </p>
                   <div className="result__tags">
                     {r.meets_budget
-                      ? <Badge tone="success">Fits your budget</Badge>
-                      : <Badge tone="danger">Over your budget</Badge>}
+                      ? <Badge tone="success">Within your budget</Badge>
+                      : <Badge tone="danger">Over your remaining budget</Badge>}
                     {r.is_essential && <Badge tone="accent">Essential</Badge>}
+                    <PriceSourceBadge offer={r} />
                   </div>
                   <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)', marginTop: 'var(--s-2)' }}>
                     {r.explanation}
@@ -528,8 +724,8 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
                     <div className="result__price num">{money(r.true_cost)}</div>
                     <p className="result__ship">
                       {r.hidden_cost > 0
-                        ? `${money(r.price)} + ${money(r.hidden_cost)} fees`
-                        : 'true cost'}
+                        ? `true cost · ${money(r.price)} + ${money(r.hidden_cost)} ${r.fulfilment === 'collection' ? 'fees & travel' : 'delivery & fees'}`
+                        : 'true cost · no extra fees'}
                     </p>
                   </div>
                   <Button size="sm" variant={qty > 0 ? 'secondary' : 'primary'} onClick={() => onAdd(r)}>
@@ -548,18 +744,13 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query }) {
 /* ------------------------------------------------------------ text filter */
 
 /**
- * A free-text filter with suggestions. The backend matches these with ILIKE,
- * so free text is the honest control — a dropdown would imply a fixed list the
- * API never promised.
+ * A typed filter with suggestions from the WHOLE catalogue (not just the page
+ * on screen). What is typed is snapped to the catalogue's spelling on commit.
  */
 function TextFilter({ id, label, value, suggestions, onChange, onCommit }) {
   const listId = `${id}-suggestions`;
   return (
-    <Field
-      id={id}
-      label={label}
-      hint={suggestions.length ? 'Suggestions come from the results on screen.' : undefined}
-    >
+    <Field id={id} label={label}>
       {({ id: fieldId, describedBy }) => (
         <>
           <Input
@@ -568,6 +759,7 @@ function TextFilter({ id, label, value, suggestions, onChange, onCommit }) {
             placeholder="Any"
             value={value}
             describedBy={describedBy}
+            autoComplete="off"
             onChange={(e) => onChange(e.target.value)}
             onBlur={(e) => onCommit(e.target.value)}
           />
@@ -584,18 +776,22 @@ function TextFilter({ id, label, value, suggestions, onChange, onCommit }) {
 
 /* ------------------------------------------------------------ result row */
 
-function ResultRow({ offer, best, qty, onAdd }) {
+function ResultRow({ offer, best, fulfilment, qty, onAdd }) {
   const inStock = offer.availability_status === 'available';
+  const delivered = fulfilment === 'delivery';
+  const extra = Math.max(0, Number((offer.effective_cost - offer.price).toFixed(2)));
   return (
     <article className={best ? 'result result--best' : 'result'}>
       <div className="result__icon" aria-hidden="true">
-        {offer.is_essential ? '🧺' : '🛍️'}
+        {categoryIcon(offer.category)}
       </div>
 
       <div>
         <h3 className="result__name">{offer.product_name}</h3>
         <p className="result__meta">
-          {[offer.brand, offer.size, offer.store_name].filter(Boolean).join(' · ')}
+          {[offer.brand, offer.size, offer.store_name,
+            offer.distance_km != null ? `${offer.distance_km.toFixed(1)} km away` : null]
+            .filter(Boolean).join(' · ')}
         </p>
         <div className="result__tags">
           {best && <Badge tone="brand" icon="★">Best value</Badge>}
@@ -603,10 +799,18 @@ function ResultRow({ offer, best, qty, onAdd }) {
             {offer.store_type === 'physical' ? 'In store'
               : offer.store_type === 'online' ? 'Online only' : 'Store or online'}
           </Badge>
-          {offer.shipping_cost === 0
-            ? <Badge tone="success">No delivery cost</Badge>
-            : <Badge tone="neutral">+{money(offer.shipping_cost)} delivery</Badge>}
+          {delivered && (offer.shipping_cost === 0
+            ? <Badge tone="success">No delivery fee</Badge>
+            : <Badge tone="neutral">+{money(offer.shipping_cost)} delivery</Badge>)}
           {offer.is_essential && <Badge tone="accent">Essential</Badge>}
+          <PriceSourceBadge offer={offer} />
+          {offer.rating != null && (
+            <Badge tone="neutral">
+              <span aria-hidden="true">★</span> {offer.rating.toFixed(1)}
+              <span className="sr-only"> out of 5</span>
+              {offer.rating_count > 0 ? ` (${offer.rating_count})` : ''}
+            </Badge>
+          )}
           {!inStock && (
             <Badge tone="danger">
               {offer.availability_status === 'out_of_stock' ? 'Out of stock' : 'Stock unknown'}
@@ -625,15 +829,21 @@ function ResultRow({ offer, best, qty, onAdd }) {
 
       <div className="result__right">
         <div>
-          <div className="result__price num">{money(offer.total_cost)}</div>
+          <div className="result__price num">{money(offer.effective_cost)}</div>
           <p className="result__ship">
-            {offer.shipping_cost > 0
-              ? `${money(offer.price)} + ${money(offer.shipping_cost)}`
-              : 'total cost'}
+            {extra > 0
+              ? `${money(offer.price)} + ${money(extra)} delivery`
+              : delivered ? 'listed price, no delivery fee' : 'shelf price · you collect'}
           </p>
         </div>
-        <Button size="sm" variant={qty > 0 ? 'secondary' : 'primary'} onClick={onAdd}>
-          {qty > 0 ? `In list (${qty}) · Add another` : 'Add to list'}
+        <Button
+          size="sm"
+          variant={qty > 0 ? 'secondary' : 'primary'}
+          onClick={onAdd}
+          disabled={!inStock}
+          aria-label={inStock && qty === 0 ? `Add to list: ${offer.product_name} at ${offer.store_name}` : undefined}
+        >
+          {!inStock ? 'Unavailable' : qty > 0 ? `In list (${qty}) · Add another` : 'Add to list'}
         </Button>
         {offer.product_url && (
           <a

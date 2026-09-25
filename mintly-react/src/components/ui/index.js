@@ -13,6 +13,7 @@ export { default as Eyebrow } from './Eyebrow.jsx';
 export { default as Field } from './Field.jsx';
 export { default as Input } from './Input.jsx';
 export { default as Logo } from './Logo.jsx';
+export { default as PriceSourceBadge } from './PriceSourceBadge.jsx';
 export { default as Progress } from './Progress.jsx';
 export { default as Select } from './Select.jsx';
 export { default as Skeleton } from './Skeleton.jsx';

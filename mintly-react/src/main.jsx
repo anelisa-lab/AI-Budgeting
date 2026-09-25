@@ -20,7 +20,12 @@ import { BudgetProvider } from './context/BudgetContext.jsx';
 import { ShoppingProvider } from './context/ShoppingContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
 
+import { applyStoredSettings } from './lib/localSettings.js';
+
 import './styles/global.css';
+
+// Device-only settings (reduced motion) apply before the first paint.
+applyStoredSettings();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

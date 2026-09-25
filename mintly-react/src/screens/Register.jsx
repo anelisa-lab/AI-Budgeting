@@ -5,19 +5,14 @@
  * per-field errors that explain the fix, and a submit button that reports
  * progress.
  *
- * WHAT THE BACKEND ACTUALLY ACCEPTS
- * ---------------------------------
- * POST /auth/register takes RegisterRequest { name, email, password } and
- * nothing else. Student number and residence are NOT stored — `users` has a
- * `residence_area_code` column but neither RegisterRequest nor UserOut expose
- * it, and there is no student-number column at all.
- *
- * So those two inputs are kept (Res-Mate bulk-buy matching needs residence,
- * and the team already designed for it) but they are marked optional, grouped
- * under a heading that says they are not saved yet, and they are NOT sent. A
- * field that is silently dropped by the API is worse than one that admits it.
- * docs/BACKEND_INTEGRATION.md specifies the backend change that would let this
- * block become real.
+ * WHAT THE BACKEND ACCEPTS
+ * ------------------------
+ * POST /auth/register takes RegisterRequest { name, email, password,
+ * residence?, student_number? }. The last two were added in Phase 4
+ * (sql/004_phase4_student_number.sql): residence goes to
+ * users.residence_area_code and student_number must be 8 or 9 digits, the
+ * same rule lib/validation.js checks here. Both are optional, and a blank one
+ * is simply not sent. Profile shows them back.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -26,24 +21,14 @@ import {
   Alert, Button, Card, Eyebrow, Field, Input, Logo, Select,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import BackendStatus from '../components/layout/BackendStatus.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import * as v from '../lib/validation.js';
-
-/** DUT residences. Not yet accepted by the backend — see the header. */
-const RESIDENCES = [
-  { value: '', label: 'Select your residence…' },
-  { value: 'ml-sultan', label: 'ML Sultan Campus Residence' },
-  { value: 'steve-biko', label: 'Steve Biko Campus Residence' },
-  { value: 'ritson', label: 'Ritson Residence' },
-  { value: 'berea', label: 'Berea Residence' },
-  { value: 'new-castle', label: 'Newcastle Campus Residence' },
-  { value: 'off-campus', label: 'Off-campus / private accommodation' },
-];
+import { RESIDENCES } from '../lib/residences.js';
 
 /**
- * studentNumber and residence are optional because the backend cannot store
- * them; their rules only fire once something has been typed, so an empty
- * value is never an error.
+ * studentNumber and residence are optional; their rules only fire once
+ * something has been typed, so an empty value is never an error.
  */
 const RULES = {
   name: (value) => v.fullName(value),
@@ -104,13 +89,15 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      // Exactly the three fields RegisterRequest declares.
+      // The fields RegisterRequest declares; blank optional ones are left out.
       const user = await register({
-        name: values.name,
-        email: values.email,
+        name: values.name.trim().replace(/\s+/g, ' '),
+        email: values.email.trim(),
         password: values.password,
+        residence: values.residence || undefined,
+        student_number: values.studentNumber.trim() || undefined,
       });
-      toast.success(`Account created. Welcome to Mintly, ${user.name.split(' ')[0]}.`);
+      toast.success(`Account created. Welcome to UniWallet, ${user.name.split(' ')[0]}.`);
       // Straight to budget setup — an empty dashboard would teach them nothing.
       navigate('/budget', { replace: true });
     } catch (err) {
@@ -128,6 +115,7 @@ export default function Register() {
   return (
     <div className="auth">
       <div className="auth__card">
+        <BackendStatus compact />
         <div className="stack" style={{ justifyItems: 'center', marginBottom: 'var(--s-6)' }}>
           <Logo size={44} />
         </div>
@@ -215,8 +203,6 @@ export default function Register() {
               )}
             </Field>
 
-            {/* Collected for a feature that is designed but not yet stored
-                server-side. Nothing here is sent to POST /auth/register. */}
             <fieldset
               style={{
                 border: '1.5px solid var(--c-line)',
@@ -227,12 +213,11 @@ export default function Register() {
               }}
             >
               <legend className="field__label" style={{ padding: '0 var(--s-2)' }}>
-                Optional — not saved yet
+                Optional
               </legend>
               <p className="field__hint" style={{ marginTop: 0 }}>
-                Res-Mate bulk-buy matching needs these, but the account API does not
-                store them yet. Fill them in if you like; you will be asked again once
-                the backend supports it.
+                Saved to your account and shown on your profile. They help with
+                features like bulk-buying with students near you. You can skip them.
               </p>
 
               <Field
@@ -276,7 +261,7 @@ export default function Register() {
                   aria-describedby={errors.terms ? 'terms-error' : undefined}
                 />
                 <span>
-                  I agree that Mintly may store my budget and spending data to give me
+                  I agree that UniWallet may store my budget and spending data to give me
                   recommendations. My spending is never shared with other students in a
                   way that identifies me.
                 </span>

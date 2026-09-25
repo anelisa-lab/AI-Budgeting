@@ -1,6 +1,8 @@
 import logging
+import os
 
 import psycopg2
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,7 +17,10 @@ from app.routers import (
     budget_split,
     compare,
     prices,
+    shopping_list,
 )
+
+load_dotenv()
 
 app = FastAPI(title="AI Shopping for Student Budgeting — Backend")
 logger = logging.getLogger("app")
@@ -43,9 +48,19 @@ async def json_errors(request: Request, call_next):
         )
 
 
+# Which websites may call the API. Set CORS_ORIGINS (comma-separated) to the
+# frontend's real address for the demo; the default is the Vite dev and
+# preview servers. "*" is still accepted for a quick local test.
+CORS_ORIGINS = [
+    o.strip() for o in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173",
+    ).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten this to the frontend's real origin before the demo
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -65,3 +80,4 @@ app.include_router(true_cost.router)         # Member 6 — /true-cost
 app.include_router(budget_split.router)      # Member 6 — /budget-split
 app.include_router(compare.router)
 app.include_router(prices.router)
+app.include_router(shopping_list.router)      # Phase 5 — /shopping-list

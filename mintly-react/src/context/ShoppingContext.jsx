@@ -10,11 +10,9 @@
  * What remains here is the list itself, which is shared by Search (add to
  * list), the nav (the count badge) and Compare (price it at every store).
  *
- * ⚠ The list is DEVICE-LOCAL. The backend has comparison_lists and
- * comparison_items tables but no router for them, so there is nothing to POST
- * to yet. api/localList.js explains this in full and the Compare screen says
- * so on screen. `isLocalOnly` below is what drives that banner — when the
- * endpoints land, it becomes false and the banner disappears on its own.
+ * The list is saved to the student's account (Phase 5, /shopping-list), so
+ * it follows them to any device. A list saved in this browser by an earlier
+ * build is uploaded once on sign-in — see client.js `shoppingList`.
  */
 
 import {
@@ -26,18 +24,23 @@ import { useAuth } from './AuthContext.jsx';
 const ShoppingContext = createContext(null);
 
 export function ShoppingProvider({ children }) {
-  const { isAuthenticated } = useAuth();
+  const { user, token } = useAuth();
+  const userId = user?.id ?? null;
   const [lines, setLines] = useState([]);
   const [ready, setReady] = useState(false);
 
+  // The list belongs to the signed-in account: switch storage whenever the
+  // account changes, and show nothing while signed out.
   useEffect(() => {
     let cancelled = false;
+    api.shoppingList.setOwner(userId, token);
+    setReady(false);
     api.shoppingList.list()
       .then((rows) => { if (!cancelled) setLines(rows); })
       .catch(() => { if (!cancelled) setLines([]); })
       .finally(() => { if (!cancelled) setReady(true); });
     return () => { cancelled = true; };
-  }, [isAuthenticated]);
+  }, [userId, token]);
 
   const addOffer = useCallback(async (offer, qty = 1) => {
     setLines(await api.shoppingList.add(offer, qty));

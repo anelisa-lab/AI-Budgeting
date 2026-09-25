@@ -19,6 +19,7 @@ import { useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, Eyebrow, Field, Input, Logo } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import BackendStatus from '../components/layout/BackendStatus.jsx';
 import { API_BASE_URL } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import * as v from '../lib/validation.js';
@@ -72,7 +73,7 @@ export default function Login() {
     setSubmitting(true);
     dismissSessionExpired();
     try {
-      const user = await login(values);
+      const user = await login({ email: values.email.trim(), password: values.password });
       toast.success(`Welcome back, ${user.name.split(' ')[0]}.`);
       navigate(location.state?.from || '/dashboard', { replace: true });
     } catch (err) {
@@ -90,6 +91,7 @@ export default function Login() {
   return (
     <div className="auth">
       <div className="auth__card">
+        <BackendStatus compact />
         <div className="stack" style={{ justifyItems: 'center', marginBottom: 'var(--s-6)' }}>
           <Logo size={44} />
         </div>
@@ -99,7 +101,7 @@ export default function Login() {
             <div>
               <Eyebrow>Welcome back</Eyebrow>
               <h1 className="auth__title" style={{ marginTop: 'var(--s-3)' }}>
-                Sign in to Mintly
+                Sign in to UniWallet
               </h1>
               <p className="auth__sub">
                 Pick up where you left off — your budget and your list are waiting.
@@ -108,8 +110,8 @@ export default function Login() {
 
             {sessionExpired && !formError && (
               <Alert tone="warning" title="Your session expired">
-                You were signed out because the token issued at sign-in is no longer
-                accepted. Sign in again to pick up where you left off.
+                For your security you were signed out. Sign in again to pick up where
+                you left off.
               </Alert>
             )}
 
@@ -157,13 +159,13 @@ export default function Login() {
           </p>
         </Card>
 
-        <div className="auth__demo">
-          <strong>Note —</strong> this build talks to the live backend at{' '}
-          <code>{API_BASE_URL}</code>. Start it with{' '}
-          <code>uvicorn app.main:app --reload --port 4000</code> and point{' '}
-          <code>VITE_API_BASE_URL</code> at it in <code>.env.local</code> if it runs
-          somewhere else.
-        </div>
+        {import.meta.env?.DEV && (
+          <div className="auth__demo">
+            <strong>Developer note —</strong> this build talks to the backend at{' '}
+            <code>{API_BASE_URL}</code>. Start it with{' '}
+            <code>uvicorn app.main:app --reload --port 4000</code>.
+          </div>
+        )}
       </div>
     </div>
   );

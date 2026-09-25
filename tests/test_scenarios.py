@@ -168,7 +168,7 @@ def run(query, context, limit=5, fulfilment="delivery"):
 def test_catalogue_loaded():
     assert len(CATALOGUE) > 100
     assert {c.category for c in CATALOGUE} == {
-        "Groceries", "Toiletries", "Homeware", "Stationery", "Electronics"
+        "Groceries", "Toiletries", "Homeware", "Stationery", "Electronics", "Maintenance"
     }
     # The two attributes the seed used to drop. Without them, two of the seven
     # scoring components are constant across every row.

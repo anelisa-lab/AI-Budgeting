@@ -8,27 +8,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, Select, Skeleton,
+  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Input, PriceSourceBadge, Select, Skeleton,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
 import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
-import { money } from '../lib/format.js';
+import { money, shortDate } from '../lib/format.js';
+import { CATALOGUE_CATEGORIES, categoryIcon, isWithoutListings } from '../lib/categories.js';
 
 /**
- * The categories the seed catalogue actually uses. An explicit category is a
- * HARD filter on POST /recommendations, so a free-text box that let a student
- * type "food" or "household" would return an empty screen.
+ * An explicit category is a HARD filter on POST /recommendations, so the
+ * options are the catalogue's own category names, from the app's single
+ * category list (lib/categories.js).
  */
 const CATEGORY_OPTIONS = [
   { value: '', label: 'Any category' },
-  { value: 'Groceries', label: 'Groceries' },
-  { value: 'Toiletries', label: 'Toiletries' },
-  { value: 'Stationery', label: 'Stationery' },
-  { value: 'Electronics', label: 'Electronics' },
-  { value: 'Homeware', label: 'Homeware' },
+  ...CATALOGUE_CATEGORIES.map(({ value, label }) => ({ value, label })),
 ];
 
 const FULFILMENT_OPTIONS = [
@@ -48,7 +45,11 @@ export default function Recommendations() {
   // Search's "More picks →" hands its query over, so the list continues it.
   const location = useLocation();
   const [query, setQuery] = useState(location.state?.query || '');
-  const [fulfilment, setFulfilment] = useState('delivery');
+  // Collecting is the default everywhere (Search, For you, Compare); Search's
+  // "More picks →" hands over the student's choice.
+  const [fulfilment, setFulfilment] = useState(
+    location.state?.fulfilment === 'delivery' ? 'delivery' : 'collection',
+  );
   const [includeUnaffordable, setIncludeUnaffordable] = useState(false);
   const [category, setCategory] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
@@ -63,6 +64,36 @@ export default function Recommendations() {
   // A slower, older request must not overwrite the answer to a newer one.
   const requestId = useRef(0);
 
+  // Recent searches (Phase 5) — GET /recommendations/history. The backend
+  // saves every run; this shows them back so the student can repeat one, and
+  // lets them clear it.
+  const [history, setHistory] = useState([]);
+  const [historyError, setHistoryError] = useState(null);
+  const loadHistory = useCallback(() => {
+    if (!token) return;
+    api.recommendations.history(token, { limit: 20 })
+      .then((rows) => { setHistory(rows.slice(0, 6)); setHistoryError(null); })
+      .catch(() => setHistoryError('Could not load your recent searches.'));
+  }, [token]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  async function clearHistory() {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Clear your recent searches? Your preferences are not affected.')) return;
+    try {
+      await api.recommendations.clearHistory(token);
+      setHistory([]);
+      toast.info('Recent searches cleared.');
+    } catch (err) {
+      toast.error(err.message || 'Could not clear your recent searches.');
+    }
+  }
+
+  function repeatSearch(pastQuery) {
+    setQuery(pastQuery);
+    runSearch(pastQuery);
+  }
+
   const runSearch = useCallback(async (activeQuery) => {
     if (!token) return;
     const id = ++requestId.current;
@@ -75,10 +106,14 @@ export default function Recommendations() {
         category: category || undefined,
         max_price: maxPrice ? Number(maxPrice) : undefined,
         include_unaffordable: includeUnaffordable,
+        // Applied on the server BEFORE the limit (Phase 4), so ticking it
+        // can't empty the page while essentials exist.
+        essential_only: essentialOnly || undefined,
         limit: 12,
       });
       if (id !== requestId.current) return;
       setResponse(result);
+      if (activeQuery || category) loadHistory();
     } catch (err) {
       if (id !== requestId.current) return;
       setError(err.message || 'Could not load recommendations right now.');
@@ -86,7 +121,7 @@ export default function Recommendations() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [token, fulfilment, category, maxPrice, includeUnaffordable]);
+  }, [token, fulfilment, category, maxPrice, includeUnaffordable, essentialOnly, loadHistory]);
 
   // First load, and again whenever a filter that the BACKEND applies changes
   // (the text query waits for "Find recommendations").
@@ -120,7 +155,6 @@ export default function Recommendations() {
     && response.results.every((r) => !r.matched_query);
 
   const results = (response?.results || [])
-    .filter((rec) => !essentialOnly || rec.is_essential)
     .slice()
     .sort((a, b) => {
       if (sort === 'true_cost_asc') return a.true_cost - b.true_cost;
@@ -146,7 +180,7 @@ export default function Recommendations() {
 
       {budgetLoaded && !budget && (
         <Alert tone="info" title="Set a budget first">
-          Recommendations are scored against your daily allowance — Mintly needs a
+          Recommendations are scored against your daily allowance — UniWallet needs a
           budget to know what that is.
           <div style={{ marginTop: 'var(--s-3)' }}>
             <Button size="sm" onClick={() => navigate('/budget')}>Set my budget</Button>
@@ -162,7 +196,7 @@ export default function Recommendations() {
       )}
 
       {budgetLoading && !budgetLoaded ? (
-        <Card tone="tint" flat aria-busy="true">
+        <Card flat aria-busy="true">
           <div className="row row--between">
             <div style={{ minWidth: 180 }}>
               <Skeleton height={14} width="9rem" />
@@ -172,7 +206,7 @@ export default function Recommendations() {
           </div>
         </Card>
       ) : budget && (
-        <Card tone="tint" flat>
+        <Card flat>
           <div className="row row--between">
             <div>
               <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)' }}>
@@ -202,7 +236,7 @@ export default function Recommendations() {
                 {({ id, describedBy }) => (
                   <Input
                     id={id}
-                    placeholder="cheap black sneakers under R500 near me size 9"
+                    placeholder="e.g. bread, soap, maize meal under R50"
                     value={query}
                     describedBy={describedBy}
                     onChange={(e) => setQuery(e.target.value)}
@@ -223,7 +257,11 @@ export default function Recommendations() {
                 )}
               </Field>
             </div>
-            <Button type="submit" loading={loading}>
+            {/* Not disabled while loading: For you loads its default picks on
+                open, and a disabled submit button stops Enter from submitting,
+                so a student who typed and pressed Enter straight away lost
+                their search. runSearch() already ignores a stale answer. */}
+            <Button type="submit" aria-busy={loading || undefined}>
               {loading ? 'Finding…' : 'Find recommendations'}
             </Button>
           </div>
@@ -293,11 +331,41 @@ export default function Recommendations() {
                 checked={includeUnaffordable}
                 onChange={(e) => setIncludeUnaffordable(e.target.checked)}
               />
-              <span>Include items over today&apos;s allowance</span>
+              <span>Include items over my remaining budget</span>
             </label>
           </div>
         </form>
       </Card>
+
+      {(history.length > 0 || historyError) && (
+        <Card>
+          <div className="card__head">
+            <h2 className="card__title">Your recent searches</h2>
+            {history.length > 0 && (
+              <Button variant="quiet" size="sm" onClick={clearHistory}>Clear</Button>
+            )}
+          </div>
+          {historyError ? (
+            <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)', marginTop: 'var(--s-3)' }}>{historyError}</p>
+          ) : (
+            <ul className="history-list">
+              {history.map((h) => (
+                <li key={h.id}>
+                  <button type="button" className="history-item" onClick={() => repeatSearch(h.query)}>
+                    <span className="history-item__query">{h.query}</span>
+                    <span className="history-item__meta">
+                      {h.top[0]
+                        ? `Top pick: ${h.top[0].product_name} at ${h.top[0].store_name}, ${money(h.top[0].total_cost)}`
+                        : 'No picks'}
+                      {h.created_at ? ` · ${shortDate(h.created_at)}` : ''}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
 
       {error && (
         <Alert tone="danger" title="Could not load recommendations">
@@ -320,10 +388,19 @@ export default function Recommendations() {
         </div>
       ) : results.length === 0 ? (
         <Card>
-          <EmptyState icon="✨" title="Nothing ranked yet">
-            {response?.message ? `${response.message} ` : ''}
-            Try a broader search, or tick &ldquo;Include items over today&apos;s
-            allowance&rdquo; to see more.
+          <EmptyState
+            icon={isWithoutListings(category) ? categoryIcon(category) : '✨'}
+            title={isWithoutListings(category)
+              ? `No ${category} items are listed yet`
+              : 'Nothing ranked yet'}
+          >
+            {isWithoutListings(category)
+              ? `None of the stores in the catalogue list ${category.toLowerCase()} products yet, so there is nothing to recommend. Pick another category or search for something specific.`
+              : <>
+                  {response?.message ? `${response.message} ` : ''}
+                  Try a broader search, or tick &ldquo;Include items over my remaining
+                  budget&rdquo; to see more.
+                </>}
           </EmptyState>
         </Card>
       ) : (
@@ -369,9 +446,10 @@ function RecommendationCard({ rec, qty, onAdd }) {
         </p>
         <div className="result__tags">
           {rec.meets_budget
-            ? <Badge tone="success">Fits today&apos;s allowance</Badge>
-            : <Badge tone="warning">Over today&apos;s allowance</Badge>}
+            ? <Badge tone="success">Within your budget</Badge>
+            : <Badge tone="danger">Over your remaining budget</Badge>}
           {rec.is_essential && <Badge tone="accent">Essential</Badge>}
+          <PriceSourceBadge offer={rec} />
           {rec.rating != null && (
             // rating_count 0 means "not recorded", not "no reviews".
             <Badge tone="neutral">
@@ -392,8 +470,8 @@ function RecommendationCard({ rec, qty, onAdd }) {
           <div className="result__price num">{money(rec.true_cost)}</div>
           <p className="result__ship">
             {rec.hidden_cost > 0
-              ? `${money(rec.price)} + ${money(rec.hidden_cost)} delivery & fees`
-              : 'true cost'}
+              ? `true cost · ${money(rec.price)} + ${money(rec.hidden_cost)} ${rec.fulfilment === 'collection' ? 'fees & travel' : 'delivery & fees'}`
+              : 'true cost · no extra fees'}
           </p>
         </div>
         <Button size="sm" variant={qty > 0 ? 'secondary' : 'primary'} onClick={onAdd}>
