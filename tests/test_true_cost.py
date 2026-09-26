@@ -230,6 +230,36 @@ def test_cheapest_picks_the_lowest_true_cost_not_the_lowest_price():
     assert cheapest([a, b]).offer_id == 2
 
 
+
+def test_cheapest_ignores_unfulfillable_offer_even_if_it_is_cheaper():
+    """An unavailable requested fulfilment must never win a comparison."""
+    unavailable = store_true_cost(
+        offer(price="10.00", store_type="online"),
+        fulfilment="collection",
+    )
+    available = store_true_cost(
+        offer(price="25.00", store_type="physical"),
+        fulfilment="collection",
+        distance_km=0.6,
+    )
+
+    assert unavailable.true_cost < available.true_cost
+    assert unavailable.fulfilment_available is False
+    assert cheapest([unavailable, available]) is available
+
+
+def test_explicit_store_capabilities_override_store_type_defaults():
+    """Real store capability flags must be honoured even for physical stores."""
+    unavailable = Offer(
+        offer_id=1, price=D("10.00"), store_type="physical",
+        delivery_available=False, collection_available=True,
+    )
+    result = store_true_cost(unavailable, fulfilment="delivery")
+
+    assert result.fulfilment_available is False
+    assert result.fulfilment == "collection"
+    assert result.true_cost == D("10.00")
+
 def test_rejects_bad_input():
     with pytest.raises(ValueError):
         store_true_cost(offer(), quantity=0)

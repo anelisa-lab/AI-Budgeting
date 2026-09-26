@@ -34,7 +34,8 @@ _OFFER_QUERY = """
     SELECT o.id AS offer_id, o.price, o.shipping_cost, o.currency,
            p.name AS product_name,
            s.id AS store_id, s.name AS store_name, s.store_type,
-           s.latitude AS store_latitude, s.longitude AS store_longitude
+           s.latitude AS store_latitude, s.longitude AS store_longitude,
+           s.delivery_available, s.collection_available
     FROM product_offers o
     JOIN products p ON p.id = o.product_id
     JOIN stores s ON s.id = o.store_id
@@ -113,13 +114,22 @@ def compare_true_cost(
         fulfilment=payload.fulfilment,
         user_location=user_location,
     )
-    results.sort(key=lambda r: (r.true_cost, r.offer_id))
 
-    saving = money(results[-1].true_cost - results[0].true_cost) if len(results) > 1 else money(0)
+    # Keep unfulfillable offers visible so the UI can explain why they were
+    # rejected, but never let one win the comparison. This mirrors
+    # app.true_cost.cheapest(): the requested fulfilment is part of the
+    # definition of a comparable price.
+    results.sort(key=lambda r: (not r.fulfilment_available, r.true_cost, r.offer_id))
+    eligible = [r for r in results if r.fulfilment_available]
+
+    saving = (
+        money(eligible[-1].true_cost - eligible[0].true_cost)
+        if len(eligible) > 1 else money(0)
+    )
 
     return TrueCostResponse(
         results=results,
-        cheapest_offer_id=results[0].offer_id if results else None,
+        cheapest_offer_id=eligible[0].offer_id if eligible else None,
         saving_vs_dearest=saving,
     )
 
