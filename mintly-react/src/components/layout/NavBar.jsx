@@ -7,7 +7,7 @@
  * announced as well as coloured.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Button, Logo } from '../ui/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -27,6 +27,7 @@ export default function NavBar() {
   const { isAuthenticated, user, logout } = useAuth();
   const { listCount } = useShopping();
   const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
   const linksRef = useRef(null);
 
   // On a phone the links are a swipeable row; bring the current page's link
@@ -40,8 +41,14 @@ export default function NavBar() {
   });
 
   async function handleLogout() {
-    await logout();
-    navigate('/login', { replace: true });
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } finally {
+      setLoggingOut(false);
+    }
   }
 
   return (
@@ -76,8 +83,8 @@ export default function NavBar() {
               >
                 {user?.name?.split(' ')[0] || 'Student'}
               </NavLink>
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
-                Sign out
+              <Button variant="ghost" size="sm" onClick={handleLogout} loading={loggingOut}>
+                {loggingOut ? 'Signing out…' : 'Sign out'}
               </Button>
             </>
           ) : (

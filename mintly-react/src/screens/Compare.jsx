@@ -11,8 +11,9 @@
  *
  * WHERE THE NUMBERS COME FROM
  * ---------------------------
- * The list itself is device-local (the backend has no shopping-list
- * endpoints). Every price and total on this screen comes from the backend,
+ * The shopping list is saved to the student's account by the Phase 5
+ * `/shopping-list` endpoints. Every price and total on this screen comes from
+ * the backend,
  * fetched fresh whenever the list or "Getting it" changes:
  *
  *  - Store totals: items + delivery ONCE per order (the free-delivery
@@ -70,7 +71,7 @@ function extrasText(q) {
 export default function Compare() {
   const { token } = useAuth();
   const {
-    lines, listCount, setQty, removeOffer, clearList, isLocalOnly,
+    lines, listCount, ready: shoppingReady, error: shoppingError, setQty, removeOffer, clearList,
   } = useShopping();
   const { remaining, budget } = useBudget();
   const toast = useToast();
@@ -203,8 +204,53 @@ export default function Compare() {
   async function handleClear() {
     // eslint-disable-next-line no-alert
     if (!window.confirm('Clear every item from your list?')) return;
-    await clearList();
-    toast.info('List cleared.');
+    try {
+      await clearList();
+      toast.info('List cleared.');
+    } catch (err) {
+      toast.error(err.message || 'Could not clear your list.');
+    }
+  }
+
+  async function handleSetQty(offerId, qty) {
+    try {
+      await setQty(offerId, qty);
+    } catch (err) {
+      toast.error(err.message || 'Could not update that item.');
+    }
+  }
+
+  async function handleRemove(offerId) {
+    try {
+      await removeOffer(offerId);
+    } catch (err) {
+      toast.error(err.message || 'Could not remove that item.');
+    }
+  }
+
+  /* ---------------------------------------------------------- list loading */
+
+  if (!shoppingReady) {
+    return (
+      <div className="stack">
+        <Skeleton height={38} width="260px" />
+        <Skeleton height={180} radius="var(--r-xl)" />
+        <Skeleton height={240} radius="var(--r-xl)" />
+      </div>
+    );
+  }
+
+  if (shoppingError) {
+    return (
+      <Card>
+        <Alert tone="danger" title="Could not load your shopping list">
+          {shoppingError}
+          <div style={{ marginTop: 'var(--s-3)' }}>
+            <Button size="sm" onClick={() => window.location.reload()}>Try again</Button>
+          </div>
+        </Alert>
+      </Card>
+    );
   }
 
   /* ---------------------------------------------------------- empty state */
@@ -261,12 +307,6 @@ export default function Compare() {
         </div>
       </div>
 
-      {isLocalOnly && (
-        <Alert tone="info" title="Your list is saved on this device">
-          It stays in this browser for your account, so it won&apos;t follow you to another
-          phone or computer yet. The prices below are fetched fresh every time you open this page.
-        </Alert>
-      )}
 
       {error && (
         <Alert tone="danger" title="Could not load current prices">
@@ -568,7 +608,7 @@ export default function Compare() {
                 <div className="row basket-line__controls" style={{ gap: 'var(--s-2)', flexWrap: 'nowrap' }}>
                   <Button
                     variant="ghost" size="sm"
-                    onClick={() => setQty(line.offer_id, line.qty - 1)}
+                    onClick={() => handleSetQty(line.offer_id, line.qty - 1)}
                     aria-label={line.qty === 1 ? `Remove ${line.product_name}` : `One fewer ${line.product_name}`}
                   >−</Button>
                   <span className="num" style={{ minWidth: 20, textAlign: 'center', fontWeight: 'var(--fw-extra)' }} aria-label={`Quantity ${line.qty}`}>
@@ -576,7 +616,7 @@ export default function Compare() {
                   </span>
                   <Button
                     variant="ghost" size="sm"
-                    onClick={() => setQty(line.offer_id, line.qty + 1)}
+                    onClick={() => handleSetQty(line.offer_id, line.qty + 1)}
                     disabled={line.qty >= 20}
                     aria-label={`One more ${line.product_name}`}
                   >+</Button>
@@ -585,7 +625,7 @@ export default function Compare() {
                   </span>
                   <Button
                     variant="quiet" size="sm"
-                    onClick={() => removeOffer(line.offer_id)}
+                    onClick={() => handleRemove(line.offer_id)}
                     aria-label={`Remove ${line.product_name}`}
                   >✕</Button>
                 </div>

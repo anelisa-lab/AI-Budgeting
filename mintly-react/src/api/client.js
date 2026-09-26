@@ -16,9 +16,8 @@
  * LIVE_ENDPOINTS_READY switch. Both are gone: the real routes are live, and
  * there is no second implementation that can silently disagree with them.
  *
- * The one exception is `shoppingList`, which is device-local because the
- * backend has no endpoint for it at all — see localList.js, which explains
- * itself at length, and the Compare screen, which tells the student.
+ * The shopping list is server-side. `localList.js` only exists to migrate
+ * lists saved by an older build the first time that account signs in.
  */
 
 import * as endpoints from './endpoints.js';

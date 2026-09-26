@@ -28,6 +28,7 @@ export function ShoppingProvider({ children }) {
   const userId = user?.id ?? null;
   const [lines, setLines] = useState([]);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState(null);
 
   // The list belongs to the signed-in account: switch storage whenever the
   // account changes, and show nothing while signed out.
@@ -35,9 +36,14 @@ export function ShoppingProvider({ children }) {
     let cancelled = false;
     api.shoppingList.setOwner(userId, token);
     setReady(false);
+    setError(null);
     api.shoppingList.list()
       .then((rows) => { if (!cancelled) setLines(rows); })
-      .catch(() => { if (!cancelled) setLines([]); })
+      .catch((err) => {
+        if (cancelled) return;
+        setLines([]);
+        setError(err?.message || 'Could not load your shopping list.');
+      })
       .finally(() => { if (!cancelled) setReady(true); });
     return () => { cancelled = true; };
   }, [userId, token]);
@@ -81,6 +87,7 @@ export function ShoppingProvider({ children }) {
   const value = useMemo(() => ({
     lines,
     ready,
+    error,
     listTotal,
     listCount,
     qtyOf,
@@ -89,7 +96,7 @@ export function ShoppingProvider({ children }) {
     removeOffer,
     clearList,
     isLocalOnly: api.shoppingList.isLocalOnly,
-  }), [lines, ready, listTotal, listCount, qtyOf, addOffer, setQty,
+  }), [lines, ready, error, listTotal, listCount, qtyOf, addOffer, setQty,
        removeOffer, clearList]);
 
   return <ShoppingContext.Provider value={value}>{children}</ShoppingContext.Provider>;
