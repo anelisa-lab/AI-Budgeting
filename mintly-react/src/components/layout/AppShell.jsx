@@ -11,6 +11,7 @@ import BackendStatus from './BackendStatus.jsx';
 export default function AppShell({ children, wide = false }) {
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main">Skip to main content</a>
       <BackendStatus />
       <NavBar />
       <main className={`app-body ${wide ? '' : ''}`.trim()} id="main">

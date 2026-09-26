@@ -583,3 +583,84 @@ html[data-reduced-motion='true'] *::after {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ========================================================================
+   PHASE 5 — final polish, accessibility and demo resilience
+   ======================================================================== */
+.skip-link {
+  position: fixed;
+  left: var(--s-4);
+  top: var(--s-4);
+  z-index: 100;
+  transform: translateY(-180%);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--c-forest);
+  color: var(--c-paper);
+  font-weight: var(--fw-bold);
+  box-shadow: var(--e-2);
+}
+.skip-link:focus { transform: translateY(0); text-decoration: none; }
+
+.btn:focus-visible,
+.input:focus-visible,
+.select:focus-visible,
+.nav__link:focus-visible,
+.chip:focus-visible,
+.history-item:focus-visible {
+  outline: 3px solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+.btn { min-height: 42px; }
+.btn--sm { min-height: 38px; }
+.btn--lg { min-height: 50px; }
+
+.input, .select { min-height: 46px; }
+.checkbox input { min-width: 18px; min-height: 18px; }
+
+/* Prevent long product/store names from breaking result cards. */
+.result__name, .result__meta, .cmp-row__name, .basket-line { overflow-wrap: anywhere; }
+
+/* Stronger touch targets on compact screens. */
+@media (max-width: 720px) {
+  .nav__link { min-height: 42px; display: inline-flex; align-items: center; }
+  .card { border-radius: var(--r-lg); }
+  .results-head { align-items: flex-start; }
+}
+
+/* The comparison page should remain readable when a presenter prints/saves
+   a PDF for the backup demo artefact. */
+@media print {
+  body { background: #fff; }
+  .nav, .toast-region, .backend-status, .skip-link, button { display: none !important; }
+  .app-body { padding: 0; }
+  .page { max-width: none; padding: 0; }
+  .card, .result { box-shadow: none; break-inside: avoid; }
+}
+
+.error-page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--s-8) var(--gutter) var(--s-16);
+}
+.error-page__card {
+  width: min(100%, 620px);
+  padding: clamp(var(--s-6), 5vw, var(--s-10));
+  background: var(--c-paper);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-xl);
+  box-shadow: var(--e-2);
+  display: grid;
+  gap: var(--s-4);
+}
+.error-page__card h1 { font-size: var(--t-2xl); color: var(--c-forest); }
+.error-page__card > p:not(.eyebrow) { color: var(--c-muted); }
+.error-page__details {
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  background: var(--c-cream-2);
+  font-size: var(--t-xs);
+  overflow-wrap: anywhere;
+}

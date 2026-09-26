@@ -9,7 +9,7 @@
  *   Budget                 -> saved to the account (Budget screen,
  *                             PUT /budgets/{id})
  *   Reduce motion          -> this device only (lib/localSettings.js)
- *   Shopping list          -> this device only, per account
+ *   Shopping list          -> saved to the account (GET/POST /shopping-list)
  *
  * The backend has no generic settings endpoint, so nothing here pretends to
  * sync a device-only choice to the account.
@@ -28,7 +28,7 @@ import { getReducedMotion, setReducedMotion } from '../lib/localSettings.js';
 export default function Settings() {
   const { user, logout } = useAuth();
   const { budget, remaining } = useBudget();
-  const { clearList, listCount } = useShopping();
+  const { clearList, listCount, ready: shoppingReady, error: shoppingError } = useShopping();
   const toast = useToast();
   const navigate = useNavigate();
   const [reducedMotion, setReducedMotionState] = useState(getReducedMotion);
@@ -50,9 +50,13 @@ export default function Settings() {
 
   async function clearShoppingList() {
     // eslint-disable-next-line no-alert
-    if (!window.confirm('Clear your shopping list on this device?')) return;
-    await clearList();
-    toast.info('Shopping list cleared.');
+    if (!window.confirm('Clear your shopping list?')) return;
+    try {
+      await clearList();
+      toast.info('Shopping list cleared.');
+    } catch (err) {
+      toast.error(err.message || 'Could not clear your shopping list.');
+    }
   }
 
   async function signOut() {
@@ -129,17 +133,20 @@ export default function Settings() {
   <Card className="stack">
     <div className="card__head">
       <h2 className="card__title">Shopping list</h2>
-      <Badge tone="neutral">This device only</Badge>
+      <Badge tone="success">Saved to your account</Badge>
     </div>
         <p style={sectionText}>
-          {plural(listCount, 'item')} on your list. The list is kept in this browser for
-          your account and does not sync to other devices yet.
+          {shoppingError
+            ? shoppingError
+            : shoppingReady
+              ? `${plural(listCount, 'item')} on your list. It follows your account across devices.`
+              : 'Loading your shopping list…'}
         </p>
         <div className="row">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/compare')} disabled={!listCount}>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/compare')} disabled={!shoppingReady || !listCount}>
             Open my list
           </Button>
-          <Button variant="danger" size="sm" onClick={clearShoppingList} disabled={!listCount}>
+          <Button variant="danger" size="sm" onClick={clearShoppingList} disabled={!shoppingReady || !listCount}>
             Clear shopping list
           </Button>
         </div>
