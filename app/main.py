@@ -18,6 +18,7 @@ from app.routers import (
     compare,
     prices,
     shopping_list,
+    live_search,
 )
 
 load_dotenv()
@@ -81,3 +82,4 @@ app.include_router(budget_split.router)      # Member 6 — /budget-split
 app.include_router(compare.router)
 app.include_router(prices.router)
 app.include_router(shopping_list.router)      # Phase 5 — /shopping-list
+app.include_router(live_search.router)        # live store prices — /api/search

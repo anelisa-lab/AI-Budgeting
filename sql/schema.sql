@@ -609,4 +609,21 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE INDEX IF NOT EXISTS idx_items_last_updated ON items (last_updated);
 
+-- Which items each live search returned (GET /api/search cache) — see sql/007_live_search_cache.sql
+CREATE TABLE IF NOT EXISTS live_searches (
+  id            SERIAL PRIMARY KEY,
+  store         VARCHAR(50)  NOT NULL,     -- key from app/scrapers SCRAPERS, e.g. 'checkers'
+  query         VARCHAR(200) NOT NULL,     -- lower-cased, single-spaced
+  searched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  result_count  INTEGER      NOT NULL DEFAULT 0,
+  CONSTRAINT uq_live_searches_store_query UNIQUE (store, query)
+);
+
+CREATE TABLE IF NOT EXISTS live_search_results (
+  search_id  INTEGER NOT NULL REFERENCES live_searches(id) ON DELETE CASCADE,
+  item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  rank       INTEGER NOT NULL,
+  PRIMARY KEY (search_id, item_id)
+);
+
 COMMIT;

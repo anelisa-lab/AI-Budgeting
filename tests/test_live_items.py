@@ -47,7 +47,7 @@ def conn():
     c = psycopg2.connect(DB_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     with c.cursor() as cur:
         cur.execute((Path(__file__).parent.parent / "sql/006_live_items.sql").read_text())
-        cur.execute("TRUNCATE items RESTART IDENTITY")
+        cur.execute("TRUNCATE items RESTART IDENTITY CASCADE")
     c.commit()
     yield c
     c.close()

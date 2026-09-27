@@ -576,3 +576,36 @@ class ShoppingListLineOut(BaseModel):
 
 class ShoppingListOut(BaseModel):
     items: List[ShoppingListLineOut]
+
+
+# -------------------------
+# Live store search — GET /api/search (app/routers/live_search.py)
+# -------------------------
+
+class LiveSearchItem(BaseModel):
+    id: int
+    name: str
+    price: Decimal
+    image_url: Optional[str] = None
+    product_url: Optional[str] = None
+    store: str
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    on_promotion: bool = False
+    in_stock: bool = True
+    last_updated: datetime
+
+
+class LiveSearchStoreStatus(BaseModel):
+    store: str                      # key from app/scrapers, e.g. "checkers"
+    source: str                     # cache | live | stale | unavailable
+    fetched_at: Optional[datetime] = None
+    count: int
+
+
+class LiveSearchResponse(BaseModel):
+    query: str
+    results: List[LiveSearchItem]
+    count: int
+    stores: List[LiveSearchStoreStatus]
+    message: Optional[str] = None

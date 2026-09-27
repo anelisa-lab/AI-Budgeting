@@ -57,12 +57,18 @@ def get_scraper(store: str) -> Callable[[str], List[dict]]:
     return getattr(importlib.import_module(module_name), func_name)
 
 
+def search_store(store: str, query: str) -> List[dict]:
+    """One store's results for `query`; [] (logged) if its scraper fails."""
+    try:
+        return get_scraper(store)(query)
+    except Exception:
+        log.exception("live search for %r failed in the %s scraper", query, store)
+        return []
+
+
 def search_live(query: str) -> List[dict]:
     """Every active store's results for `query`. A failing store is logged and skipped."""
     results: List[dict] = []
     for store in active_stores():
-        try:
-            results.extend(get_scraper(store)(query))
-        except Exception:
-            log.exception("live search for %r failed in the %s scraper", query, store)
+        results.extend(search_store(store, query))
     return results
