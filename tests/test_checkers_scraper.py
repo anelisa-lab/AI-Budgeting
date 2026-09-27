@@ -1,10 +1,8 @@
 """
-app/scrapers/checkers.py parsing, offline. The fixture below is a guessed
-__NEXT_DATA__ shape, not a captured Checkers page — the parser searches the
-whole tree, so what matters is that it finds products wherever they sit.
+app/scrapers/checkers.py parsing, offline. The product dicts below are
+trimmed from a real get-products-filter response (search "bread", Sep 2026).
 """
 
-import json
 from unittest.mock import Mock
 
 import requests
@@ -12,70 +10,85 @@ import requests
 from app.scrapers import checkers
 
 
-def _page(next_data) -> str:
-    return ('<html><body><div id="__next"></div>'
-            f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script>'
-            '</body></html>')
+def _product(**overrides):
+    base = {
+        "id": "5d3af63af434cf8420737d74", "storeId": "5ece6935faafe599532665b2",
+        "name": "Albany Superior White Bread 700g",
+        "displayName": "Albany Superior White Bread 700g",
+        "articleNumber": "10136301", "unitOfMeasure": "EA", "brand": "Albany",
+        "price": 18.99, "discountedPrice": 18.99, "priceWithoutDecimal": 1899,
+        "priceFactor": 100, "isOnPromotion": False, "outOfStock": False,
+        "imageURL": "https://catalog.sixty60.co.za/files/abc",
+        "imageProductCardURL": "https://catalog.sixty60.co.za/v2/files/abc?width=600&height=600",
+    }
+    base.update(overrides)
+    return base
 
 
-NEXT_DATA = {
-    "props": {"pageProps": {
-        "categories": [{"name": "Bakery", "url": "/c/bakery"}],
-        "searchResults": {"products": [
-            {"name": "Albany Superior White Bread 700g", "code": "10145623EA",
-             "price": {"value": 18.99, "formattedValue": "R18.99"},
-             "images": [{"url": "//images.checkers.co.za/albany.png"}],
-             "url": "/p/albany-superior-white-bread-700g/10145623EA"},
-            {"name": "Sasko Brown Bread 700g", "sku": 222,
-             "price": "R16,49", "imageUrl": "https://img.example/sasko.png",
-             "url": "https://www.checkers.co.za/p/sasko/222"},
-            {"name": "Out of stock thing"},                       # no price: skipped
-        ]},
-    }},
-    "page": "/search",
-}
+def test_parses_real_product_shape():
+    [p] = checkers.parse_products({"products": [_product()], "totalCount": 1})
+    assert p == {
+        "name": "Albany Superior White Bread 700g", "price": 18.99,
+        "image_url": "https://catalog.sixty60.co.za/v2/files/abc?width=600&height=600",
+        "product_url": "https://www.checkers.co.za/product/albany-superior-white-bread-700g-10136301EA",
+        "sku": "10136301", "brand": "Albany", "on_promotion": False, "in_stock": True,
+        "store": "Checkers",
+    }
 
 
-def test_finds_products_anywhere_in_next_data():
-    results = checkers.parse_products(checkers.extract_next_data(_page(NEXT_DATA)))
-    assert results == [
-        {"name": "Albany Superior White Bread 700g", "price": 18.99,
-         "image_url": "https://images.checkers.co.za/albany.png",
-         "product_url": "https://www.checkers.co.za/p/albany-superior-white-bread-700g/10145623EA",
-         "sku": "10145623EA", "store": "Checkers"},
-        {"name": "Sasko Brown Bread 700g", "price": 16.49,
-         "image_url": "https://img.example/sasko.png",
-         "product_url": "https://www.checkers.co.za/p/sasko/222",
-         "sku": "222", "store": "Checkers"},
-    ]
+def test_promotional_price_and_fallbacks():
+    [p] = checkers.parse_products({"products": [_product(
+        discountedPrice=15.49, isOnPromotion=True, imageProductCardURL=None)]})
+    assert (p["price"], p["on_promotion"]) == (15.49, True)
+    assert p["image_url"] == "https://catalog.sixty60.co.za/files/abc"
+    [p] = checkers.parse_products({"products": [_product(price=None, discountedPrice=None)]})
+    assert p["price"] == 18.99                           # from priceWithoutDecimal / priceFactor
 
 
-def test_unrecognised_structure_logs_and_returns_empty(caplog):
-    assert checkers.parse_products({"props": {"pageProps": {"foo": 1}}}) == []
-    assert "No product list found" in caplog.text
+def test_skips_duplicates_and_junk():
+    products = [_product(), _product(storeId="other"), _product(name="", displayName=""), "x",
+                _product(articleNumber="2", price=None, discountedPrice=None,
+                         priceWithoutDecimal=None)]
+    assert len(checkers.parse_products({"products": products})) == 1
 
 
-def test_page_without_next_data_returns_none(caplog):
-    assert checkers.extract_next_data("<html>nope</html>") is None
-    assert "no __NEXT_DATA__" in caplog.text
+def test_slug_matches_site_rule():
+    assert checkers._slugify("SASKO Low G.I Wholewheat Brown Bread 800g") == \
+        "sasko-low-gi-wholewheat-brown-bread-800g"
+    assert checkers._slugify("Mac & Cheese  Café 1/2kg") == "mac-and-cheese-cafe-1-2kg"
 
 
-def _session(status=200, text="", headers=None):
-    response = Mock(status_code=status, text=text, headers=headers or {})
-    return Mock(get=Mock(return_value=response))
+def _session(status=200, json_body=None, headers=None, text=""):
+    response = Mock(status_code=status, headers=headers or {}, text=text)
+    if json_body is None:
+        response.json.side_effect = ValueError("not json")
+    else:
+        response.json.return_value = json_body
+    return Mock(post=Mock(return_value=response))
 
 
 def test_search_end_to_end_with_stubbed_http():
-    assert len(checkers.search_checkers("bread", session=_session(text=_page(NEXT_DATA)))) == 2
+    s = _session(json_body={"products": [_product()], "totalCount": 1})
+    assert [p["name"] for p in checkers.search_checkers("bread", session=s)] == \
+        ["Albany Superior White Bread 700g"]
+    sent = s.post.call_args.kwargs["json"]
+    assert sent["filterData"]["filter"]["productListSource"] == {"search": "bread"}
 
 
-def test_cloudflare_challenge_returns_empty(caplog):
-    s = _session(403, "<title>Just a moment...</title>", {"cf-mitigated": "challenge"})
+def test_waf_challenge_returns_empty(caplog):
+    s = _session(202, headers={"x-amzn-waf-action": "challenge"}, text="<html>")
     assert checkers.search_checkers("bread", session=s) == []
-    assert "bot-challenge" in caplog.text
+    assert "bot protection" in caplog.text
 
 
-def test_http_error_and_network_error_return_empty():
-    assert checkers.search_checkers("bread", session=_session(500, "oops")) == []
-    broken = Mock(get=Mock(side_effect=requests.ConnectionError("down")))
+def test_changed_api_shape_logs_and_returns_empty(caplog):
+    assert checkers.search_checkers("bread", session=_session(json_body={"items": []})) == []
+    assert "no 'products' list" in caplog.text
+
+
+def test_http_error_non_json_and_network_error_return_empty():
+    assert checkers.search_checkers("bread", session=_session(500, json_body={})) == []
+    assert checkers.search_checkers("bread", session=_session(200, None, text="<html>")) == []
+    broken = Mock(post=Mock(side_effect=requests.ConnectionError("down")))
     assert checkers.search_checkers("bread", session=broken) == []
+    assert checkers.search_checkers("   ") == []
