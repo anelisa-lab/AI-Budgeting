@@ -543,6 +543,43 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .basket-line { display: flex; align-items: center; gap: var(--s-3); padding-block: var(--s-3); border-bottom: 1px solid var(--c-line); }
 .basket-line:last-child { border-bottom: 0; }
 
+/* Live prices (components/search/LivePrices.jsx) — product cards from GET /api/search */
+.live-prices__checked { font-size: var(--t-xs); color: var(--c-muted); font-weight: var(--fw-semibold); }
+.live-prices__count { font-size: var(--t-sm); color: var(--c-muted); font-weight: var(--fw-semibold); }
+.live-prices__count:empty { display: none; }
+.live-prices__empty { font-size: var(--t-sm); color: var(--c-muted); }
+.live-prices__note { font-size: var(--t-xs); color: var(--c-muted-light); max-width: 58ch; }
+.live-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: var(--s-3);
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.live-card {
+  background: var(--c-paper);
+  border: 1.5px solid var(--c-line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.live-card:hover, .live-card:focus-within { border-color: var(--c-line-strong); box-shadow: var(--e-1); }
+.live-card__link, .live-card__link:hover { display: flex; flex-direction: column; height: 100%; color: inherit; text-decoration: none; }
+.live-card__image {
+  aspect-ratio: 1 / 1; display: grid; place-items: center;
+  background: #fff; padding: var(--s-3); font-size: 40px;
+  border-bottom: 1px solid var(--c-line);
+}
+.live-card__image img { width: 100%; height: 100%; object-fit: contain; }
+.live-card__body { padding: var(--s-3); display: grid; gap: var(--s-2); align-content: start; }
+.live-card__name {
+  font-size: var(--t-sm); font-weight: var(--fw-bold); line-height: 1.3; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 2.6em;
+}
+.live-card__price { font-family: var(--font-display); font-size: var(--t-lg); color: var(--c-forest); line-height: 1.1; }
+@media (max-width: 480px) {
+  .live-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); }
+}
+
 /* ==========================================================================
    RESPONSIVE
    ========================================================================== */

@@ -25,6 +25,10 @@
  *  - An empty result lists the active filters as one-click removable chips.
  *
  * Filters live in the URL, so a search can be shared and survives a refresh.
+ *
+ * Live prices: the search word also goes to GET /api/search, and the live
+ * store results (Checkers Sixty60 for now) show as product cards with images
+ * above the catalogue results — see components/search/LivePrices.jsx.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +40,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
 import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import LivePrices from '../components/search/LivePrices.jsx';
 import { api } from '../api/client.js';
 import { money, plural } from '../lib/format.js';
 import {
@@ -504,6 +509,9 @@ export default function Search() {
 
         {/* --------------------------------------------------- results */}
         <div>
+          {/* Live store prices for the search word (GET /api/search) — Checkers Sixty60 for now */}
+          <LivePrices token={token} query={filters.q} />
+
           {recsAllowed ? (
             <Recommendations
               recs={recs}

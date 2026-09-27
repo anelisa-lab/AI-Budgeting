@@ -348,6 +348,44 @@ export function searchResponseFromApi(payload) {
   };
 }
 
+/* ------------------------------------------------------ live store search */
+
+/** LiveSearchItem — one product from GET /api/search. */
+export function liveItemFromApi(i) {
+  return {
+    id: i.id,
+    name: i.name,
+    price: num(i.price),
+    image_url: i.image_url || null,
+    product_url: i.product_url || null,
+    store: i.store,
+    brand: i.brand || null,
+    category: i.category || null,
+    on_promotion: Boolean(i.on_promotion),
+    in_stock: i.in_stock !== false,
+    last_updated: i.last_updated || null,
+  };
+}
+
+/** LiveSearchResponse. stores[].source is cache | live | stale | unavailable. */
+export function liveSearchFromApi(payload) {
+  const results = Array.isArray(payload?.results) ? payload.results.map(liveItemFromApi) : [];
+  return {
+    query: payload?.query || '',
+    results,
+    count: num(payload?.count, results.length),
+    stores: Array.isArray(payload?.stores)
+      ? payload.stores.map((s) => ({
+        store: s.store,
+        source: s.source,
+        fetched_at: s.fetched_at || null,
+        count: num(s.count, 0),
+      }))
+      : [],
+    message: payload?.message || null,
+  };
+}
+
 /* -------------------------------------------------------- recommendations */
 
 /** RecommendedOffer — one ranked result from POST /recommendations. */

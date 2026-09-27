@@ -35,6 +35,7 @@ import {
   preferencesFromApi,
   recommendationsFromApi,
   searchResponseFromApi,
+  liveSearchFromApi,
   shoppingListFromApi,
   transactionFromApi,
   transactionResultFromApi,
@@ -347,6 +348,16 @@ export const search = {
    */
   async offers(token, params) {
     return searchResponseFromApi(await endpoints.search(token, params));
+  },
+
+  /**
+   * GET /api/search — live prices straight from the stores the backend has
+   * switched on (Checkers Sixty60 for now), with product images and links.
+   * Separate from offers(): these are not catalogue offers and have no
+   * offer_id, so they cannot go on the shopping list.
+   */
+  async live(token, query, opts = {}) {
+    return liveSearchFromApi(await endpoints.liveSearch(token, query, opts));
   },
 
   /**

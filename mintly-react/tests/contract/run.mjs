@@ -439,6 +439,32 @@ await test('search results are coerced, including the generated total_cost', asy
   assert.equal(page.results[0].rating, null);
 });
 
+await test('live search calls GET /api/search?query= and coerces the Decimal price', async () => {
+  installFetch(() => ({
+    status: 200,
+    body: {
+      query: 'bread',
+      results: [{
+        id: 7, name: 'Albany Superior White Bread 700g', price: dec(18.99),
+        image_url: 'https://catalog.sixty60.co.za/v2/files/abc?width=600&height=600',
+        product_url: 'https://www.checkers.co.za/product/albany-superior-white-bread-700g-10136301EA',
+        store: 'Checkers', brand: 'Albany', category: null, on_promotion: false, in_stock: true,
+        last_updated: '2026-09-28T00:39:26+02:00',
+      }],
+      count: 1,
+      stores: [{ store: 'checkers', source: 'cache', fetched_at: '2026-09-28T00:39:26+02:00', count: 1 }],
+      message: null,
+    },
+  }));
+  const live = await search.live(TOKEN, 'bread');
+  const req = lastRequest();
+  assert.equal(req.path, '/api/search');
+  assert.deepEqual(req.query, { query: 'bread' });
+  assert.equal(live.results[0].price, 18.99);
+  assert.equal(live.results[0].image_url.startsWith('https://'), true);
+  assert.equal(live.stores[0].source, 'cache');
+});
+
 await test('only sorts the backend implements are ever sent', () => {
   for (const value of ['distance_asc', 'rating_desc', 'total_asc', 'nonsense']) {
     const params = buildSearchParams({ sort: value });

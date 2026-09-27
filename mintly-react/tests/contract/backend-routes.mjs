@@ -14,6 +14,7 @@
  *   app/routers/profile.py /profile/, /profile/preferences
  *   app/routers/budgets.py /budgets, /budgets/current, /budgets/{id}, …
  *   app/routers/search.py  /search and its query parameters
+ *   app/routers/live_search.py       /api/search (live store prices)
  *   app/routers/budget_split.py      /budget-split, /budget-split/check
  *   app/routers/recommendations.py   /recommendations
  *   app/routers/true_cost.py         /true-cost
@@ -143,6 +144,11 @@ export const ROUTES = [
       'min_price', 'max_price', 'max_shipping_cost',
       'availability', 'essential_only', 'fulfilment', 'max_distance_km', 'sort', 'limit', 'offset', 'page',
     ],
+  },
+  {
+    name: 'liveSearch',
+    method: 'GET', pattern: /^\/api\/search$/, auth: true,
+    query: ['query'],
   },
   {
     name: 'getBudgetSplit',
