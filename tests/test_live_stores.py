@@ -1,0 +1,42 @@
+"""app/scrapers/__init__.py — only the stores in LIVE_PRICE_STORES are called."""
+
+import sys
+
+from app import scrapers
+
+
+def test_default_is_checkers_only(monkeypatch):
+    monkeypatch.delenv("LIVE_PRICE_STORES", raising=False)
+    assert scrapers.active_stores() == ["checkers"]
+
+
+def test_unknown_and_duplicate_keys_are_dropped(monkeypatch, caplog):
+    monkeypatch.setenv("LIVE_PRICE_STORES", " Checkers, picknpay ,checkers,")
+    assert scrapers.active_stores() == ["checkers"]
+    assert "picknpay" in caplog.text
+
+
+def test_inactive_scrapers_are_never_imported_or_called(monkeypatch):
+    calls = []
+    fake = type(sys)("fake_store")
+    fake.search = lambda q: calls.append(q) or [{"name": "x"}]
+    monkeypatch.setitem(sys.modules, "fake_store", fake)
+    monkeypatch.setitem(scrapers.SCRAPERS, "fake", "fake_store:search")
+    monkeypatch.setitem(scrapers.SCRAPERS, "checkers", "not_imported_module:nope")
+
+    monkeypatch.setenv("LIVE_PRICE_STORES", "fake")
+    assert scrapers.search_live("bread") == [{"name": "x"}]
+    assert calls == ["bread"]
+
+    monkeypatch.setenv("LIVE_PRICE_STORES", "")
+    assert scrapers.search_live("bread") == []
+    assert calls == ["bread"]
+
+
+def test_a_failing_store_does_not_break_the_search(monkeypatch):
+    broken = type(sys)("broken_store")
+    broken.search = lambda q: 1 / 0
+    monkeypatch.setitem(sys.modules, "broken_store", broken)
+    monkeypatch.setitem(scrapers.SCRAPERS, "broken", "broken_store:search")
+    monkeypatch.setenv("LIVE_PRICE_STORES", "broken")
+    assert scrapers.search_live("bread") == []
