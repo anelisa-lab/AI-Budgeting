@@ -587,4 +587,26 @@ CREATE TRIGGER trg_alert_preferences_updated_at
 BEFORE UPDATE ON alert_preferences
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- -------------------------
+-- Live store prices (app/scrapers + app/live_items.py) — see sql/006_live_items.sql
+-- -------------------------
+
+CREATE TABLE IF NOT EXISTS items (
+  id            SERIAL PRIMARY KEY,
+  store         VARCHAR(50)   NOT NULL,
+  sku           VARCHAR(100)  NOT NULL,
+  name          TEXT          NOT NULL,
+  price         NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+  image_url     TEXT,
+  product_url   TEXT,
+  brand         VARCHAR(150),
+  category      VARCHAR(100),
+  on_promotion  BOOLEAN       NOT NULL DEFAULT FALSE,
+  in_stock      BOOLEAN       NOT NULL DEFAULT TRUE,
+  last_updated  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_items_store_sku UNIQUE (store, sku)
+);
+
+CREATE INDEX IF NOT EXISTS idx_items_last_updated ON items (last_updated);
+
 COMMIT;

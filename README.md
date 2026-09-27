@@ -38,6 +38,7 @@ psql -U <user> -d <dbname> -f sql/seed_store_charges.sql               # AFTER t
 # Existing database from before Phase 4? Run sql/003_phase4_prices_and_fulfilment.sql FIRST.
 # Existing database from before Phase 5? Run sql/005_phase5_shopping_list.sql, then
 # re-run seed_backend.sql (it is safe to re-run; it adds the Maintenance products).
+# Existing database from before live prices? Run sql/006_live_items.sql (adds the `items` table).
 uvicorn app.main:app --reload --port 4000
 ```
 
