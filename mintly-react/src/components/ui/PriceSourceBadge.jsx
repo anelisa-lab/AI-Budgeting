@@ -10,7 +10,7 @@ import Badge from './Badge.jsx';
  * mistaken for one of those. Every branch is seeded as "Pick n Pay <branch>"
  * (see mintly-react/docs/seed), hence the prefix match rather than an exact one.
  */
-const NOT_LIVE_STORE_PREFIXES = ['Pick n Pay', 'SPAR', "Food Lover's Market", 'Game', 'Woolworths'];
+const NOT_LIVE_STORE_PREFIXES = ['Pick n Pay', 'SPAR', "Food Lover's Market", 'Game', 'Woolworths', 'Makro'];
 
 function isNotLiveStore(storeName) {
   return NOT_LIVE_STORE_PREFIXES.some((prefix) => (storeName || '').startsWith(prefix));

@@ -36,10 +36,12 @@ const STORE_LABELS = { checkers: 'Checkers Sixty60' };
 // Not scraped — shown from the catalogue instead. See the module docstring.
 // SPAR joins Pick n Pay here for the same reason: SPAR2U prices depend on a
 // chosen branch/delivery address, so there is no single "SPAR" live search.
-// Food Lover's Market and Game have no live scraper built at all (they were
-// never investigated the way Checkers/Shoprite were) — their cards are the
-// same real seeded catalogue data as Pick n Pay/SPAR's.
-const CATALOGUE_ONLY_STORES = ['Pick n Pay', 'SPAR', "Food Lover's Market", 'Game'];
+// Food Lover's Market, Game, Woolworths and Makro all have real product
+// data but no live scraper — Game and Woolworths because their robots.txt
+// disallows their search path, Food Lover's Market because its site resets
+// the connection on every automated request. Woolworths has no seed data
+// yet (its fetch below will just come back empty until it does).
+const CATALOGUE_ONLY_STORES = ['Pick n Pay', 'SPAR', "Food Lover's Market", 'Game', 'Woolworths', 'Makro'];
 const CATALOGUE_MATCH_LIMIT = 8;
 
 // The catalogue has no product photos and no real product-page URL for its
@@ -51,6 +53,8 @@ const STORE_HOMEPAGES = {
   SPAR: 'https://www.spar.co.za/',
   "Food Lover's Market": 'https://www.foodloversmarket.co.za/',
   Game: 'https://www.game.co.za/',
+  Woolworths: 'https://www.woolworths.co.za/',
+  Makro: 'https://www.makro.co.za/',
 };
 function storeHomepage(storeName) {
   const prefix = Object.keys(STORE_HOMEPAGES).find((p) => (storeName || '').startsWith(p));
