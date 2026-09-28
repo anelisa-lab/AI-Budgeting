@@ -35,6 +35,8 @@ log = logging.getLogger(__name__)
 
 SCRAPERS: Dict[str, str] = {
     "checkers": "app.scrapers.checkers:search",   # Checkers Sixty60
+    "shoprite": "app.scrapers.shoprite:search",   # same platform as Checkers — see
+                                                   # app/scrapers/sixty60_platform.py
 }
 
 # The `store` value each scraper writes into its results (and so into

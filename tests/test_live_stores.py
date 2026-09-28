@@ -60,6 +60,32 @@ def test_a_failing_store_does_not_break_the_search(monkeypatch):
     assert scrapers.search_live("bread") == []
 
 
+def test_shoprite_is_registered_and_can_be_switched_on(monkeypatch):
+    assert scrapers.SCRAPERS["shoprite"] == "app.scrapers.shoprite:search"
+    monkeypatch.setenv("LIVE_PRICE_STORES", "checkers,shoprite")
+    assert scrapers.active_stores() == ["checkers", "shoprite"]
+    assert scrapers.store_name("shoprite") == "Shoprite"
+    # switching it back off is one line, no code change
+    monkeypatch.setenv("LIVE_PRICE_STORES", "checkers")
+    assert scrapers.active_stores() == ["checkers"]
+
+
+def test_checkers_failing_does_not_hide_real_shoprite_results(monkeypatch):
+    """Same guarantee as test_one_failing_store_does_not_hide_another_store,
+    but through the actual registered checkers/shoprite modules rather than
+    fakes, so a wiring mistake between the two real scrapers would show up
+    here."""
+    import app.scrapers.checkers as checkers_module
+    import app.scrapers.shoprite as shoprite_module
+
+    monkeypatch.setattr(checkers_module, "search",
+                        lambda query: (_ for _ in ()).throw(RuntimeError("Checkers is down")))
+    monkeypatch.setattr(shoprite_module, "search",
+                        lambda query: [{"name": "Bread", "store": "Shoprite"}])
+    monkeypatch.setenv("LIVE_PRICE_STORES", "checkers,shoprite")
+    assert scrapers.search_live("bread") == [{"name": "Bread", "store": "Shoprite"}]
+
+
 def test_one_failing_store_does_not_hide_another_store(monkeypatch):
     good = type(sys)("good_store")
     good.search = lambda q: [{"name": "Bread", "store": "Good"}]
