@@ -105,6 +105,33 @@ def _dispatch_via_africastalking(phone_number: str, body: str) -> str:
     return "sent"
 
 
+def _dispatch_via_textbelt(phone_number: str, body: str) -> str:
+    """
+    POST to Textbelt — no account, no dashboard, nothing to sign up for.
+    TEXTBELT_KEY='textbelt' (the literal string) is the public free-tier
+    key: 1 real text per day, on a quota shared by everyone using that key
+    worldwide. A quota failure is reported in the response body, not the
+    HTTP status, so (like Africa's Talking) it's checked explicitly.
+    """
+    import requests  # local import: only needed on the configured path
+
+    response = requests.post(
+        "https://textbelt.com/text",
+        data={
+            "phone": phone_number,
+            "message": body,
+            "key": os.getenv("TEXTBELT_KEY"),
+        },
+        timeout=5,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("success"):
+        logger.warning("Textbelt did not report success: %s", payload)
+        raise RuntimeError(f"Textbelt send failed: {payload}")
+    return "sent"
+
+
 def _dispatch_via_twilio(phone_number: str, body: str) -> str:
     """
     POST to Twilio's Messages resource directly (no `twilio` SDK dependency —
@@ -154,10 +181,11 @@ def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> s
     Never raises — a caller should always be able to log the result and move
     on, the way a real gateway's outcome would arrive out-of-band anyway.
 
-    Tries, in order: Africa's Talking (if AFRICASTALKING_USERNAME/
-    AFRICASTALKING_API_KEY are set), then Twilio (if TWILIO_ACCOUNT_SID/
-    TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER are all set), then a generic
-    SMS_GATEWAY_URL (for any other provider), then simulation.
+    Tries, in order: Textbelt (if TEXTBELT_KEY is set — no account needed,
+    the literal value 'textbelt' is the public free-tier key), Africa's
+    Talking (if AFRICASTALKING_USERNAME/AFRICASTALKING_API_KEY are set),
+    Twilio (if TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER are
+    all set), then a generic SMS_GATEWAY_URL, then simulation.
     `phone_number` must be in E.164 format (e.g. +27821234567).
     """
     if not phone_number:
@@ -165,6 +193,7 @@ def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> s
     if not sms_enabled:
         return "disabled"
 
+    textbelt_configured = bool(os.getenv("TEXTBELT_KEY"))
     at_configured = all(
         os.getenv(k) for k in ("AFRICASTALKING_USERNAME", "AFRICASTALKING_API_KEY")
     )
@@ -175,11 +204,13 @@ def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> s
 
     # TEMPORARY debug line — remove once real delivery is confirmed working.
     logger.warning(
-        "dispatch_sms debug: at_configured=%s twilio_configured=%s gateway_url=%r",
-        at_configured, twilio_configured, gateway_url,
+        "dispatch_sms debug: textbelt_configured=%s at_configured=%s twilio_configured=%s gateway_url=%r",
+        textbelt_configured, at_configured, twilio_configured, gateway_url,
     )
 
     try:
+        if textbelt_configured:
+            return _dispatch_via_textbelt(phone_number, body)
         if at_configured:
             return _dispatch_via_africastalking(phone_number, body)
         if twilio_configured:
