@@ -38,8 +38,14 @@ SCRAPERS: Dict[str, str] = {
 # The `store` value each scraper writes into its results (and so into
 # items.store). Live search only ever returns items.store rows that belong to
 # a switched-on store, so old rows from a switched-off store can't leak in.
+#
+# Keys not yet in SCRAPERS are harmless here (active_stores() only returns
+# keys that ARE in SCRAPERS) — pre-naming a store before its scraper exists
+# just means one less line to add later.
 STORE_NAMES: Dict[str, str] = {
     "checkers": "Checkers",
+    "shoprite": "Shoprite",
+    "picknpay": "Pick n Pay",   # matches stores.external_store_id / price_feed's key, not "pnp"
 }
 
 DEFAULT_LIVE_STORES = "checkers"

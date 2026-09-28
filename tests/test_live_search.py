@@ -5,6 +5,7 @@ database (they create the live tables from sql/006 + sql/007 and empty them).
 """
 
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,52 @@ def test_ttl_from_env(monkeypatch):
     assert live_search.cache_ttl().total_seconds() == 6 * 3600
 
 
+def test_store_timeout_from_env(monkeypatch):
+    monkeypatch.setenv("LIVE_SEARCH_STORE_TIMEOUT_SECONDS", "5")
+    assert live_search.store_timeout() == 5.0
+    monkeypatch.setenv("LIVE_SEARCH_STORE_TIMEOUT_SECONDS", "junk")
+    assert live_search.store_timeout() == live_search.DEFAULT_STORE_TIMEOUT_SECONDS
+
+
+# ------------------------------------------------ parallel fetch, no database
+
+
+def test_fetch_many_runs_stores_concurrently_not_one_after_another():
+    """Three stores each 'take' 0.3s; if they ran serially that's ~0.9s+."""
+    def slow(store, q):
+        time.sleep(0.3)
+        return [{"store": store}]
+
+    started = time.monotonic()
+    out = live_search._fetch_many(slow, ["a", "b", "c"], "q", timeout=5)
+    elapsed = time.monotonic() - started
+    assert set(out) == {"a", "b", "c"}
+    assert elapsed < 0.6, f"stores were not fetched concurrently ({elapsed:.2f}s)"
+
+
+def test_fetch_many_isolates_a_raising_store():
+    def flaky(store, q):
+        if store == "broken":
+            raise RuntimeError("boom")
+        return [{"store": store}]
+
+    out = live_search._fetch_many(flaky, ["checkers", "broken"], "q", timeout=5)
+    assert out == {"checkers": [{"store": "checkers"}]}   # broken store simply absent
+
+
+def test_fetch_many_gives_up_on_a_slow_store_without_waiting_for_it():
+    def maybe_slow(store, q):
+        if store == "slow":
+            time.sleep(2)
+        return [{"store": store}]
+
+    started = time.monotonic()
+    out = live_search._fetch_many(maybe_slow, ["fast", "slow"], "q", timeout=0.2)
+    elapsed = time.monotonic() - started
+    assert out == {"fast": [{"store": "fast"}]}            # slow store not waited for
+    assert elapsed < 1.0, f"_fetch_many waited past its timeout ({elapsed:.2f}s)"
+
+
 @pytest.fixture
 def conn():
     if not DB_URL:
@@ -43,8 +90,8 @@ def conn():
     c.close()
 
 
-def _product(sku, price=10.0):
-    return {"name": f"Bread {sku}", "price": price, "sku": sku, "store": "Checkers",
+def _product(sku, price=10.0, store="Checkers"):
+    return {"name": f"Bread {sku}", "price": price, "sku": sku, "store": store,
             "image_url": f"https://img/{sku}", "product_url": f"https://p/{sku}"}
 
 
@@ -126,3 +173,40 @@ def test_out_of_stock_items_come_last_with_no_price(conn):
 
 def test_no_active_stores(conn):
     assert live_search.search(conn, "bread", scrape=FakeStore([_product("a")]), stores=[]) == []
+
+
+def test_one_store_failing_does_not_affect_another(conn):
+    """
+    Two stores in one search(): Checkers works, Shoprite's scraper raises.
+    Checkers must come back fine and Shoprite must be reported as
+    unavailable — never an exception that takes down the whole search.
+    """
+    def half_broken(store, q):
+        if store == "shoprite":
+            raise RuntimeError("Shoprite is down")
+        return [_product("bread-1")]
+
+    checkers, shoprite = live_search.search(
+        conn, "bread", scrape=half_broken, stores=["checkers", "shoprite"])
+    assert checkers.store == "checkers" and checkers.source == "live"
+    assert [i["name"] for i in checkers.items] == ["Bread bread-1"]
+    assert shoprite.store == "shoprite" and shoprite.source == "unavailable"
+    assert shoprite.items == []
+
+
+def test_a_slow_store_does_not_delay_a_fast_ones_results(conn, monkeypatch):
+    monkeypatch.setenv("LIVE_SEARCH_STORE_TIMEOUT_SECONDS", "0.3")
+
+    def one_slow_one_fast(store, q):
+        if store == "shoprite":
+            time.sleep(0.6)
+            return [_product("late", store="Shoprite")]
+        return [_product("bread-1")]
+
+    started = time.monotonic()
+    checkers, shoprite = live_search.search(
+        conn, "bread", scrape=one_slow_one_fast, stores=["checkers", "shoprite"])
+    elapsed = time.monotonic() - started
+    assert elapsed < 1.0, f"search() waited on the slow store ({elapsed:.2f}s)"
+    assert checkers.source == "live" and len(checkers.items) == 1
+    assert shoprite.source == "unavailable"
