@@ -116,6 +116,16 @@ def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> s
     )
     gateway_url = os.getenv("SMS_GATEWAY_URL")
 
+    # TEMPORARY debug line — remove once Twilio delivery is confirmed working.
+    logger.warning(
+        "dispatch_sms debug: twilio_configured=%s SID=%r TOKEN_set=%s FROM=%r gateway_url=%r",
+        twilio_configured,
+        os.getenv("TWILIO_ACCOUNT_SID"),
+        bool(os.getenv("TWILIO_AUTH_TOKEN")),
+        os.getenv("TWILIO_FROM_NUMBER"),
+        gateway_url,
+    )
+
     try:
         if twilio_configured:
             return _dispatch_via_twilio(phone_number, body)
