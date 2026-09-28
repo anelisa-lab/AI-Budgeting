@@ -75,6 +75,10 @@ def _dispatch_via_twilio(phone_number: str, body: str) -> str:
         auth=(account_sid, auth_token),
         timeout=5,
     )
+    if not response.ok:
+        # raise_for_status() discards the body, which is where Twilio's
+        # actual reason lives (e.g. {"code": 21211, "message": "..."}).
+        logger.warning("Twilio rejected the message: %s %s", response.status_code, response.text)
     response.raise_for_status()
     return "sent"
 
