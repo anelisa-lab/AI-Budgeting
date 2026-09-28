@@ -4,6 +4,9 @@ python -m app.price_feed <command>
     status                         how many prices are estimates vs confirmed
     probe --store S --query Q      call the live API once and print what comes back
     refresh --provider csv|rapidapi [--file F] [--dry-run]
+
+refresh and probe only touch stores listed in LIVE_PRICE_STORES (.env,
+default "checkers"); other stores' prices are left exactly as they are.
 """
 
 from __future__ import annotations
@@ -13,7 +16,9 @@ import json
 import sys
 
 from app.price_feed.providers import CsvPriceProvider, RapidApiSaGroceryProvider
-from app.price_feed.refresh import apply_plan, load_catalogue_offers, plan_refresh
+from app.price_feed.refresh import (apply_plan, load_catalogue_offers, only_enabled_stores,
+                                    plan_refresh)
+from app.scrapers import enabled_stores, is_enabled
 
 
 def _connect():
@@ -34,6 +39,9 @@ def cmd_status(_args):
 
 
 def cmd_probe(args):
+    if not is_enabled(args.store):
+        sys.exit(f"'{args.store}' is switched off — LIVE_PRICE_STORES={','.join(enabled_stores()) or '(empty)'}. "
+                 "Add it to LIVE_PRICE_STORES in .env to probe it.")
     provider = RapidApiSaGroceryProvider()
     slug = provider.store_map.get(args.store, args.store)
     payload = provider.get(slug, {provider.search_param: args.query, "page": 1, "limit": 5})
@@ -54,15 +62,24 @@ def cmd_refresh(args):
     try:
         with conn, conn.cursor() as cur:
             offers = load_catalogue_offers(cur)
+            # Only stores listed in LIVE_PRICE_STORES are refreshed; every other
+            # store's product_offers rows keep the last price written to them.
             if args.provider == "csv":
                 provider = CsvPriceProvider(args.file)
                 listings = provider.fetch()
             else:
                 provider = RapidApiSaGroceryProvider(max_requests=args.max_requests)
                 wanted = sorted({(o.store_key, f"{o.brand or ''} {o.product_name}".strip())
-                                 for o in offers if o.store_key in provider.store_map})
+                                 for o in offers
+                                 if o.store_key in provider.store_map and is_enabled(o.store_key)})
                 listings = provider.fetch_for(wanted)
-            plan = plan_refresh(offers, listings, covered_stores=provider.covered_stores())
+            listings, covered, skipped = only_enabled_stores(
+                listings, provider.covered_stores(), enabled_stores())
+            if skipped:
+                print(f"skipping switched-off store(s): {', '.join(skipped)} "
+                      f"(LIVE_PRICE_STORES={','.join(enabled_stores()) or '(empty)'}) — "
+                      "their prices are left as they are")
+            plan = plan_refresh(offers, listings, covered_stores=covered)
             print(plan.summary())
             for u in plan.updates:
                 print(f"  UPDATE #{u.offer_id}: R{u.old_price} -> R{u.new_price}  ({u.title})")

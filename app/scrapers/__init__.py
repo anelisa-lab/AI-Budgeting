@@ -13,8 +13,9 @@ To add a store: write app/scrapers/<store>.py with a
 `search_<store>(query) -> list[dict]` that never raises, add it below, then
 add its key to LIVE_PRICE_STORES.
 
-app/price_feed (CSV + RapidAPI import, run from the command line) is a
-separate, older path and is not part of this.
+The same setting also limits app/price_feed (the older CSV / RapidAPI import
+into product_offers, run by hand): its refresh and probe commands skip any
+store that isn't listed here.
 """
 
 from __future__ import annotations
@@ -34,22 +35,47 @@ SCRAPERS: Dict[str, str] = {
     "checkers": "app.scrapers.checkers:search_checkers",   # Checkers Sixty60
 }
 
+# The `store` value each scraper writes into its results (and so into
+# items.store). Live search only ever returns items.store rows that belong to
+# a switched-on store, so old rows from a switched-off store can't leak in.
+STORE_NAMES: Dict[str, str] = {
+    "checkers": "Checkers",
+}
+
 DEFAULT_LIVE_STORES = "checkers"
 
 
-def active_stores() -> List[str]:
-    """Store keys switched on by LIVE_PRICE_STORES, in order; unknown keys are logged and dropped."""
+def enabled_stores() -> List[str]:
+    """Every store key listed in LIVE_PRICE_STORES, lower-cased, in order, no duplicates."""
     raw = os.getenv("LIVE_PRICE_STORES", DEFAULT_LIVE_STORES)
-    stores = []
+    stores: List[str] = []
     for key in (k.strip().lower() for k in raw.split(",")):
-        if not key or key in stores:
-            continue
+        if key and key not in stores:
+            stores.append(key)
+    return stores
+
+
+def active_stores() -> List[str]:
+    """Enabled stores that have a live scraper — what live search calls."""
+    stores = []
+    for key in enabled_stores():
         if key not in SCRAPERS:
-            log.warning("LIVE_PRICE_STORES names %r, which has no scraper in "
-                        "app/scrapers/__init__.py — ignored", key)
+            log.info("LIVE_PRICE_STORES lists %r, which has no live scraper in "
+                     "app/scrapers/__init__.py — live search skips it", key)
             continue
         stores.append(key)
     return stores
+
+
+def store_name(store: str) -> str:
+    """items.store value for a store key: 'checkers' -> 'Checkers'."""
+    return STORE_NAMES.get(store, store.title())
+
+
+def is_enabled(store: str) -> bool:
+    """Is this store key listed in LIVE_PRICE_STORES? Used by app/price_feed,
+    whose stores (e.g. 'picknpay' via RapidAPI) needn't have a live scraper."""
+    return (store or "").strip().lower() in enabled_stores()
 
 
 def get_scraper(store: str) -> Callable[[str], List[dict]]:

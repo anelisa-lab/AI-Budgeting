@@ -2,7 +2,9 @@
 Cached live store search — the logic behind GET /api/search.
 
 For each active store (app/scrapers, LIVE_PRICE_STORES — Checkers Sixty60
-only for now):
+only for now), and only ever returning items whose items.store is that
+store's name, so rows left in the database by a switched-off store are
+never shown:
 
   searched within LIVE_SEARCH_TTL_HOURS (default 6)  -> answer from the DB   ("cache")
   otherwise                                          -> ask the store, upsert
@@ -25,7 +27,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Optional
 
 from app.live_items import upsert_items
-from app.scrapers import active_stores, search_store
+import logging
+
+from app.scrapers import active_stores, search_store, store_name
+
+log = logging.getLogger(__name__)
 
 DEFAULT_TTL_HOURS = 6.0
 
@@ -44,10 +50,14 @@ def normalise_query(query: str) -> str:
 
 @dataclass
 class StoreResult:
-    store: str
+    store: str                          # key, e.g. "checkers"
     source: str                         # cache | live | stale | unavailable
     fetched_at: Optional[datetime]
     items: List[dict] = field(default_factory=list)
+
+    @property
+    def name(self) -> str:              # items.store value, e.g. "Checkers"
+        return store_name(self.store)
 
 
 def search(conn, query: str,
@@ -62,7 +72,7 @@ def search(conn, query: str,
             out.append(StoreResult(store, "cache", cached[0], cached[1]))
             continue
 
-        products = scrape(store, q)
+        products = _own_rows(store, scrape(store, q))
         if products:
             item_ids = upsert_items(conn, products, commit=False)
             searched_at = _remember(conn, store, q, item_ids)
@@ -73,6 +83,16 @@ def search(conn, query: str,
         else:
             out.append(StoreResult(store, "unavailable", None, []))
     return out
+
+
+def _own_rows(store: str, products: List[dict]) -> List[dict]:
+    """Only rows labelled with this store's name are saved — nothing else gets into items."""
+    name = store_name(store)
+    own = [p for p in products if p.get("store") == name]
+    if len(own) != len(products):
+        log.warning("%s scraper returned %d row(s) for another store — dropped",
+                    store, len(products) - len(own))
+    return own
 
 
 def _is_fresh(searched_at: datetime) -> bool:
@@ -99,8 +119,9 @@ def _items_for(conn, store: str, q: str) -> List[dict]:
                JOIN live_search_results r ON r.search_id = s.id
                JOIN items i ON i.id = r.item_id
                WHERE s.store = %s AND s.query = %s
+                 AND i.store = %s              -- never another store's rows
                ORDER BY r.rank""",
-            (store, q),
+            (store, q, store_name(store)),
         )
         cols = [d[0] for d in cur.description]
         return [row if isinstance(row, dict) else dict(zip(cols, row)) for row in cur.fetchall()]

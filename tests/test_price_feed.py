@@ -128,3 +128,19 @@ def test_the_csv_template_loads_and_blank_rows_are_skipped(tmp_path=None):
     assert listings[0].source == "verified_manual" and listings[0].price == D("44.99")
     plan = plan_refresh([MAIZE], listings)
     assert plan.updates[0].new_price == D("44.99")
+
+
+def test_refresh_skips_stores_not_in_live_price_stores():
+    from app.price_feed.refresh import only_enabled_stores
+    listings = [live("Albany Superior Brown Bread 700g", "18.99", store="checkers"),
+                live("Albany Superior Brown Bread 700g", "17.49", store="picknpay")]
+    kept, covered, skipped = only_enabled_stores(listings, ["checkers", "picknpay", "spar"],
+                                                 ["Checkers"])
+    assert [l.store_key for l in kept] == ["checkers"]
+    assert covered == ["checkers"]
+    assert skipped == ["picknpay", "spar"]
+
+    offers = [CatalogueOffer(1, "checkers", "Brown Bread", "Albany", "700g", D("20.00")),
+              CatalogueOffer(2, "picknpay", "Brown Bread", "Albany", "700g", D("20.00"))]
+    plan = plan_refresh(offers, kept, covered_stores=covered)
+    assert [u.offer_id for u in plan.updates] == [1]           # Pick n Pay offer left untouched

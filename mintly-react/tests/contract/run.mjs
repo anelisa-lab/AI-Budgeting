@@ -452,7 +452,7 @@ await test('live search calls GET /api/search?query= and coerces the Decimal pri
         last_updated: '2026-09-28T00:39:26+02:00',
       }],
       count: 1,
-      stores: [{ store: 'checkers', source: 'cache', fetched_at: '2026-09-28T00:39:26+02:00', count: 1 }],
+      stores: [{ store: 'checkers', name: 'Checkers', source: 'cache', fetched_at: '2026-09-28T00:39:26+02:00', count: 1 }],
       message: null,
     },
   }));
@@ -463,6 +463,7 @@ await test('live search calls GET /api/search?query= and coerces the Decimal pri
   assert.equal(live.results[0].price, 18.99);
   assert.equal(live.results[0].image_url.startsWith('https://'), true);
   assert.equal(live.stores[0].source, 'cache');
+  assert.equal(live.stores[0].name, 'Checkers');
 });
 
 await test('only sorts the backend implements are ever sent', () => {

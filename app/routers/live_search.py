@@ -3,9 +3,12 @@ Live store search — GET /api/search?query=bread
 
 Searches the stores switched on in LIVE_PRICE_STORES (app/scrapers — only
 Checkers Sixty60 for now) and returns name, price, image and link for each
-product. Answers come from the database when the same query was searched
-within LIVE_SEARCH_TTL_HOURS (default 6), so Checkers is asked at most once
-per query per six hours however many students search. Cache rules:
+product. Only rows whose items.store belongs to a switched-on store are
+returned (filtered in SQL), so another store's old rows never show.
+
+Answers come from the database when the same query was searched within
+LIVE_SEARCH_TTL_HOURS (default 6), so Checkers is asked at most once per
+query per six hours however many students search. Cache rules:
 app/live_search.py.
 
 Separate from GET /search, which searches the curated catalogue
@@ -20,7 +23,8 @@ Response:
       "results": [{"id", "name", "price", "image_url", "product_url", "store",
                    "brand", "category", "on_promotion", "in_stock", "last_updated"}],
       "count": 40,
-      "stores": [{"store": "checkers", "source": "cache", "fetched_at": "...", "count": 40}],
+      "stores": [{"store": "checkers", "name": "Checkers", "source": "cache",
+                  "fetched_at": "...", "count": 40}],
       "message": null       # set when a store couldn't be reached or nothing matched
     }
 source: "cache" (from the DB, fresh), "live" (just fetched), "stale" (the
@@ -55,7 +59,7 @@ def live_store_search(
         query=live_search.normalise_query(query),
         results=results,
         count=len(results),
-        stores=[LiveSearchStoreStatus(store=s.store, source=s.source,
+        stores=[LiveSearchStoreStatus(store=s.store, name=s.name, source=s.source,
                                       fetched_at=s.fetched_at, count=len(s.items))
                 for s in per_store],
         message=_message(per_store, results),

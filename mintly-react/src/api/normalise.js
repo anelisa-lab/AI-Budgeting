@@ -377,6 +377,7 @@ export function liveSearchFromApi(payload) {
     stores: Array.isArray(payload?.stores)
       ? payload.stores.map((s) => ({
         store: s.store,
+        name: s.name || s.store,
         source: s.source,
         fetched_at: s.fetched_at || null,
         count: num(s.count, 0),

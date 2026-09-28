@@ -1,5 +1,6 @@
 """app/scrapers/__init__.py — only the stores in LIVE_PRICE_STORES are called."""
 
+import logging
 import sys
 
 from app import scrapers
@@ -11,9 +12,24 @@ def test_default_is_checkers_only(monkeypatch):
 
 
 def test_unknown_and_duplicate_keys_are_dropped(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
     monkeypatch.setenv("LIVE_PRICE_STORES", " Checkers, picknpay ,checkers,")
-    assert scrapers.active_stores() == ["checkers"]
+    assert scrapers.active_stores() == ["checkers"]            # no live scraper for picknpay
     assert "picknpay" in caplog.text
+
+
+def test_enabled_stores_include_stores_without_a_scraper(monkeypatch):
+    # app/price_feed stores (e.g. picknpay via RapidAPI) are switched on here too
+    monkeypatch.setenv("LIVE_PRICE_STORES", "checkers,PicknPay")
+    assert scrapers.enabled_stores() == ["checkers", "picknpay"]
+    assert scrapers.is_enabled("picknpay") and not scrapers.is_enabled("shoprite")
+    monkeypatch.delenv("LIVE_PRICE_STORES")
+    assert scrapers.enabled_stores() == ["checkers"]
+    assert not scrapers.is_enabled("picknpay")
+
+
+def test_store_names():
+    assert scrapers.store_name("checkers") == "Checkers"
 
 
 def test_inactive_scrapers_are_never_imported_or_called(monkeypatch):

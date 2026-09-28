@@ -92,5 +92,26 @@ def test_store_down_serves_stale_then_unavailable(conn):
         assert cur.fetchone()["n"] == 0
 
 
+def test_other_stores_rows_never_come_back(conn, caplog):
+    # A scraper that returns another store's row: it is dropped, not saved
+    mixed = FakeStore([_product("a"), {**_product("pnp"), "store": "Pick n Pay"}])
+    [result] = live_search.search(conn, "bread", scrape=mixed, stores=["checkers"])
+    assert [i["store"] for i in result.items] == ["Checkers"]
+    assert "another store" in caplog.text
+
+    # Old data: a Pick n Pay item already linked to the Checkers "bread" search
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO items (store, sku, name, price) VALUES
+                       ('Pick n Pay', 'old', 'PnP bread', 9.99) RETURNING id""")
+        pnp_id = cur.fetchone()["id"]
+        cur.execute("""INSERT INTO live_search_results (search_id, item_id, rank)
+                       SELECT id, %s, 99 FROM live_searches WHERE query = 'bread'""", (pnp_id,))
+    conn.commit()
+    [cached] = live_search.search(conn, "bread", scrape=mixed, stores=["checkers"])
+    assert cached.source == "cache"
+    assert {i["store"] for i in cached.items} == {"Checkers"}
+    assert cached.name == "Checkers"
+
+
 def test_no_active_stores(conn):
     assert live_search.search(conn, "bread", scrape=FakeStore([_product("a")]), stores=[]) == []

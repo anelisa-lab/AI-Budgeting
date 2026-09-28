@@ -55,11 +55,14 @@ export default function LivePrices({ token, query }) {
 
   if (term.length < 2) return null;
 
-  const storeNames = (data?.stores || []).map((s) => STORE_LABELS[s.store] || s.store);
+  const storeNames = (data?.stores || []).map((s) => STORE_LABELS[s.store] || s.name);
   const title = storeNames.length ? `Live prices · ${storeNames.join(', ')}` : 'Live prices';
   const fetchedAt = data?.stores?.map((s) => s.fetched_at).filter(Boolean).sort()[0];
   const stale = data?.stores?.some((s) => s.source === 'stale');
-  const items = data?.results || [];
+  // Belt and braces: the backend already filters by store in SQL; this only
+  // shows cards from a store the backend says is switched on (Checkers).
+  const activeNames = new Set((data?.stores || []).map((s) => s.name));
+  const items = (data?.results || []).filter((item) => activeNames.has(item.store));
   const visible = showAll ? items : items.slice(0, FIRST_ROWS);
 
   return (
@@ -80,7 +83,7 @@ export default function LivePrices({ token, query }) {
         {loading
           ? `Checking live prices for “${term}”…`
           : data && items.length > 0
-            ? `${plural(data.count, 'product')} for “${term}”`
+            ? `${plural(items.length, 'product')} for “${term}”`
             : ''}
       </p>
 

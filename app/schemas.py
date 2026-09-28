@@ -598,6 +598,7 @@ class LiveSearchItem(BaseModel):
 
 class LiveSearchStoreStatus(BaseModel):
     store: str                      # key from app/scrapers, e.g. "checkers"
+    name: str                       # the items.store value its results carry, e.g. "Checkers"
     source: str                     # cache | live | stale | unavailable
     fetched_at: Optional[datetime] = None
     count: int
