@@ -1003,7 +1003,7 @@ await test('the shopping list lives on the server and a device list is uploaded 
   };
   installFetch((req) => ({ body: { items: req.method === 'DELETE' && req.path === '/shopping-list' ? [] : [listLine()] } }));
   shoppingList.setOwner(1, TOKEN);
-  const lines = await shoppingList.list();
+  const { lines } = await shoppingList.list();
   const posts = captured.filter((r) => r.method === 'POST');
   assert.equal(posts.length, 1, 'the device list is uploaded');
   assert.deepEqual(posts[0].body, { offer_id: 101, qty: 2 });
@@ -1023,6 +1023,54 @@ await test('the shopping list lives on the server and a device list is uploaded 
   assert.equal(lastRequest().path, '/shopping-list');
   shoppingList.setOwner(null, null);
   delete globalThis.localStorage;
+});
+
+await test('live Checkers items go on the same list, at the price saved when added', async () => {
+  const liveLine = {
+    item_id: 7, name: 'Albany Superior White Bread 700g', store: 'Checkers', brand: 'Albany',
+    image_url: 'https://img/a', product_url: 'https://www.checkers.co.za/product/a',
+    price: dec(18.99), current_price: dec(19.99), in_stock: true, buyable: true,
+    price_changed: true, qty: 2, line_total: dec(37.98), added_at: '2026-09-28T10:00:00+00:00',
+  };
+  installFetch(() => ({ body: {
+    items: [], live_items: [liveLine],
+    summary: { total: dec(37.98), count: 2, unavailable_count: 0, changed_count: 1 },
+  } }));
+  shoppingList.setOwner(1, TOKEN);
+  const list = await shoppingList.addLive({ id: 7 }, 1);
+  assert.deepEqual(lastRequest().body, { item_id: 7, qty: 1 });
+  assert.equal(lastRequest().path, '/shopping-list/items');
+  const [line] = list.liveLines;
+  assert.equal(line.price, 18.99, 'the saved price');
+  assert.equal(line.current_price, 19.99, 'today, only shown beside it');
+  assert.equal(list.summary.total, 37.98, 'the total stays at saved prices');
+  assert.equal(list.summary.count, 2);
+
+  await shoppingList.setLiveQty(7, 3);
+  assert.equal(lastRequest().method, 'PATCH');
+  assert.equal(lastRequest().path, '/shopping-list/live-items/7');
+  await shoppingList.removeLive(7);
+  assert.equal(lastRequest().method, 'DELETE');
+
+  installFetch(() => ({ body: {
+    items: [], summary: { total: dec(0), count: 1, unavailable_count: 1, changed_count: 0 },
+    live_items: [{ ...liveLine, current_price: null, in_stock: false, buyable: false, qty: 1 }],
+  } }));
+  const gone = await shoppingList.list();
+  assert.equal(gone.liveLines[0].current_price, null, 'no price now is null, never R0');
+  assert.equal(gone.summary.total, 0);
+  shoppingList.setOwner(null, null);
+});
+
+await test('an out-of-stock item is refused by the server (409), not added', async () => {
+  installFetch(() => ({ status: 409, body: { detail: 'That item is out of stock or has no price right now.' } }));
+  shoppingList.setOwner(1, TOKEN);
+  await assert.rejects(() => shoppingList.addLive({ id: 9 }, 1), (err) => {
+    assert.equal(err.status, 409);
+    assert.match(err.message, /out of stock/);
+    return true;
+  });
+  shoppingList.setOwner(null, null);
 });
 
 await test('recent searches skip blank runs, show each query once, and can be cleared', async () => {

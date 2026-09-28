@@ -7,13 +7,16 @@
  * running this on every search is cheap.
  *
  * These are not catalogue offers — no offer_id, no delivery fee, no fees
- * from store_charges — so they link out to the store instead of offering
- * "Add to list".
+ * from store_charges. Each card links to the store, and "Add to list" puts
+ * the item on the student's list (POST /shopping-list/items {item_id}) at
+ * today's price, saved.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, Skeleton } from '../ui/index.js';
 import { api } from '../../api/client.js';
+import { useShopping } from '../../context/ShoppingContext.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
 import { money, plural, timeAgo } from '../../lib/format.js';
 
 const FIRST_ROWS = 8;
@@ -114,8 +117,8 @@ export default function LivePrices({ token, query }) {
             </Button>
           )}
           <p className="live-prices__note">
-            Straight from the store&apos;s website. Delivery and store fees aren&apos;t included,
-            and these items can&apos;t be added to your list yet.
+            Straight from the store&apos;s website. Delivery and store fees aren&apos;t included.
+            Items you add keep the price they had when you added them.
           </p>
         </>
       )}
@@ -162,8 +165,88 @@ function LiveCard({ item }) {
         >
           {body}
         </a>
-      ) : body}
+      ) : <div className="live-card__link">{body}</div>}
+      <ListButton item={item} />
     </li>
+  );
+}
+
+/**
+ * Below every card, always visible (no hover needed on a phone):
+ *   buyable          -> "Add to list", then "Added ✓ +1" and a quantity stepper
+ *   no price / stock -> disabled, so an unpriced item can never be added
+ * The server refuses an unbuyable item too (409), so this is not the only guard.
+ */
+function ListButton({ item }) {
+  const { liveQtyOf, addLive, setLiveQty } = useShopping();
+  const toast = useToast();
+  const qty = liveQtyOf(item.id);
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState(0);      // bumps on every successful add
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  async function run(action, added) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await action();
+      if (added) {
+        setFlash((n) => n + 1);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setFlash(0), 1400);
+      }
+    } catch (err) {
+      toast.error(err.message || 'Could not update your list.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!item.buyable) {
+    return (
+      <div className="live-card__actions">
+        <Button size="sm" variant="secondary" block disabled aria-disabled="true">
+          {item.in_stock ? 'No price — can’t add' : 'Out of stock'}
+        </Button>
+      </div>
+    );
+  }
+
+  if (qty === 0) {
+    return (
+      <div className="live-card__actions">
+        <Button
+          size="sm"
+          block
+          loading={busy}
+          onClick={() => run(() => addLive(item, 1), true)}
+          aria-label={`Add to list: ${item.name}, ${money(item.price)}`}
+        >
+          Add to list
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="live-card__actions">
+      <div className="live-card__stepper">
+        <Button
+          variant="ghost" size="sm" disabled={busy}
+          onClick={() => run(() => setLiveQty(item.id, qty - 1), false)}
+          aria-label={qty === 1 ? `Remove ${item.name} from your list` : `One fewer ${item.name}`}
+        >−</Button>
+        <span className="num" aria-live="polite" style={{ fontWeight: 'var(--fw-extra)' }}>
+          {flash ? <span className="live-card__added" key={flash}>Added ✓ +1</span> : `${qty} on list`}
+        </span>
+        <Button
+          variant="ghost" size="sm" disabled={busy || qty >= 20}
+          onClick={() => run(() => addLive(item, 1), true)}
+          aria-label={`One more ${item.name}`}
+        >+</Button>
+      </div>
+    </div>
   );
 }
 

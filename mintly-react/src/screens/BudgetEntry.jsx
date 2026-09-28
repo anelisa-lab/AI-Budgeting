@@ -30,6 +30,7 @@ import {
 } from '../components/ui/index.js';
 import { useBudget, NSFAS } from '../context/BudgetContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import ListBudgetSummary from '../components/list/ListBudgetSummary.jsx';
 import { addDays, budgetToFormValues } from '../api/normalise.js';
 import { daysUntil, longDate, money, todayIso } from '../lib/format.js';
 import * as v from '../lib/validation.js';
@@ -425,6 +426,9 @@ export default function BudgetEntry() {
             )}
           </form>
         </Card>
+
+        {/* Your shopping list against what's left (live Checkers + catalogue items) */}
+        {isEditing && <ListBudgetSummary />}
 
         {isEditing && (
           <div className="row">

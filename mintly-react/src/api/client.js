@@ -37,6 +37,7 @@ import {
   searchResponseFromApi,
   liveSearchFromApi,
   shoppingListFromApi,
+  EMPTY_LIST,
   transactionFromApi,
   transactionResultFromApi,
   transactionToApi,
@@ -428,13 +429,24 @@ export const shoppingList = {
     listToken = userId ? token : null;
     localList.setOwner(userId);
   },
+  /** Every call resolves to { lines, liveLines, summary } — see shoppingListFromApi. */
   async list() {
-    if (!listToken) return [];
+    if (!listToken) return EMPTY_LIST;
     await uploadDeviceList(listToken);
     return shoppingListFromApi(await endpoints.getShoppingList(listToken));
   },
   async add(offer, qty = 1) {
     return shoppingListFromApi(await endpoints.addShoppingListItem(listToken, { offer_id: offer.offer_id, qty }));
+  },
+  /** A live store item from GET /api/search (by its items.id). */
+  async addLive(item, qty = 1) {
+    return shoppingListFromApi(await endpoints.addShoppingListItem(listToken, { item_id: item.id, qty }));
+  },
+  async setLiveQty(itemId, qty) {
+    return shoppingListFromApi(await endpoints.setShoppingListLiveQty(listToken, itemId, Math.max(0, Math.round(qty))));
+  },
+  async removeLive(itemId) {
+    return shoppingListFromApi(await endpoints.removeShoppingListLiveItem(listToken, itemId));
   },
   async setQty(offerId, qty) {
     return shoppingListFromApi(await endpoints.setShoppingListQty(listToken, offerId, Math.max(0, Math.round(qty))));

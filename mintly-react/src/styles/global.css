@@ -543,6 +543,28 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .basket-line { display: flex; align-items: center; gap: var(--s-3); padding-block: var(--s-3); border-bottom: 1px solid var(--c-line); }
 .basket-line:last-child { border-bottom: 0; }
 
+/* Shopping list — nav counter, list vs budget, live list lines, card add button */
+.nav__list {
+  display: inline-block; margin-left: var(--s-2); padding: 1px 8px; border-radius: 999px;
+  font-size: var(--t-xs); font-weight: var(--fw-extra);
+  background: var(--c-butter); color: var(--c-on-butter);
+}
+.nav__list--over { background: var(--c-danger-bg); color: var(--c-danger); }
+.list-budget__total { font-family: var(--font-display); font-size: var(--t-xl); color: var(--c-forest); }
+.live-line__img {
+  width: 48px; height: 48px; flex: none; border-radius: var(--r-md); background: #fff;
+  border: 1px solid var(--c-line); object-fit: contain; display: grid; place-items: center;
+}
+.live-card { display: flex; flex-direction: column; }
+.live-card__link { flex: 1; }
+.live-card__actions { padding: 0 var(--s-3) var(--s-3); display: grid; gap: var(--s-2); }
+.live-card__stepper { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.live-card__added {
+  font-size: var(--t-xs); font-weight: var(--fw-extra); color: var(--c-success);
+  animation: live-added var(--dur-slow, 1.2s) var(--ease) both;
+}
+@keyframes live-added { 0% { opacity: 0; transform: translateY(4px); } 20%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+
 /* Live prices (components/search/LivePrices.jsx) — product cards from GET /api/search */
 .live-prices__checked { font-size: var(--t-xs); color: var(--c-muted); font-weight: var(--fw-semibold); }
 .live-prices__count { font-size: var(--t-sm); color: var(--c-muted); font-weight: var(--fw-semibold); }

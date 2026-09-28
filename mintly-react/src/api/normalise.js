@@ -642,8 +642,47 @@ export function shoppingLineFromApi(l) {
   };
 }
 
+/** LiveListLineOut — a live store item (Checkers) on the list. */
+export function liveListLineFromApi(l) {
+  return {
+    item_id: l.item_id,
+    name: l.name,
+    store: l.store,
+    brand: l.brand || null,
+    image_url: l.image_url || null,
+    product_url: l.product_url || null,
+    price: num(l.price),                        // saved when added
+    current_price: priceOrNull(l.current_price), // today; null = no price now
+    in_stock: l.in_stock !== false,
+    buyable: Boolean(l.buyable),
+    price_changed: Boolean(l.price_changed),
+    qty: num(l.qty, 1),
+    line_total: num(l.line_total),
+    added_at: l.added_at || null,
+  };
+}
+
+export const EMPTY_LIST = Object.freeze({
+  lines: [], liveLines: [],
+  summary: { total: 0, count: 0, unavailable_count: 0, changed_count: 0 },
+});
+
+/**
+ * ShoppingListOut -> { lines (catalogue offers), liveLines (live items), summary }.
+ * summary.total is at saved prices and only counts what can be bought now.
+ */
 export function shoppingListFromApi(payload) {
-  return Array.isArray(payload?.items) ? payload.items.map(shoppingLineFromApi) : [];
+  const s = payload?.summary || {};
+  return {
+    lines: Array.isArray(payload?.items) ? payload.items.map(shoppingLineFromApi) : [],
+    liveLines: Array.isArray(payload?.live_items) ? payload.live_items.map(liveListLineFromApi) : [],
+    summary: {
+      total: num(s.total),
+      count: num(s.count),
+      unavailable_count: num(s.unavailable_count),
+      changed_count: num(s.changed_count),
+    },
+  };
 }
 
 /* --------------------------------------------------------------- location */

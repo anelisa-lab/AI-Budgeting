@@ -42,6 +42,8 @@ psql -U <user> -d <dbname> -f sql/seed_store_charges.sql               # AFTER t
 # sql/007_live_search_cache.sql (the `items` table and the GET /api/search cache).
 # Already have the `items` table? Run sql/008_live_items_missing_price.sql
 # (out-of-stock items: NULL price + last known price instead of R0).
+# Then sql/009_shopping_list_live_items.sql (live Checkers items on your list).
+# No psql? python -m app.apply_sql sql/008_live_items_missing_price.sql sql/009_shopping_list_live_items.sql
 uvicorn app.main:app --reload --port 4000
 ```
 

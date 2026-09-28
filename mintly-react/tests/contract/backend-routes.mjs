@@ -204,7 +204,8 @@ export const ROUTES = [
   {
     name: 'addShoppingListItem',
     method: 'POST', pattern: /^\/shopping-list\/items$/, auth: true,
-    body: ['offer_id', 'qty'], requiredBody: ['offer_id'],
+    // exactly one of offer_id / item_id (ShoppingListItemIn's validator)
+    body: ['offer_id', 'item_id', 'qty'], requiredBody: [],
   },
   {
     name: 'setShoppingListQty',
@@ -214,6 +215,25 @@ export const ROUTES = [
   {
     name: 'removeShoppingListItem',
     method: 'DELETE', pattern: /^\/shopping-list\/items\/\d+$/, auth: true,
+  },
+  {
+    name: 'setShoppingListQtyPatch',
+    method: 'PATCH', pattern: /^\/shopping-list\/items\/\d+$/, auth: true,
+    body: ['qty'], requiredBody: ['qty'],
+  },
+  {
+    name: 'setShoppingListLiveQty',
+    method: 'PATCH', pattern: /^\/shopping-list\/live-items\/\d+$/, auth: true,
+    body: ['qty'], requiredBody: ['qty'],
+  },
+  {
+    name: 'setShoppingListLiveQtyPut',
+    method: 'PUT', pattern: /^\/shopping-list\/live-items\/\d+$/, auth: true,
+    body: ['qty'], requiredBody: ['qty'],
+  },
+  {
+    name: 'removeShoppingListLiveItem',
+    method: 'DELETE', pattern: /^\/shopping-list\/live-items\/\d+$/, auth: true,
   },
 ];
 

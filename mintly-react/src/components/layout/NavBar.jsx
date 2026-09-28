@@ -12,6 +12,8 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { Button, Logo } from '../ui/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useShopping } from '../../context/ShoppingContext.jsx';
+import { useBudget } from '../../context/BudgetContext.jsx';
+import { money } from '../../lib/format.js';
 
 const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -25,7 +27,9 @@ const LINKS = [
 
 export default function NavBar() {
   const { isAuthenticated, user, logout } = useAuth();
-  const { listCount } = useShopping();
+  const { listCount, listTotal } = useShopping();
+  const { budget, remaining } = useBudget();
+  const listOver = Boolean(budget) && listTotal > remaining;
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
   const linksRef = useRef(null);
@@ -64,8 +68,14 @@ export default function NavBar() {
               <NavLink key={l.to} to={l.to} className="nav__link">
                 {l.label}
                 {l.to === '/compare' && listCount > 0 && (
-                  <span className="num">
-                    {' '}({listCount})<span className="sr-only"> items in your list</span>
+                  <span
+                    className={listOver ? 'nav__list nav__list--over num' : 'nav__list num'}
+                    title={listOver ? 'Your list is more than you have left' : 'Items and total in your list'}
+                  >
+                    {listCount} · {money(listTotal)}
+                    <span className="sr-only">
+                      {` items in your list${listOver ? ', over your remaining budget' : ''}`}
+                    </span>
                   </span>
                 )}
               </NavLink>

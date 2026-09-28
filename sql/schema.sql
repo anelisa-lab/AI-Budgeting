@@ -632,4 +632,42 @@ CREATE TABLE IF NOT EXISTS live_search_results (
   PRIMARY KEY (search_id, item_id)
 );
 
+-- Shopping list lines can hold live store items — see sql/009_shopping_list_live_items.sql
+-- A line needs its own id now that offer_id can be empty.
+ALTER TABLE comparison_items ADD COLUMN IF NOT EXISTS id SERIAL;
+DO $$
+DECLARE pk TEXT;
+BEGIN
+  SELECT conname INTO pk FROM pg_constraint
+   WHERE conrelid = 'comparison_items'::regclass AND contype = 'p';
+  IF pk IS DISTINCT FROM 'comparison_items_line_pkey' THEN
+    IF pk IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE comparison_items DROP CONSTRAINT %I', pk);
+    END IF;
+    ALTER TABLE comparison_items ADD CONSTRAINT comparison_items_line_pkey PRIMARY KEY (id);
+  END IF;
+END $$;
+
+ALTER TABLE comparison_items ALTER COLUMN offer_id DROP NOT NULL;
+ALTER TABLE comparison_items
+  ADD COLUMN IF NOT EXISTS item_id INTEGER REFERENCES items(id) ON DELETE CASCADE;
+
+-- One line per product per list (NULLs don't collide, so each rule only
+-- applies to its own kind of line).
+DO $$ BEGIN
+  ALTER TABLE comparison_items
+    ADD CONSTRAINT uq_comparison_items_offer UNIQUE (comparison_list_id, offer_id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE comparison_items
+    ADD CONSTRAINT uq_comparison_items_item UNIQUE (comparison_list_id, item_id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE comparison_items
+    ADD CONSTRAINT chk_comparison_items_one_product CHECK ((offer_id IS NULL) <> (item_id IS NULL));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 COMMIT;
