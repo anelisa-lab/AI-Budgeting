@@ -50,7 +50,9 @@ from app.schemas import (
 # here — the tool set is small and the task isn't deep reasoning — set
 # ANTHROPIC_CHAT_MODEL to trade quality for cost.
 MODEL = os.getenv("ANTHROPIC_CHAT_MODEL", "claude-opus-5-5")
-MAX_TOKENS = 4096
+# A full itemised weekly plan (several categories, running total, a store
+# comparison) can genuinely run long — 4096 truncated real plans mid-list.
+MAX_TOKENS = 8192
 # A model that keeps calling tools forever must not turn into an unbounded —
 # and unboundedly billed — loop. Parallel tool use means several tool calls
 # in one assistant turn only cost one iteration here, so this is generous
@@ -153,13 +155,12 @@ TOOLS: List[Dict[str, Any]] = [
         "name": "recommend_items",
         "description": (
             "Find real, currently-listed products for something the student wants to "
-            "buy (e.g. \"maize meal\", \"cheap protein\"), ranked by true cost "
-            "(price + delivery/travel) and fit against their daily allowance. This "
-            "is the main way to find priced items across every store in the "
-            "catalogue — prefer it over search_products unless the student named a "
-            "specific store. Every result includes the store, the price, whether the "
-            "price is confirmed or an estimate, and a plain-English reason it was "
-            "picked."
+            "buy (e.g. \"maize meal\", \"cheap protein\"), ranked by true cost and fit "
+            "against their daily allowance. This is the main way to find priced items "
+            "across every store in the catalogue — prefer it over search_products "
+            "unless the student named a specific store. Every result includes the "
+            "store, the price, whether the price is confirmed or an estimate, and a "
+            "plain-English reason it was picked."
         ),
         "input_schema": {
             "type": "object",
@@ -179,6 +180,16 @@ TOOLS: List[Dict[str, Any]] = [
                 "essential_only": {
                     "type": "boolean",
                     "description": "Only essentials (staples, toiletries) — true in survival mode.",
+                },
+                "fulfilment": {
+                    "type": "string",
+                    "enum": ["collection", "delivery"],
+                    "description": (
+                        "'collection' (default) prices what the student pays walking into "
+                        "the store — use this unless they've asked for delivery, since "
+                        "defaulting to delivery quietly adds a delivery fee to every price "
+                        "and can hide the actual cheapest store."
+                    ),
                 },
                 "limit": {"type": "integer", "description": "How many results, 1-15 (default 8)."},
             },
@@ -338,14 +349,25 @@ def _recommend_items(
     category: Optional[str] = None,
     max_price: Optional[float] = None,
     essential_only: bool = False,
+    fulfilment: str = "collection",
     limit: int = 8,
     **_: Any,
 ) -> dict:
+    # RecommendationRequest's OWN default is "delivery" — left unset, every
+    # price the student sees would silently include a delivery fee they may
+    # never have asked for, which can hide the store that's actually
+    # cheapest to walk into (a real seed-data case: Makro is the cheapest
+    # shelf price for maize meal but has the highest delivery fee of any
+    # store carrying it, so a "delivery" search drops it off a short list
+    # entirely). Defaulting to "collection" here matches
+    # compare_stores_for_list's own default and what a budget-tight student
+    # physically visiting a named store actually pays.
     payload = RecommendationRequest(
         query=query,
         category=category,
         max_price=_decimal(max_price, "max_price") if max_price is not None else None,
         essential_only=bool(essential_only),
+        fulfilment=fulfilment if fulfilment in ("collection", "delivery") else "collection",
         limit=max(1, min(int(limit), 15)),
     )
     out = recommendations_router.get_recommendations(payload=payload, user_id=user_id)
@@ -386,13 +408,28 @@ def _search_products(
     limit: int = 10,
     **_: Any,
 ) -> dict:
+    # search_offers is a FastAPI route handler: several of its parameters
+    # default to a `fastapi.Query(...)` sentinel object, not a plain `None`,
+    # because FastAPI itself resolves those at request time. Calling it
+    # directly (as every tool here does, to reuse the route's own logic
+    # without a network hop) means every one of those parameters MUST be
+    # passed explicitly — an omitted one leaves the raw Query object in
+    # place, which crashes the first time the route's code does arithmetic
+    # on it (e.g. `page - 1`). min_price / max_shipping_cost /
+    # max_distance_km / offset / page all need it; limit is fine here since
+    # it's always supplied below.
     out = search_router.search_offers(
         q=query,
         category=category,
         store=store,
+        min_price=None,
         max_price=_decimal(max_price, "max_price") if max_price is not None else None,
+        max_shipping_cost=None,
         essential_only=bool(essential_only),
+        max_distance_km=None,
         limit=max(1, min(int(limit), 25)),
+        offset=0,
+        page=None,
         user_id=user_id,
     )
     data = _dump(out)
@@ -515,8 +552,13 @@ def _run_tool(user_id: int, name: str, tool_input: dict) -> dict:
     fn = TOOL_DISPATCH.get(name)
     if fn is None:
         return {"error": True, "message": f"Unknown tool '{name}'."}
+    # tool_input is JSON the model produced — never let it smuggle a
+    # `user_id` that would collide with (or, absent this guard, on some
+    # future tool, override) the authenticated caller. Every tool always
+    # runs as the real signed-in student, never as whoever the input claims.
+    safe_input = {k: v for k, v in tool_input.items() if k != "user_id"}
     try:
-        return fn(user_id=user_id, **tool_input)
+        return fn(user_id=user_id, **safe_input)
     except HTTPException as exc:
         return _tool_error(exc)
     except Exception as exc:  # a bad tool call must end the turn, not crash it
@@ -538,20 +580,37 @@ def run_chat(user_id: int, message: str, history: Optional[List[dict]] = None) -
     messages: List[dict] = [{"role": h["role"], "content": h["content"]} for h in (history or [])]
     messages.append({"role": "user", "content": message})
 
+    # Rendered once per turn, not once per loop iteration: the date inside it
+    # must not drift mid-turn, and rendering it once lets the ephemeral cache
+    # breakpoint below actually hit on iteration 2+ of a multi-tool-call turn
+    # (render order is tools -> system -> messages, so caching the system
+    # block's tail caches the static tool schemas ahead of it too).
+    system = [
+        {
+            "type": "text",
+            "text": _system_prompt(),
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
     tools_used: List[str] = []
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=_system_prompt(),
+            system=system,
             tools=TOOLS,
             messages=messages,
         )
 
         if response.stop_reason != "tool_use":
             reply = "".join(b.text for b in response.content if b.type == "text").strip()
-            if not reply:
+            if response.stop_reason == "refusal":
+                reply = reply or "I can't help with that request."
+            elif not reply:
                 reply = "I couldn't put together an answer that time — could you rephrase?"
+            elif response.stop_reason == "max_tokens":
+                reply += "\n\n(That answer got cut off — ask me to continue for the rest.)"
             return {"reply": reply, "tools_used": tools_used}
 
         messages.append({"role": "assistant", "content": response.content})
