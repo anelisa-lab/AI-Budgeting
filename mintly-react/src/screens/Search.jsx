@@ -24,6 +24,10 @@
  *    (store, brand, …) instead of showing picks that contradict the results.
  *  - An empty result lists the active filters as one-click removable chips.
  *
+ * "Your recent searches" (GET/DELETE /recommendations/history, Phase 5) lived
+ * on the old For you screen; it is shown here now, whenever nothing has been
+ * searched yet, so repeating or clearing a past search still works.
+ *
  * Filters live in the URL, so a search can be shared and survives a refresh.
  */
 
@@ -37,7 +41,7 @@ import { useBudget } from '../context/BudgetContext.jsx';
 import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
-import { money, plural } from '../lib/format.js';
+import { money, plural, shortDate } from '../lib/format.js';
 import {
   CATALOGUE_CATEGORIES, canonicalCategory, categoryIcon, isWithoutListings,
 } from '../lib/categories.js';
@@ -93,6 +97,7 @@ export default function Search() {
   // Filters are folded away on phones so the results are not pushed below a
   // screen-and-a-half of form. Desktop always shows them (CSS).
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersToggleRef = useRef(null);
 
   // Local draft for the typed boxes so typing does not fire a request per
   // keystroke; they commit to the URL on submit or blur.
@@ -301,6 +306,7 @@ export default function Search() {
           type="button"
           variant="ghost"
           className="search-bar__filters"
+          ref={filtersToggleRef}
           aria-expanded={filtersOpen}
           aria-controls="search-filters"
           onClick={() => setFiltersOpen((o) => !o)}
@@ -334,7 +340,20 @@ export default function Search() {
             </div>
 
             <form
-              onSubmit={(e) => { e.preventDefault(); commit(draft); setFiltersOpen(false); }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                commit(draft);
+                // On a phone the panel folds away and takes the focused
+                // "Apply filters" button with it; hand focus back to the
+                // toggle instead of dropping it on <body>. (On desktop the
+                // panel never folds, so focus stays where it was.)
+                if (filtersOpen) {
+                  setFiltersOpen(false);
+                  if (window.getComputedStyle(filtersToggleRef.current).display !== 'none') {
+                    filtersToggleRef.current.focus();
+                  }
+                }
+              }}
               className="stack"
               noValidate
             >
@@ -504,6 +523,10 @@ export default function Search() {
 
         {/* --------------------------------------------------- results */}
         <div>
+          {!filters.q.trim() && !filters.category.trim() && (
+            <RecentSearches token={token} onRepeat={(query) => commit({ q: query })} />
+          )}
+
           {recsAllowed ? (
             <Recommendations
               recs={recs}
@@ -511,13 +534,12 @@ export default function Search() {
               error={recsError}
               qtyOf={qtyOf}
               onAdd={handleAdd}
-              query={filters.q}
               fulfilment={filters.fulfilment}
             />
           ) : (filters.q || filters.category) && (
             <p className="field__hint" style={{ marginBottom: 'var(--s-4)' }}>
-              Personal picks are hidden while store, brand or other detailed filters are on.{' '}
-              <Link to="/recommendations" state={{ query: filters.q }}>See picks for “{filters.q || filters.category}” →</Link>
+              Personal picks are hidden while store, brand or other detailed filters are on.
+              Clear the detailed filters to see recommendations for this search.
             </p>
           )}
 
@@ -543,7 +565,7 @@ export default function Search() {
           </div>
 
           {chips.length > 0 && (
-            <div className="chips" style={{ marginBottom: 'var(--s-4)' }} aria-label="Active filters">
+            <div className="chips" style={{ marginBottom: 'var(--s-4)' }} role="group" aria-label="Active filters">
               {chips.map((c) => (
                 <button
                   key={c.key}
@@ -645,9 +667,14 @@ export default function Search() {
  * Member 5's recommender, top three. Every pick shows its TRUE cost (item +
  * delivery + store fees) and the backend's plain-English reason.
  */
-function Recommendations({ recs, loading, error, qtyOf, onAdd, query, fulfilment }) {
+function Recommendations({ recs, loading, error, qtyOf, onAdd, fulfilment }) {
   if (loading && !recs) {
-    return <Skeleton height={140} radius="var(--r-lg)" />;
+    return (
+      <>
+        <p className="sr-only" role="status" aria-live="polite">Loading recommendations.</p>
+        <Skeleton height={140} radius="var(--r-lg)" />
+      </>
+    );
   }
   if (error) {
     return (
@@ -671,9 +698,7 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query, fulfilment
         </h2>
         <div className="row" style={{ gap: 'var(--s-2)' }}>
           {survival && <Badge tone="danger">Survival mode · essentials only</Badge>}
-          <Link to="/recommendations" state={{ query, fulfilment }} style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
-            More picks →
-          </Link>
+
         </div>
       </div>
 
@@ -728,7 +753,12 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query, fulfilment
                         : 'true cost · no extra fees'}
                     </p>
                   </div>
-                  <Button size="sm" variant={qty > 0 ? 'secondary' : 'primary'} onClick={() => onAdd(r)}>
+                  <Button
+                    size="sm"
+                    variant={qty > 0 ? 'secondary' : 'primary'}
+                    onClick={() => onAdd(r)}
+                    aria-label={addLabel(r, qty)}
+                  >
                     {qty > 0 ? `In list (${qty}) · Add another` : 'Add to list'}
                   </Button>
                 </div>
@@ -736,6 +766,85 @@ function Recommendations({ recs, loading, error, qtyOf, onAdd, query, fulfilment
             );
           })}
         </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Every "Add to list" button on the page says WHICH item and store, whatever
+ * state it is in — a screen reader's list of buttons otherwise reads
+ * "In list (1) · Add another" several times with nothing to tell them apart.
+ * The visible text stays at the start of the name, so voice control users can
+ * still say what they see (WCAG 2.5.3 Label in Name).
+ */
+function addLabel(offer, qty) {
+  const what = `${offer.product_name} at ${offer.store_name}`;
+  return qty > 0 ? `In list (${qty}) · Add another ${what}` : `Add to list: ${what}`;
+}
+
+/* ------------------------------------------------------- recent searches */
+
+/**
+ * GET /recommendations/history — every recommendation run the backend saved,
+ * each query once, newest first (api.recommendations.history). Tapping one
+ * searches it again; Clear calls DELETE /recommendations/history.
+ * Loaded whenever it is shown, so a search just made is already on the list.
+ */
+function RecentSearches({ token, onRepeat }) {
+  const toast = useToast();
+  const [history, setHistory] = useState([]);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    api.recommendations.history(token, { limit: 20 })
+      .then((rows) => { if (!cancelled) { setHistory(rows.slice(0, 6)); setError(null); } })
+      .catch(() => { if (!cancelled) setError('Could not load your recent searches.'); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  async function clear() {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Clear your recent searches? Your preferences are not affected.')) return;
+    try {
+      await api.recommendations.clearHistory(token);
+      setHistory([]);
+      toast.info('Recent searches cleared.');
+    } catch (err) {
+      toast.error(err.message || 'Could not clear your recent searches.');
+    }
+  }
+
+  if (!error && history.length === 0) return null;
+
+  return (
+    <Card style={{ marginBottom: 'var(--s-5)' }}>
+      <div className="card__head">
+        <h2 className="card__title">Your recent searches</h2>
+        {history.length > 0 && (
+          <Button variant="quiet" size="sm" onClick={clear}>Clear</Button>
+        )}
+      </div>
+      {error ? (
+        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)', marginTop: 'var(--s-3)' }}>{error}</p>
+      ) : (
+        <ul className="history-list">
+          {history.map((h) => (
+            <li key={h.id}>
+              <button type="button" className="history-item" onClick={() => onRepeat(h.query)}>
+                <span className="history-item__query">{h.query}</span>
+                <span className="history-item__meta">
+                  {h.top[0]
+                    ? `Top pick: ${h.top[0].product_name} at ${h.top[0].store_name}, ${money(h.top[0].total_cost)}`
+                    : 'No picks'}
+                  {h.created_at ? ` · ${shortDate(h.created_at)}` : ''}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   );
@@ -841,7 +950,7 @@ function ResultRow({ offer, best, fulfilment, qty, onAdd }) {
           variant={qty > 0 ? 'secondary' : 'primary'}
           onClick={onAdd}
           disabled={!inStock}
-          aria-label={inStock && qty === 0 ? `Add to list: ${offer.product_name} at ${offer.store_name}` : undefined}
+          aria-label={inStock ? addLabel(offer, qty) : `${offer.product_name} at ${offer.store_name} is unavailable`}
         >
           {!inStock ? 'Unavailable' : qty > 0 ? `In list (${qty}) · Add another` : 'Add to list'}
         </Button>

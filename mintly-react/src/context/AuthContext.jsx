@@ -164,21 +164,20 @@ export function AuthProvider({ children }) {
     }
   }, [token, signOutLocally]);
 
-  /** PUT /profile/ takes `name` and nothing else. */
-  const updateProfile = useCallback(async ({ name }) => {
-    const saved = await api.profile.update(token, { name });
-    // PUT /profile returns id, name, email and created_at only, so keep the
-    // residence and student number we already have instead of blanking them.
-    let merged = saved;
-    setUser((prev) => {
-      merged = {
-        ...saved,
-        residence: saved.residence ?? prev?.residence ?? null,
-        student_number: saved.student_number ?? prev?.student_number ?? null,
-      };
-      return merged;
+  /**
+   * PUT /profile/ — name always; residence and student number when given
+   * (undefined = leave as is, '' = clear; app/routers/profile.py). The first
+   * version forwarded `name` only, so Profile reported "Details updated"
+   * while silently dropping a new residence or student number.
+   */
+  const updateProfile = useCallback(async ({ name, residence, student_number: studentNumber }) => {
+    const saved = await api.profile.update(token, {
+      name, residence, student_number: studentNumber,
     });
-    return merged;
+    // PUT /profile answers with the same fields as GET /profile (UserOut),
+    // so the response is the new truth — including a cleared field (null).
+    setUser(saved);
+    return saved;
   }, [token]);
 
   const updatePreferences = useCallback(async (patch) => {

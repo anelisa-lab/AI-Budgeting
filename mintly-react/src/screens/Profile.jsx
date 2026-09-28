@@ -366,10 +366,10 @@ export default function Profile() {
             )}
 
             <div>
-              <p className="field__label" style={{ marginBottom: 'var(--s-2)' }}>
+              <p className="field__label" id="pref-categories-label" style={{ marginBottom: 'var(--s-2)' }}>
                 What do you usually shop for?
               </p>
-              <div className="chips">
+              <div className="chips" role="group" aria-labelledby="pref-categories-label">
                 {categoryOptions.map((c) => (
                   <button
                     key={c}
@@ -385,10 +385,10 @@ export default function Profile() {
             </div>
 
             <div>
-              <p className="field__label" style={{ marginBottom: 'var(--s-2)' }}>
+              <p className="field__label" id="pref-stores-label" style={{ marginBottom: 'var(--s-2)' }}>
                 Stores you prefer
               </p>
-              <div className="chips">
+              <div className="chips" role="group" aria-labelledby="pref-stores-label">
                 {storeOptions.map((s) => (
                   <button
                     key={s}
@@ -409,7 +409,7 @@ export default function Profile() {
             <Field
               id="profile-distance"
               label="How far will you travel?"
-              hint="Saved to your account for recommendations. Distance only counts once your location is on record, which the app cannot set yet. Leave blank to keep what is saved."
+              hint="Saved to your account for recommendations. It only counts once your location is saved under “Where you are” above. Leave blank to keep what is saved."
               error={distanceError}
             >
               {({ id, describedBy, invalid }) => (
@@ -430,8 +430,8 @@ export default function Profile() {
               <Button type="submit" loading={savingPrefs} disabled={prefsState !== 'ready'}>
                 {savingPrefs ? 'Saving…' : 'Save preferences'}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => navigate('/recommendations')}>
-                See my recommendations →
+              <Button type="button" variant="ghost" onClick={() => navigate('/search')}>
+                Shop using my preferences →
               </Button>
             </div>
           </form>

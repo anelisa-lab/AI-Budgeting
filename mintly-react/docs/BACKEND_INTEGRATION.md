@@ -22,7 +22,7 @@ Also wired up in Phase 3:
 
 | Backend file | Where the frontend uses it |
 |---|---|
-| `app/routers/recommendations.py` — `POST /recommendations` | the **For you** screen (`/recommendations`) and the "Recommended for you" panel on Search |
+| `app/routers/recommendations.py` — `POST /recommendations`, `GET`/`DELETE /recommendations/history` | the "Recommended for you" panel on Search, and "Your recent searches" on Search before anything is typed |
 | `app/routers/true_cost.py` — `POST /true-cost` | Compare → **Item by item**: each store's offer priced as its own order (item + delivery + store charges + travel) |
 | `app/routers/budget_split.py` — `POST /budget-split/check` | Compare → **"Can I afford this today?"**, checked against the cheapest single-shop total |
 | `app/routers/profile.py` — `PUT /profile/`, `PUT /profile/preferences` | the **Profile** screen (`/profile`) |

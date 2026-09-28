@@ -8,13 +8,14 @@
 import NavBar from './NavBar.jsx';
 import BackendStatus from './BackendStatus.jsx';
 
-export default function AppShell({ children, wide = false }) {
+export default function AppShell({ children }) {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main">Skip to main content</a>
       <BackendStatus />
       <NavBar />
-      <main className={`app-body ${wide ? '' : ''}`.trim()} id="main">
+      {/* tabIndex -1: the skip link and RouteFocus can move focus here. */}
+      <main className="app-body" id="main" tabIndex={-1}>
         <div className="page">{children}</div>
       </main>
     </div>

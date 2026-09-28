@@ -15,7 +15,6 @@ import { useShopping } from '../../context/ShoppingContext.jsx';
 
 const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
-  { to: '/recommendations', label: 'For you' },
   { to: '/search', label: 'Search' },
   { to: '/compare', label: 'Compare' },
   { to: '/budget', label: 'Budget' },

@@ -145,7 +145,7 @@ values snap to the catalogue's own spelling, because the backend matches them
 exactly.
 
 **One category list.** `src/lib/categories.js` is the only place categories are
-defined (including Maintenance). Search, For you, Profile and the dashboard's
+defined (including Maintenance). Search, Profile and the dashboard's
 spending categories all import it.
 
 **Compare never invents a price.** Whole-list totals use today's in-stock

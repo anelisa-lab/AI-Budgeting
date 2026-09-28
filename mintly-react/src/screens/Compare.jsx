@@ -442,12 +442,12 @@ export default function Compare() {
                 : 'No single store stocks your whole list.'}
             </p>
             {gap > 0 && (
-              <p style={{ marginTop: 'var(--s-4)', fontSize: 'var(--t-sm)', color: 'rgba(243,239,226,0.86)' }}>
+              <p style={{ marginTop: 'var(--s-4)', fontSize: 'var(--t-sm)', color: 'rgba(244,249,248,0.86)' }}>
                 {money(gap)} less than {worst.store_name} for exactly the same items.
               </p>
             )}
             {best && (
-              <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--t-xs)', color: 'rgba(243,239,226,0.66)' }}>
+              <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--t-xs)', color: 'rgba(244,249,248,0.66)' }}>
                 {complete.length} of {usable.length} stores stock your whole list.
               </p>
             )}
@@ -611,8 +611,8 @@ export default function Compare() {
                     onClick={() => handleSetQty(line.offer_id, line.qty - 1)}
                     aria-label={line.qty === 1 ? `Remove ${line.product_name}` : `One fewer ${line.product_name}`}
                   >−</Button>
-                  <span className="num" style={{ minWidth: 20, textAlign: 'center', fontWeight: 'var(--fw-extra)' }} aria-label={`Quantity ${line.qty}`}>
-                    {line.qty}
+                  <span className="num" style={{ minWidth: 20, textAlign: 'center', fontWeight: 'var(--fw-extra)' }}>
+                    <span className="sr-only">Quantity </span>{line.qty}
                   </span>
                   <Button
                     variant="ghost" size="sm"

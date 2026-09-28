@@ -70,8 +70,8 @@ export const AVAILABILITY_OPTIONS = [
 /**
  * How the student gets it (Phase 4, GET /search?fulfilment=). Collecting is
  * priced on the shelf price and only lists stores you can walk into;
- * delivered is price + delivery and only lists stores that deliver. Search,
- * For you and Compare all start on "I'll collect it".
+ * delivered is price + delivery and only lists stores that deliver. Search
+ * and Compare all start on "I'll collect it".
  */
 export const FULFILMENT_OPTIONS = [
   { value: 'collection', label: "I'll collect it" },

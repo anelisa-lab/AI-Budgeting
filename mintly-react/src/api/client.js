@@ -221,7 +221,7 @@ export const recommendations = {
 
   /**
    * Past searches and what was recommended for them (Phase 5 "Recent
-   * searches"). Runs without a query (the default For you list) are skipped,
+   * searches"). Runs without a query are skipped,
    * and a query searched twice is shown once, newest first.
    */
   async history(token, { limit = 20 } = {}) {

@@ -14,44 +14,44 @@
      Warm, calm and deliberately un-bank-like: this app talks to students
      about money that is already tight, so it avoids red-alert banking
      colours except where something genuinely needs attention. */
-  --c-cream:        #F7F4EA;  /* app background */
-  --c-cream-2:      #F1ECDE;  /* subtle fills, track backgrounds */
-  --c-paper:        #FFFFFF;  /* cards, panels, inputs */
+  --c-cream:        #f4f9f8;  /* app background */
+  --c-cream-2:      #dbece8;  /* subtle fills, track backgrounds */
+  --c-paper:        #f4f9f8;  /* cards, panels, inputs */
 
-  --c-forest:       #2E5644;  /* primary: buttons, headings, active state */
-  --c-forest-dark:  #244536;  /* primary hover/pressed */
-  --c-forest-light: #3F6B56;  /* primary on dark surfaces */
+  --c-forest:       #376a66;  /* primary: buttons, headings, active state */
+  --c-forest-dark:  #294644;  /* primary hover/pressed */
+  --c-forest-light: #47857e;  /* primary on dark surfaces */
 
-  --c-coral:        #E08465;  /* accent: highlights, suggestions */
-  --c-coral-deep:   #C4522F;  /* accent text on light — passes AA */
-  --c-coral-soft:   #F3C9B8;
+  --c-coral:        #61a098;  /* accent: highlights, suggestions */
+  --c-coral-deep:   #376a66;  /* accent text on light — passes AA */
+  --c-coral-soft:   #b6d9d2;
 
-  --c-butter:       #F0DCA6;  /* secondary surface */
-  --c-butter-dark:  #E4C97F;
-  --c-on-butter:    #5C4A16;  /* text on butter — AA on #F0DCA6 */
-  --c-on-coral:     #4A1E0C;  /* text on coral — AA on #E08465 */
+  --c-butter:       #b6d9d2;  /* secondary surface */
+  --c-butter-dark:  #7db8af;
+  --c-on-butter:    #294644;  /* text on butter — AA on #b6d9d2 */
+  --c-on-coral:     #253c3b;  /* text on coral — AA on #61a098 */
 
   /* ---- Ink ------------------------------------------------------------ */
-  --c-ink:          #1C1C19;
-  --c-muted:        #6F6A5F;
-  --c-muted-light:  #918B7E;
+  --c-ink:          #112222;
+  --c-muted:        #2f5653;
+  --c-muted-light:  #376a66;
 
   /* ---- Semantic state -------------------------------------------------
      Separate from the brand accent on purpose. Coral is decoration;
      these three mean something. */
-  --c-success:      #2E7D52;
-  --c-success-bg:   #E1F0E7;
-  --c-warning:      #9A6B12;
-  --c-warning-bg:   #FAEFD4;
-  --c-danger:       #A33418;
-  --c-danger-bg:    #F8E2DA;
-  --c-info:         #2E5644;
-  --c-info-bg:      #E6EDE9;
+  --c-success:      #47857e;
+  --c-success-bg:   #dbece8;
+  --c-warning:      #2f5653;
+  --c-warning-bg:   #dbece8;
+  --c-danger:       #294644;
+  --c-danger-bg:    #dbece8;
+  --c-info:         #376a66;
+  --c-info-bg:      #dbece8;
 
   /* ---- Lines ---------------------------------------------------------- */
-  --c-line:         rgba(46, 86, 68, 0.14);
-  --c-line-strong:  rgba(46, 86, 68, 0.32);
-  --c-focus:        #C4522F;
+  --c-line:         rgba(55, 106, 102, 0.14);
+  --c-line-strong:  rgba(55, 106, 102, 0.32);
+  --c-focus:        #376a66;
 
   /* ---- Type -----------------------------------------------------------
      Two families only. Playfair carries personality on headings;
@@ -60,16 +60,19 @@
   --font-sans: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
 
-  /* Type scale — 1.25 major third, rounded to whole px */
-  --t-xs:    12px;
-  --t-sm:    14px;
-  --t-base:  16px;
-  --t-md:    18px;
-  --t-lg:    22px;
-  --t-xl:    28px;
-  --t-2xl:   35px;
-  --t-3xl:   44px;
-  --t-4xl:   55px;
+  /* Type scale — 1.25 major third. In rem (16px root = the same whole-px
+     sizes as before: 12, 14, 16, 18, 22, 28, 35, 44, 55) so text follows the
+     browser's own font-size setting and Settings → Text size, which scales the
+     root below. Spacing stays in px on purpose: only text grows. */
+  --t-xs:    0.75rem;
+  --t-sm:    0.875rem;
+  --t-base:  1rem;
+  --t-md:    1.125rem;
+  --t-lg:    1.375rem;
+  --t-xl:    1.75rem;
+  --t-2xl:   2.1875rem;
+  --t-3xl:   2.75rem;
+  --t-4xl:   3.4375rem;
 
   --lh-tight:  1.12;
   --lh-snug:   1.35;
@@ -103,9 +106,9 @@
   --r-pill: 999px;
 
   /* ---- Elevation ------------------------------------------------------ */
-  --e-1: 0 2px 8px rgba(46, 45, 35, 0.06);
-  --e-2: 0 10px 30px rgba(46, 45, 35, 0.09);
-  --e-3: 0 26px 60px rgba(46, 45, 35, 0.14);
+  --e-1: 0 2px 8px rgba(17,34,34, 0.06);
+  --e-2: 0 10px 30px rgba(17,34,34, 0.09);
+  --e-3: 0 26px 60px rgba(17,34,34, 0.14);
 
   /* ---- Motion --------------------------------------------------------- */
   --ease: cubic-bezier(0.2, 0.8, 0.3, 1);

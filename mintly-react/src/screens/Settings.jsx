@@ -16,14 +16,21 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, Eyebrow } from '../components/ui/index.js';
+import { Badge, Button, Card, Eyebrow, Select } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
 import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import { fullDate, longDate, money, plural } from '../lib/format.js';
-import { getReducedMotion, setReducedMotion } from '../lib/localSettings.js';
+import {
+  getContrastMode,
+  getReducedMotion,
+  getTextSize,
+  setContrastMode,
+  setReducedMotion,
+  setTextSize,
+} from '../lib/localSettings.js';
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -32,6 +39,8 @@ export default function Settings() {
   const toast = useToast();
   const navigate = useNavigate();
   const [reducedMotion, setReducedMotionState] = useState(getReducedMotion);
+  const [textSize, setTextSizeState] = useState(getTextSize);
+  const [contrastMode, setContrastModeState] = useState(getContrastMode);
   const [connection, setConnection] = useState('checking'); // checking | up | down
 
   function checkConnection() {
@@ -46,6 +55,20 @@ export default function Settings() {
     setReducedMotionState(on);
     setReducedMotion(on);
     toast.info(on ? 'Motion reduced on this device.' : 'Motion restored on this device.');
+  }
+
+  function changeTextSize(size) {
+    setTextSizeState(size);
+    setTextSize(size);
+    const label = size === 'extra-large' ? 'Extra large' : size === 'large' ? 'Large' : 'Default';
+    toast.info(`Text size set to ${label} on this device.`);
+  }
+
+  function toggleContrast(on) {
+    const mode = on ? 'high' : 'default';
+    setContrastModeState(mode);
+    setContrastMode(mode);
+    toast.info(on ? 'Stronger contrast enabled on this device.' : 'Stronger contrast disabled.');
   }
 
   async function clearShoppingList() {
@@ -118,23 +141,68 @@ export default function Settings() {
           <h2 className="card__title">Accessibility</h2>
           <Badge tone="neutral">This device only</Badge>
         </div>
-        <p style={sectionText}>Turns off animations and sliding effects across the app.</p>
-    <label className="checkbox" htmlFor="reduced-motion">
-      <input
-        id="reduced-motion"
-        type="checkbox"
-        checked={reducedMotion}
-        onChange={(e) => toggleMotion(e.target.checked)}
-      />
-      <span>Reduce motion</span>
-    </label>
-  </Card>
+        <p style={sectionText}>
+          These controls change how UniWallet is presented on this browser. They do not change
+          your account or the normal app colour palette.
+        </p>
 
-  <Card className="stack">
-    <div className="card__head">
-      <h2 className="card__title">Shopping list</h2>
-      <Badge tone="success">Saved to your account</Badge>
-    </div>
+        <div className="stack stack--tight">
+          <label className="checkbox" htmlFor="reduced-motion">
+            <input
+              id="reduced-motion"
+              type="checkbox"
+              checked={reducedMotion}
+              onChange={(e) => toggleMotion(e.target.checked)}
+            />
+            <span>
+              Reduce motion{' '}
+              <span className="field__hint checkbox__hint">Animations, transitions and scrolling are reduced.</span>
+            </span>
+          </label>
+
+          <div className="field">
+            <label className="field__label" htmlFor="text-size">Text size</label>
+            <Select
+              id="text-size"
+              value={textSize}
+              onChange={(e) => changeTextSize(e.target.value)}
+              describedBy="text-size-hint"
+              options={[
+                { value: 'default', label: 'Default' },
+                { value: 'large', label: 'Large' },
+                { value: 'extra-large', label: 'Extra large' },
+              ]}
+            />
+            <p className="field__hint" id="text-size-hint">
+              Increases readable text throughout the app without zooming the whole page.
+            </p>
+          </div>
+
+          <label className="checkbox" htmlFor="stronger-contrast">
+            <input
+              id="stronger-contrast"
+              type="checkbox"
+              checked={contrastMode === 'high'}
+              onChange={(e) => toggleContrast(e.target.checked)}
+            />
+            <span>
+              Stronger contrast{' '}
+              <span className="field__hint checkbox__hint">Strengthens text and interface boundaries only when enabled.</span>
+            </span>
+          </label>
+        </div>
+
+        <p className="field__hint">
+          Reduced motion also respects your browser or operating system&apos;s{' '}
+          <code>prefers-reduced-motion</code> preference.
+        </p>
+      </Card>
+
+      <Card className="stack">
+        <div className="card__head">
+          <h2 className="card__title">Shopping list</h2>
+          <Badge tone="success">Saved to your account</Badge>
+        </div>
         <p style={sectionText}>
           {shoppingError
             ? shoppingError

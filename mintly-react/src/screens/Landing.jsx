@@ -38,7 +38,7 @@ export default function Landing() {
     <div className="stack stack--loose">
       <section style={{ paddingBlock: 'var(--s-10)' }}>
         <Eyebrow>Built for DUT residence students</Eyebrow>
-        <h1 style={{ fontSize: 'clamp(38px, 7vw, 64px)', color: 'var(--c-forest)', marginTop: 'var(--s-4)', maxWidth: '16ch' }}>
+        <h1 style={{ fontSize: 'clamp(2.375rem, 7vw, 4rem)', color: 'var(--c-forest)', marginTop: 'var(--s-4)', maxWidth: '16ch' }}>
           Make the allowance last the month.
         </h1>
         <p style={{ color: 'var(--c-muted)', fontSize: 'var(--t-md)', marginTop: 'var(--s-5)', maxWidth: '54ch' }}>
@@ -74,7 +74,7 @@ export default function Landing() {
                 style={{
                   display: 'grid', placeItems: 'center',
                   width: 38, height: 38, borderRadius: '50%',
-                  background: 'var(--c-coral)', color: '#fff',
+                  background: 'var(--c-coral)', color: '#f4f9f8',
                   fontWeight: 'var(--fw-black)', fontSize: 'var(--t-xs)',
                 }}
               >
@@ -91,10 +91,10 @@ export default function Landing() {
 
       <Card tone="forest">
         <Eyebrow onDark>Why it matters</Eyebrow>
-        <h2 style={{ fontSize: 'var(--t-xl)', color: '#F3EFE2', marginTop: 'var(--s-4)', maxWidth: '24ch' }}>
+        <h2 style={{ fontSize: 'var(--t-xl)', color: '#f4f9f8', marginTop: 'var(--s-4)', maxWidth: '24ch' }}>
           The same trolley can cost a lot more, depending only on where you walk.
         </h2>
-        <p style={{ color: 'rgba(243,239,226,0.78)', marginTop: 'var(--s-4)', maxWidth: '56ch', fontSize: 'var(--t-sm)' }}>
+        <p style={{ color: 'rgba(244,249,248,0.78)', marginTop: 'var(--s-4)', maxWidth: '56ch', fontSize: 'var(--t-sm)' }}>
           That difference can be more than a day&apos;s food budget, lost to a decision
           nobody tells you how to make. UniWallet makes the comparison before you leave res.
         </p>
