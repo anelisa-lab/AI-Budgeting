@@ -10,14 +10,14 @@ load_dotenv()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_SECRET = os.getenv("JWT_SECRET") or os.getenv("SESSION_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRES_MINUTES = int(os.getenv("JWT_EXPIRES_MINUTES", "10080"))  # 7 days
 
 
 def _secret() -> str:
     if not JWT_SECRET:
-        raise RuntimeError("JWT_SECRET is not set — copy .env.example to .env and fill it in")
+        raise RuntimeError("Set JWT_SECRET (or SESSION_SECRET) before using authentication")
     return JWT_SECRET
 
 

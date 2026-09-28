@@ -1,9 +1,10 @@
 """
 Cached live store search — the logic behind GET /api/search.
 
-For each active store (app/scrapers, LIVE_PRICE_STORES), and only ever
-returning items whose items.store is that store's name, so rows left in the
-database by a switched-off store are never shown:
+For each active store (app/scrapers, LIVE_PRICE_STORES — Checkers Sixty60
+only for now), and only ever returning items whose items.store is that
+store's name, so rows left in the database by a switched-off store are
+never shown:
 
   searched within LIVE_SEARCH_TTL_HOURS (default 6)  -> answer from the DB   ("cache")
   otherwise                                          -> ask the store, upsert
@@ -14,39 +15,25 @@ database by a switched-off store are never shown:
 
 Empty answers are not cached: a scraper returns [] both for "no matches"
 and for "blocked / site down", and caching a failure would hide results
-for hours. The cache itself is keyed on (store, query) (sql/007), so each
-store expires and refreshes on its own schedule.
-
-FAILURE ISOLATION — every store that needs a live fetch (a cache miss or a
-stale entry) is asked at the same time, each on its own thread, and each is
-given at most LIVE_SEARCH_STORE_TIMEOUT_SECONDS (default 12s) before we stop
-waiting on it for this request. A store that raises, times out, or comes
-back empty never affects another store's results — see _fetch_many(). The
-network calls run in threads; every database write (upsert_items,
-_remember) happens afterwards, back on this function's own thread, since a
-single psycopg2 connection isn't safe to use from more than one thread at
-once.
-
-Tables: sql/006_live_items.sql, sql/007_live_search_cache.sql.
+for hours. Tables: sql/006_live_items.sql, sql/007_live_search_cache.sql.
 """
 
 from __future__ import annotations
 
-import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 from app.live_items import upsert_items
-from app.scrapers import active_stores, search_store, store_name
+import logging
+
+from app.scrapers import active_stores, parallel_search, search_store, store_name
 
 log = logging.getLogger(__name__)
 
 DEFAULT_TTL_HOURS = 6.0
-DEFAULT_STORE_TIMEOUT_SECONDS = 12.0
 
 
 def cache_ttl() -> timedelta:
@@ -55,16 +42,6 @@ def cache_ttl() -> timedelta:
     except ValueError:
         hours = DEFAULT_TTL_HOURS
     return timedelta(hours=max(hours, 0))
-
-
-def store_timeout() -> float:
-    """How long a single store's live fetch may run before we stop waiting on
-    it for this request (seconds). See the module docstring."""
-    try:
-        seconds = float(os.getenv("LIVE_SEARCH_STORE_TIMEOUT_SECONDS", DEFAULT_STORE_TIMEOUT_SECONDS))
-    except ValueError:
-        seconds = DEFAULT_STORE_TIMEOUT_SECONDS
-    return max(seconds, 0.1)
 
 
 def normalise_query(query: str) -> str:
@@ -86,74 +63,40 @@ class StoreResult:
 def search(conn, query: str,
            scrape: Callable[[str, str], List[dict]] = search_store,
            stores: Optional[List[str]] = None) -> List[StoreResult]:
-    """
-    Results per store, cache first. Stores needing a live fetch (no fresh
-    cache entry) are all asked AT THE SAME TIME — see _fetch_many() — so one
-    slow or blocked store cannot delay the others. `scrape(store, query)` is
-    injectable for tests.
-    """
+    """Results per store, cache first. `scrape(store, query)` is injectable for tests."""
     q = normalise_query(query)
-    stores = active_stores() if stores is None else stores
-    if not stores:
-        return []
-
-    cached = {store: _cached(conn, store, q) for store in stores}
-    to_fetch = [store for store in stores if not (cached[store] and _is_fresh(cached[store][0]))]
-    fetched = _fetch_many(scrape, to_fetch, q, store_timeout()) if to_fetch else {}
-
+    store_keys = active_stores() if stores is None else stores
     out = []
-    for store in stores:
-        if store not in to_fetch:
-            searched_at, items = cached[store]
-            out.append(StoreResult(store, "cache", searched_at, items))
+    cached_by_store = {}
+    pending_stores = []
+    for store in store_keys:
+        cached = _cached(conn, store, q)
+        cached_by_store[store] = cached
+        if cached and _is_fresh(cached[0]):
+            out.append(StoreResult(store, "cache", cached[0], cached[1]))
+        else:
+            pending_stores.append(store)
+
+    fetched_by_store = parallel_search(pending_stores, q, scrape)
+    fresh_results = {result.store: result for result in out}
+    out = []
+    for store in store_keys:
+        if store in fresh_results:
+            out.append(fresh_results[store])
             continue
 
-        products = _own_rows(store, fetched.get(store) or [])
+        cached = cached_by_store[store]
+        products = _own_rows(store, fetched_by_store.get(store, []))
         if products:
             item_ids = upsert_items(conn, products, commit=False)
             searched_at = _remember(conn, store, q, item_ids)
             conn.commit()
             out.append(StoreResult(store, "live", searched_at, _items_for(conn, store, q)))
-        elif cached[store]:
-            out.append(StoreResult(store, "stale", cached[store][0], cached[store][1]))
+        elif cached:
+            out.append(StoreResult(store, "stale", cached[0], cached[1]))
         else:
             out.append(StoreResult(store, "unavailable", None, []))
     return out
-
-
-def _fetch_many(scrape: Callable[[str, str], List[dict]], stores: List[str], q: str,
-                timeout: float) -> Dict[str, List[dict]]:
-    """
-    Every store in `stores` fetched concurrently. A store that raises, or
-    hasn't finished within `timeout` seconds, is simply absent from the
-    result (the caller treats that exactly like an empty answer — falling
-    back to a stale cache entry, or "unavailable"). A store that times out
-    keeps running in its own thread in the background; see the module
-    docstring for why that's safe to just walk away from.
-    """
-    results: Dict[str, List[dict]] = {}
-    if not stores:
-        return results
-    pool = ThreadPoolExecutor(max_workers=len(stores))
-    try:
-        futures = {pool.submit(scrape, store, q): store for store in stores}
-        try:
-            for future in as_completed(futures, timeout=timeout):
-                store = futures[future]
-                try:
-                    results[store] = future.result()
-                except Exception:
-                    log.exception("live search for %r failed in the %s scraper", q, store)
-        except FutureTimeoutError:
-            done = {futures[f] for f in futures if f.done()}
-            log.warning("live search timed out after %.1fs waiting on: %s",
-                       timeout, ", ".join(sorted(set(stores) - done)) or "?")
-    finally:
-        # Don't block returning results on a store we've already given up on
-        # — a still-running thread finishes on its own (its own scraper sets
-        # its own request timeout) and is simply not waited for here.
-        pool.shutdown(wait=False)
-    return results
 
 
 def _own_rows(store: str, products: List[dict]) -> List[dict]:

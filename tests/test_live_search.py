@@ -27,50 +27,11 @@ def test_ttl_from_env(monkeypatch):
     assert live_search.cache_ttl().total_seconds() == 6 * 3600
 
 
-def test_store_timeout_from_env(monkeypatch):
-    monkeypatch.setenv("LIVE_SEARCH_STORE_TIMEOUT_SECONDS", "5")
-    assert live_search.store_timeout() == 5.0
-    monkeypatch.setenv("LIVE_SEARCH_STORE_TIMEOUT_SECONDS", "junk")
-    assert live_search.store_timeout() == live_search.DEFAULT_STORE_TIMEOUT_SECONDS
-
-
-# ------------------------------------------------ parallel fetch, no database
-
-
-def test_fetch_many_runs_stores_concurrently_not_one_after_another():
-    """Three stores each 'take' 0.3s; if they ran serially that's ~0.9s+."""
-    def slow(store, q):
-        time.sleep(0.3)
-        return [{"store": store}]
-
-    started = time.monotonic()
-    out = live_search._fetch_many(slow, ["a", "b", "c"], "q", timeout=5)
-    elapsed = time.monotonic() - started
-    assert set(out) == {"a", "b", "c"}
-    assert elapsed < 0.6, f"stores were not fetched concurrently ({elapsed:.2f}s)"
-
-
-def test_fetch_many_isolates_a_raising_store():
-    def flaky(store, q):
-        if store == "broken":
-            raise RuntimeError("boom")
-        return [{"store": store}]
-
-    out = live_search._fetch_many(flaky, ["checkers", "broken"], "q", timeout=5)
-    assert out == {"checkers": [{"store": "checkers"}]}   # broken store simply absent
-
-
-def test_fetch_many_gives_up_on_a_slow_store_without_waiting_for_it():
-    def maybe_slow(store, q):
-        if store == "slow":
-            time.sleep(2)
-        return [{"store": store}]
-
-    started = time.monotonic()
-    out = live_search._fetch_many(maybe_slow, ["fast", "slow"], "q", timeout=0.2)
-    elapsed = time.monotonic() - started
-    assert out == {"fast": [{"store": "fast"}]}            # slow store not waited for
-    assert elapsed < 1.0, f"_fetch_many waited past its timeout ({elapsed:.2f}s)"
+# Parallel dispatch itself (parallel_search / store_timeout_seconds) lives in
+# app/scrapers/__init__.py now and is unit-tested there (tests/test_live_stores.py).
+# The two tests below check the same guarantee at this module's own level —
+# through the public search() call — so they stay regardless of which module
+# owns the thread pool.
 
 
 @pytest.fixture
@@ -195,11 +156,12 @@ def test_one_store_failing_does_not_affect_another(conn):
 
 
 def test_a_slow_store_does_not_delay_a_fast_ones_results(conn, monkeypatch):
-    monkeypatch.setenv("LIVE_SEARCH_STORE_TIMEOUT_SECONDS", "0.3")
+    # app/scrapers/store_timeout_seconds() clamps below 0.5s up to 0.5s.
+    monkeypatch.setenv("LIVE_STORE_TIMEOUT_SECONDS", "0.5")
 
     def one_slow_one_fast(store, q):
         if store == "shoprite":
-            time.sleep(0.6)
+            time.sleep(1.5)
             return [_product("late", store="Shoprite")]
         return [_product("bread-1")]
 
@@ -207,6 +169,6 @@ def test_a_slow_store_does_not_delay_a_fast_ones_results(conn, monkeypatch):
     checkers, shoprite = live_search.search(
         conn, "bread", scrape=one_slow_one_fast, stores=["checkers", "shoprite"])
     elapsed = time.monotonic() - started
-    assert elapsed < 1.0, f"search() waited on the slow store ({elapsed:.2f}s)"
+    assert elapsed < 1.2, f"search() waited on the slow store ({elapsed:.2f}s)"
     assert checkers.source == "live" and len(checkers.items) == 1
     assert shoprite.source == "unavailable"

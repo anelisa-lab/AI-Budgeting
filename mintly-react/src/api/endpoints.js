@@ -296,22 +296,22 @@ export function search(token, params = {}, opts = {}) {
 }
 
 /* =======================================================================
- * LIVE STORE SEARCH  —  app/routers/live_search.py   (router prefix "/api/search")
+ * LIVE STORE SEARCH  —  app/routers/live_search.py   ("/live-search")
  * =====================================================================*/
 
 /**
- * GET /api/search?query=bread  ->  LiveSearchResponse
+ * GET /live-search?query=bread ->  LiveSearchResponse
  *   { query, results: LiveSearchItem[], count, stores: LiveSearchStoreStatus[], message }
  * LiveSearchItem: { id, name, price (Decimal), image_url, product_url, store, brand,
  *                   category, on_promotion, in_stock, last_updated }
  * stores[].source: cache | live | stale | unavailable
  *
  * Live prices from the stores switched on in the backend's LIVE_PRICE_STORES
- * (Checkers Sixty60 only for now), cached server-side for 6 hours.
+ * (Checkers Sixty60 for now), cached server-side for 6 hours per store/query.
  * query must be 2-100 characters (422 otherwise).
  */
 export function liveSearch(token, query, opts = {}) {
-  return request('/api/search', { token, query: { query }, ...opts });
+  return request('/live-search', { token, query: { query }, ...opts });
 }
 
 /* =======================================================================

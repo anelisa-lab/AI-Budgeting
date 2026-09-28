@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://www.checkers.co.za"
 API_URL = BASE_URL + "/api/catalogue/get-products-filter"
 STORE = "Checkers"
-TIMEOUT = 20
+TIMEOUT = 8
 PAGE_SIZE = 40
 
 HEADERS = {
@@ -48,8 +48,8 @@ HEADERS = {
 }
 
 
-def search_checkers(query: str, limit: int = PAGE_SIZE,
-                    session: Optional[requests.Session] = None) -> List[dict]:
+def search(query: str, limit: int = PAGE_SIZE,
+           session: Optional[requests.Session] = None) -> List[dict]:
     """Search checkers.co.za. Never raises: any failure logs a warning and returns []."""
     query = (query or "").strip()
     if not query:
@@ -58,6 +58,12 @@ def search_checkers(query: str, limit: int = PAGE_SIZE,
     if payload is None:
         return []
     return parse_products(payload)
+
+
+def search_checkers(query: str, limit: int = PAGE_SIZE,
+                    session: Optional[requests.Session] = None) -> List[dict]:
+    """Backward-compatible name for older callers of the Checkers scraper."""
+    return search(query, limit=limit, session=session)
 
 
 def fetch_raw(query: str, limit: int = PAGE_SIZE,
