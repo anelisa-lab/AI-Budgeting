@@ -34,7 +34,9 @@ const FIRST_ROWS = 8;
 const STORE_LABELS = { checkers: 'Checkers Sixty60' };
 
 // Not scraped — shown from the catalogue instead. See the module docstring.
-const CATALOGUE_ONLY_STORE = 'Pick n Pay';
+// SPAR joins Pick n Pay here for the same reason: SPAR2U prices depend on a
+// chosen branch/delivery address, so there is no single "SPAR" live search.
+const CATALOGUE_ONLY_STORES = ['Pick n Pay', 'SPAR'];
 const CATALOGUE_MATCH_LIMIT = 8;
 
 export default function LivePrices({ token, query }) {
@@ -58,13 +60,14 @@ export default function LivePrices({ token, query }) {
     controller.current = ctrl;
     setLoading(true);
 
-    // Independent of each other: Pick n Pay's catalogue lookup failing (or
+    // Independent of each other: a catalogue-only store's lookup failing (or
     // being empty) must never hide genuinely live Checkers/Shoprite results,
-    // and vice versa.
+    // and one catalogue store failing must never hide another's.
     const live = api.search.live(token, term, { signal: ctrl.signal });
-    const catalogue = api.search.offers(token, {
-      q: term, store: CATALOGUE_ONLY_STORE, availability: 'any', limit: CATALOGUE_MATCH_LIMIT,
-    }, { signal: ctrl.signal }).catch(() => null);
+    const catalogueFetches = CATALOGUE_ONLY_STORES.map((store) =>
+      api.search.offers(token, {
+        q: term, store, availability: 'any', limit: CATALOGUE_MATCH_LIMIT,
+      }, { signal: ctrl.signal }).catch(() => null));
 
     try {
       const result = await live;
@@ -73,9 +76,11 @@ export default function LivePrices({ token, query }) {
       if (err?.name === 'AbortError' || ctrl.signal.aborted) return;
       setError(err.message || 'Live prices are unavailable right now.');
     }
-    const catalogueResult = await catalogue;
-    if (!ctrl.signal.aborted && catalogueResult) {
-      setCatalogueItems(catalogueResult.results.map(catalogueOfferToCard));
+    const catalogueResults = await Promise.all(catalogueFetches);
+    if (!ctrl.signal.aborted) {
+      setCatalogueItems(
+        catalogueResults.flatMap((r) => (r ? r.results.map(catalogueOfferToCard) : []))
+      );
     }
     if (!ctrl.signal.aborted) setLoading(false);
   }, [token, term]);
@@ -106,7 +111,9 @@ export default function LivePrices({ token, query }) {
             <span aria-hidden="true">●</span> {title}
           </h2>
           {catalogueItems.length > 0 && (
-            <Badge tone="neutral">+ {CATALOGUE_ONLY_STORE} (catalogue, not live)</Badge>
+            <Badge tone="neutral">
+              + {[...new Set(catalogueItems.map((i) => i.store))].join(', ')} (catalogue, not live)
+            </Badge>
           )}
         </div>
         {fetchedAt && (
@@ -157,8 +164,8 @@ export default function LivePrices({ token, query }) {
             </Button>
           )}
           <p className="live-prices__note">
-            Live cards are straight from the store&apos;s website; {CATALOGUE_ONLY_STORE} cards are
-            from our catalogue, not fetched live. Delivery and store fees aren&apos;t included.
+            Live cards are straight from the store&apos;s website; {CATALOGUE_ONLY_STORES.join(', ')} cards
+            are from our catalogue, not fetched live. Delivery and store fees aren&apos;t included.
             Items you add keep the price they had when you added them.
           </p>
         </>
