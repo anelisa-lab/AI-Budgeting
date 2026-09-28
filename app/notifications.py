@@ -55,6 +55,43 @@ def create_notification(
     return cur.fetchone()
 
 
+def _dispatch_via_twilio(phone_number: str, body: str) -> str:
+    """
+    POST to Twilio's Messages resource directly (no `twilio` SDK dependency —
+    it's one REST call with HTTP Basic Auth). Twilio's 201 means "accepted
+    for delivery", not "delivered" — same fire-and-forget contract as the
+    rest of dispatch_sms.
+    """
+    import requests  # local import: only needed on the configured path
+
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_FROM_NUMBER")
+
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+    response = requests.post(
+        url,
+        data={"To": phone_number, "From": from_number, "Body": body},
+        auth=(account_sid, auth_token),
+        timeout=5,
+    )
+    response.raise_for_status()
+    return "sent"
+
+
+def _dispatch_via_generic_gateway(gateway_url: str, phone_number: str, body: str) -> str:
+    """POST { to, body } to a custom gateway URL, Bearer-token authenticated."""
+    import requests  # local import: only needed on the configured path
+
+    auth_token = os.getenv("SMS_GATEWAY_TOKEN")
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+    response = requests.post(
+        gateway_url, json={"to": phone_number, "body": body}, headers=headers, timeout=5
+    )
+    response.raise_for_status()
+    return "sent"
+
+
 def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> str:
     """
     Best-effort delivery of `body` to `phone_number`.
@@ -62,30 +99,34 @@ def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> s
     Returns one of: 'no_phone', 'disabled', 'simulated', 'sent', 'failed'.
     Never raises — a caller should always be able to log the result and move
     on, the way a real gateway's outcome would arrive out-of-band anyway.
+
+    Tries, in order: Twilio (if TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/
+    TWILIO_FROM_NUMBER are all set), then a generic SMS_GATEWAY_URL (for any
+    other provider), then simulation. `phone_number` must be in E.164 format
+    (e.g. +27821234567) for Twilio to accept it — a trial Twilio account can
+    only text numbers verified in its console.
     """
     if not phone_number:
         return "no_phone"
     if not sms_enabled:
         return "disabled"
 
+    twilio_configured = all(
+        os.getenv(k) for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER")
+    )
     gateway_url = os.getenv("SMS_GATEWAY_URL")
-    if not gateway_url:
-        # No Twilio/Africa's Talking account is configured in this sandbox.
-        # This is the honest "would have sent" path: the same call, once
-        # SMS_GATEWAY_URL and any auth env vars are set, actually texts.
-        logger.info("SMS (simulated — no SMS_GATEWAY_URL set) to %s: %s", phone_number, body)
-        return "simulated"
 
     try:
-        import requests  # local import: only needed on the configured path
-
-        auth_token = os.getenv("SMS_GATEWAY_TOKEN")
-        headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
-        response = requests.post(
-            gateway_url, json={"to": phone_number, "body": body}, headers=headers, timeout=5
-        )
-        response.raise_for_status()
-        return "sent"
+        if twilio_configured:
+            return _dispatch_via_twilio(phone_number, body)
+        if gateway_url:
+            return _dispatch_via_generic_gateway(gateway_url, phone_number, body)
     except Exception:  # noqa: BLE001 — a gateway failure must never break the caller
         logger.exception("SMS gateway dispatch to %s failed", phone_number)
         return "failed"
+
+    # No Twilio account and no generic gateway configured. This is the
+    # honest "would have sent" path: the same call, once the env vars above
+    # are set, actually texts.
+    logger.info("SMS (simulated — no SMS gateway configured) to %s: %s", phone_number, body)
+    return "simulated"
