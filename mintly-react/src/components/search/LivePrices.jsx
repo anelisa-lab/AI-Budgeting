@@ -39,6 +39,31 @@ const STORE_LABELS = { checkers: 'Checkers Sixty60' };
 const CATALOGUE_ONLY_STORES = ['Pick n Pay', 'SPAR'];
 const CATALOGUE_MATCH_LIMIT = 8;
 
+// The catalogue has no product photos and no real product-page URL for its
+// offers (see catalogueOfferToCard). A generic per-category icon replaces
+// the empty cart, and clicking such a card goes to the store's real
+// homepage instead of going nowhere — never a guessed/invented product page.
+const STORE_HOMEPAGES = { 'Pick n Pay': 'https://www.pnp.co.za/', SPAR: 'https://www.spar.co.za/' };
+function storeHomepage(storeName) {
+  const prefix = Object.keys(STORE_HOMEPAGES).find((p) => (storeName || '').startsWith(p));
+  return prefix ? STORE_HOMEPAGES[prefix] : null;
+}
+const CATEGORY_ICONS = [
+  [/bread|loaf|bun|roll/, '🍞'],
+  [/milk|cheese|yog|dairy|butter/, '🥛'],
+  [/meat|chicken|beef|pork|mince|boerewors|fish/, '🍗'],
+  [/fruit|apple|banana|orange|veg|tomato|potato|onion/, '🥦'],
+  [/rice|maize|pasta|flour|mealie|cereal/, '🌾'],
+  [/soap|shampoo|toothpaste|deodorant|toiletr/, '🧴'],
+  [/juice|cooldrink|soda|water|beverage|tea|coffee/, '🥤'],
+  [/washing|detergent|clean|dish/, '🧽'],
+];
+function fallbackIcon(item) {
+  const text = `${item.category || ''} ${item.name || ''}`.toLowerCase();
+  const hit = CATEGORY_ICONS.find(([re]) => re.test(text));
+  return hit ? hit[1] : '🛒';
+}
+
 export default function LivePrices({ token, query }) {
   const term = (query || '').trim();
   const [data, setData] = useState(null);
@@ -216,7 +241,10 @@ function catalogueOfferToCard(offer) {
     price: buyable ? Number(rawPrice) : null,
     last_known_price: !buyable && Number(rawPrice) > 0 ? Number(rawPrice) : null,
     image_url: null,               // the catalogue has no product photos — see module docstring
-    product_url: offer.product_url || null,
+    category: offer.category,
+    // No real product-page URL exists for a catalogue offer — send the
+    // student to the store's real homepage instead of a dead card.
+    product_url: offer.product_url || storeHomepage(offer.store_name),
     store: offer.store_name,
     brand: offer.brand,
     on_promotion: false,
@@ -240,7 +268,7 @@ function LiveCard({ item }) {
             onError={() => setImageFailed(true)}
           />
         ) : (
-          <span aria-hidden="true">🛒</span>
+          <span aria-hidden="true">{fallbackIcon(item)}</span>
         )}
       </div>
       <div className="live-card__body">
