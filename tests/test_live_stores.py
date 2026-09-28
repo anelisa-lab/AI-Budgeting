@@ -31,7 +31,12 @@ def test_enabled_stores_include_stores_without_a_scraper(monkeypatch):
 def test_store_names():
     assert scrapers.store_name("checkers") == "Checkers"
     assert scrapers.store_name("shoprite") == "Shoprite"
-    assert scrapers.store_name("pnp") == "Pick n Pay"
+    assert scrapers.store_name("superbhyper") == "SuperbHyper"
+    # Pick n Pay has no live scraper and never will (its robots.txt disallows
+    # its search path) — it isn't in STORE_NAMES, so an unmapped key falls
+    # back to a title-cased guess. This just documents that fallback; nothing
+    # in the app actually calls store_name("picknpay").
+    assert scrapers.store_name("picknpay") == "Picknpay"
 
 
 def test_inactive_scrapers_are_never_imported_or_called(monkeypatch):

@@ -7,8 +7,8 @@ on. Every scraper exposes the same search(query) contract. Only switched-on
 scrapers are imported, so an unfinished one can sit outside SCRAPERS until it
 has been investigated.
 
-    LIVE_PRICE_STORES=checkers              (default — Checkers Sixty60 only)
-    LIVE_PRICE_STORES=checkers,shoprite,pnp (once those scrapers are ready)
+    LIVE_PRICE_STORES=checkers                     (default — Checkers Sixty60 only)
+    LIVE_PRICE_STORES=checkers,shoprite,superbhyper (every store with a live scraper)
 
 To add a store: investigate its real site first, then write
 app/scrapers/<store>.py with `search(query) -> list[dict]` that never raises,
@@ -46,7 +46,6 @@ SCRAPERS: Dict[str, str] = {
 STORE_NAMES: Dict[str, str] = {
     "checkers": "Checkers",
     "shoprite": "Shoprite",
-    "pnp": "Pick n Pay",
     "superbhyper": "SuperbHyper",
 }
 

@@ -18,7 +18,7 @@ confirmed, per store, before that store's module imports this one:
 Do NOT import this from a new store's module without first confirming the
 above for that store's own site — see each store's own module docstring for
 what was actually checked. A store that merely "looks similar" gets its own,
-separately investigated module (e.g. app/scrapers/pnp.py), not this one.
+separately investigated module (e.g. app/scrapers/superbhyper.py), not this one.
 
 Each store module supplies its own BASE_URL and STORE display name and gets
 back the same fetch/parse pipeline Checkers already used.
