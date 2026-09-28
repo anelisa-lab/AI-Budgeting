@@ -30,6 +30,8 @@ def test_enabled_stores_include_stores_without_a_scraper(monkeypatch):
 
 def test_store_names():
     assert scrapers.store_name("checkers") == "Checkers"
+    assert scrapers.store_name("shoprite") == "Shoprite"
+    assert scrapers.store_name("pnp") == "Pick n Pay"
 
 
 def test_inactive_scrapers_are_never_imported_or_called(monkeypatch):
@@ -56,3 +58,16 @@ def test_a_failing_store_does_not_break_the_search(monkeypatch):
     monkeypatch.setitem(scrapers.SCRAPERS, "broken", "broken_store:search")
     monkeypatch.setenv("LIVE_PRICE_STORES", "broken")
     assert scrapers.search_live("bread") == []
+
+
+def test_one_failing_store_does_not_hide_another_store(monkeypatch):
+    good = type(sys)("good_store")
+    good.search = lambda q: [{"name": "Bread", "store": "Good"}]
+    broken = type(sys)("broken_store")
+    broken.search = lambda q: 1 / 0
+    monkeypatch.setitem(sys.modules, "good_store", good)
+    monkeypatch.setitem(sys.modules, "broken_store", broken)
+    monkeypatch.setitem(scrapers.SCRAPERS, "good", "good_store:search")
+    monkeypatch.setitem(scrapers.SCRAPERS, "broken", "broken_store:search")
+    monkeypatch.setenv("LIVE_PRICE_STORES", "broken,good")
+    assert scrapers.search_live("bread") == [{"name": "Bread", "store": "Good"}]

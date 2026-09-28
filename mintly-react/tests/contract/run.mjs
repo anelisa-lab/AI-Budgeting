@@ -439,7 +439,7 @@ await test('search results are coerced, including the generated total_cost', asy
   assert.equal(page.results[0].rating, null);
 });
 
-await test('live search calls GET /api/search?query= and coerces the Decimal price', async () => {
+await test('live search calls GET /live-search?query= and coerces the Decimal price', async () => {
   installFetch(() => ({
     status: 200,
     body: {
@@ -458,7 +458,7 @@ await test('live search calls GET /api/search?query= and coerces the Decimal pri
   }));
   const live = await search.live(TOKEN, 'bread');
   const req = lastRequest();
-  assert.equal(req.path, '/api/search');
+  assert.equal(req.path, '/live-search');
   assert.deepEqual(req.query, { query: 'bread' });
   assert.equal(live.results[0].price, 18.99);
   assert.equal(live.results[0].image_url.startsWith('https://'), true);

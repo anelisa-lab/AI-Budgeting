@@ -1,17 +1,18 @@
 """
 Live store search — which stores the live search flow calls.
 
-SCRAPERS lists every store we have a live scraper for, as "module:function"
-strings, and LIVE_PRICE_STORES (env, comma-separated) says which of them are
-switched on. Only switched-on scrapers are imported, so an unfinished one
-can sit in SCRAPERS without being loaded or called.
+SCRAPERS lists every store with a live scraper as "module:function" strings,
+and LIVE_PRICE_STORES (env, comma-separated) says which of them are switched
+on. Every scraper exposes the same search(query) contract. Only switched-on
+scrapers are imported, so an unfinished one can sit outside SCRAPERS until it
+has been investigated.
 
     LIVE_PRICE_STORES=checkers              (default — Checkers Sixty60 only)
-    LIVE_PRICE_STORES=checkers,picknpay     (once a Pick n Pay scraper exists)
+    LIVE_PRICE_STORES=checkers,shoprite,pnp (once those scrapers are ready)
 
-To add a store: write app/scrapers/<store>.py with a
-`search_<store>(query) -> list[dict]` that never raises, add it below, then
-add its key to LIVE_PRICE_STORES.
+To add a store: investigate its real site first, then write
+app/scrapers/<store>.py with `search(query) -> list[dict]` that never raises,
+add its key and display name below, then add the key to LIVE_PRICE_STORES.
 
 The same setting also limits app/price_feed (the older CSV / RapidAPI import
 into product_offers, run by hand): its refresh and probe commands skip any
@@ -23,6 +24,7 @@ from __future__ import annotations
 import importlib
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import Callable, Dict, List
 
 from dotenv import load_dotenv
@@ -32,7 +34,7 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 SCRAPERS: Dict[str, str] = {
-    "checkers": "app.scrapers.checkers:search_checkers",   # Checkers Sixty60
+    "checkers": "app.scrapers.checkers:search",   # Checkers Sixty60
 }
 
 # The `store` value each scraper writes into its results (and so into
@@ -40,9 +42,12 @@ SCRAPERS: Dict[str, str] = {
 # a switched-on store, so old rows from a switched-off store can't leak in.
 STORE_NAMES: Dict[str, str] = {
     "checkers": "Checkers",
+    "shoprite": "Shoprite",
+    "pnp": "Pick n Pay",
 }
 
 DEFAULT_LIVE_STORES = "checkers"
+DEFAULT_STORE_TIMEOUT_SECONDS = 8.0
 
 
 def enabled_stores() -> List[str]:
@@ -92,9 +97,58 @@ def search_store(store: str, query: str) -> List[dict]:
         return []
 
 
+def store_timeout_seconds() -> float:
+    try:
+        seconds = float(os.getenv("LIVE_STORE_TIMEOUT_SECONDS",
+                                   DEFAULT_STORE_TIMEOUT_SECONDS))
+    except ValueError:
+        seconds = DEFAULT_STORE_TIMEOUT_SECONDS
+    return max(0.5, min(seconds, 30.0))
+
+
+def parallel_search(stores: List[str], query: str,
+                    scrape: Callable[[str, str], List[dict]] = search_store
+                    ) -> Dict[str, List[dict]]:
+    """Run enabled-store searches together without letting one block the rest."""
+    if not stores:
+        return {}
+
+    executor = ThreadPoolExecutor(max_workers=len(stores),
+                                  thread_name_prefix="live-store")
+    futures = {
+        executor.submit(scrape, store, query): store
+        for store in stores
+    }
+    done, pending = wait(futures, timeout=store_timeout_seconds())
+    results: Dict[str, List[dict]] = {}
+
+    for future in done:
+        store = futures[future]
+        try:
+            results[store] = future.result() or []
+        except Exception:
+            log.exception("live search for %r failed in the %s scraper",
+                          query, store)
+            results[store] = []
+
+    for future in pending:
+        store = futures[future]
+        future.cancel()
+        log.warning("live search for %r timed out in the %s scraper",
+                    query, store)
+        results[store] = []
+
+    # Do not wait for a timed-out network call. Scrapers also have their own
+    # request timeout, so the worker will exit shortly after cancellation.
+    executor.shutdown(wait=False, cancel_futures=True)
+    return results
+
+
 def search_live(query: str) -> List[dict]:
-    """Every active store's results for `query`. A failing store is logged and skipped."""
+    """Every active store's results for `query`, in registry order."""
+    stores = active_stores()
+    results_by_store = parallel_search(stores, query)
     results: List[dict] = []
-    for store in active_stores():
-        results.extend(search_store(store, query))
+    for store in stores:
+        results.extend(results_by_store.get(store, []))
     return results

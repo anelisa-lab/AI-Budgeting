@@ -1,5 +1,5 @@
 """
-Live store search — GET /api/search?query=bread
+Live store search — GET /live-search?query=bread
 
 Searches the stores switched on in LIVE_PRICE_STORES (app/scrapers — only
 Checkers Sixty60 for now) and returns name, price, image and link for each
@@ -44,10 +44,12 @@ from app.database import get_connection
 from app.dependencies import get_current_user_id
 from app.schemas import LiveSearchResponse, LiveSearchStoreStatus
 
-router = APIRouter(prefix="/api/search", tags=["live search"])
+router = APIRouter(tags=["live search"])
 
 
-@router.get("", response_model=LiveSearchResponse)
+@router.get("/live-search", response_model=LiveSearchResponse)
+@router.get("/api/search", response_model=LiveSearchResponse,
+            include_in_schema=False)
 def live_store_search(
     query: str = Query(..., min_length=2, max_length=100,
                        description="What to search for, e.g. 'bread'"),

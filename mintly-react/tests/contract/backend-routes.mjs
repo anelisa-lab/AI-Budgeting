@@ -14,7 +14,7 @@
  *   app/routers/profile.py /profile/, /profile/preferences
  *   app/routers/budgets.py /budgets, /budgets/current, /budgets/{id}, …
  *   app/routers/search.py  /search and its query parameters
- *   app/routers/live_search.py       /api/search (live store prices)
+ *   app/routers/live_search.py       /live-search (live store prices)
  *   app/routers/budget_split.py      /budget-split, /budget-split/check
  *   app/routers/recommendations.py   /recommendations
  *   app/routers/true_cost.py         /true-cost
@@ -147,7 +147,7 @@ export const ROUTES = [
   },
   {
     name: 'liveSearch',
-    method: 'GET', pattern: /^\/api\/search$/, auth: true,
+    method: 'GET', pattern: /^\/live-search$/, auth: true,
     query: ['query'],
   },
   {

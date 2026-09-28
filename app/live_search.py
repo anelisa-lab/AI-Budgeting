@@ -29,7 +29,7 @@ from typing import Callable, List, Optional
 from app.live_items import upsert_items
 import logging
 
-from app.scrapers import active_stores, search_store, store_name
+from app.scrapers import active_stores, parallel_search, search_store, store_name
 
 log = logging.getLogger(__name__)
 
@@ -65,14 +65,28 @@ def search(conn, query: str,
            stores: Optional[List[str]] = None) -> List[StoreResult]:
     """Results per store, cache first. `scrape(store, query)` is injectable for tests."""
     q = normalise_query(query)
+    store_keys = active_stores() if stores is None else stores
     out = []
-    for store in (active_stores() if stores is None else stores):
+    cached_by_store = {}
+    pending_stores = []
+    for store in store_keys:
         cached = _cached(conn, store, q)
+        cached_by_store[store] = cached
         if cached and _is_fresh(cached[0]):
             out.append(StoreResult(store, "cache", cached[0], cached[1]))
+        else:
+            pending_stores.append(store)
+
+    fetched_by_store = parallel_search(pending_stores, q, scrape)
+    fresh_results = {result.store: result for result in out}
+    out = []
+    for store in store_keys:
+        if store in fresh_results:
+            out.append(fresh_results[store])
             continue
 
-        products = _own_rows(store, scrape(store, q))
+        cached = cached_by_store[store]
+        products = _own_rows(store, fetched_by_store.get(store, []))
         if products:
             item_ids = upsert_items(conn, products, commit=False)
             searched_at = _remember(conn, store, q, item_ids)
