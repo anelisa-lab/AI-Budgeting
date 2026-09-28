@@ -17,7 +17,6 @@ import { money } from '../../lib/format.js';
 
 const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
-  { to: '/recommendations', label: 'For you' },
   { to: '/search', label: 'Search' },
   { to: '/compare', label: 'Compare' },
   { to: '/budget', label: 'Budget' },

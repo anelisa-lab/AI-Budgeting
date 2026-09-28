@@ -83,6 +83,9 @@ const RULES = {
 
 export default function BudgetEntry() {
   const { budget, saveBudget, deleteBudget, supports } = useBudget();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const formRef = useRef(null);
   const [deleting, setDeleting] = useState(false);
 
   async function handleDeleteBudget() {
@@ -98,9 +101,6 @@ export default function BudgetEntry() {
       setDeleting(false);
     }
   }
-  const toast = useToast();
-  const navigate = useNavigate();
-  const formRef = useRef(null);
 
   const [values, setValues] = useState({
     amount: '', payoutDate: todayIso(), periodDays: '30', savingsPercentage: '0',
@@ -236,10 +236,10 @@ export default function BudgetEntry() {
 
             {!isEditing && (
               <div>
-                <p className="field__label" style={{ marginBottom: 'var(--s-2)' }}>
+                <p className="field__label" id="budget-presets-label" style={{ marginBottom: 'var(--s-2)' }}>
                   Start from a known amount
                 </p>
-                <div className="chips">
+                <div className="chips" role="group" aria-labelledby="budget-presets-label">
                   {PRESETS.map((p) => (
                     <button
                       key={p.label}

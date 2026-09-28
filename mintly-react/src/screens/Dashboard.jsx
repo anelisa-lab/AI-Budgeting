@@ -33,8 +33,8 @@ import { SPENDING_CATEGORIES, categoryIcon, categoryLabel } from '../lib/categor
 
 /**
  * `transactions.category` is free text on the backend; the options come from
- * the app's single category list (lib/categories.js), which also drives
- * Search, For you and Profile — so "Groceries" means the same thing everywhere.
+ * the app's single category list (lib/categories.js), which Search and
+ * Profile use too — so "Groceries" means the same thing everywhere.
  */
 const CATEGORIES = SPENDING_CATEGORIES.map(({ value, label }) => ({ value, label }));
 
@@ -286,8 +286,8 @@ export default function Dashboard() {
             daysLeft={daysLeft}
           />
           <div style={{ marginTop: 'var(--s-5)' }}>
-            <Button variant="primary" size="sm" block onClick={() => navigate('/recommendations')}>
-              See what fits today →
+            <Button variant="primary" size="sm" block onClick={() => navigate('/search')}>
+              Find something to shop for →
             </Button>
           </div>
         </Card>

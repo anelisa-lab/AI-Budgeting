@@ -107,7 +107,7 @@ the live API contract and test endpoints without Postman/Thunder Client.
 | DELETE | /budgets/{id}           | Yes   | Delete a budget and its spends (Phase 5)       |
 | GET    | /search                 | Yes   | `?q=&category=&brand=&colour=&size=&store=&min_price=&max_price=&max_shipping_cost=&availability=&essential_only=&sort=&limit=&offset=&page=` — `q` accepts natural language ("bread under R20"); response adds `page`, `total_pages`, `has_more`, `next_offset`, `message`, `parsed` |
 | POST   | /recommendations        | Yes   | `{ query?, category?, max_price?, fulfilment?, limit?, include_unaffordable?, candidate_pool? }` — ranked offers with true cost, scores and an explanation |
-| GET    | /recommendations/history | Yes  | `?limit=` — recent runs and the items they returned (shown as "Recent searches" on For you) |
+| GET    | /recommendations/history | Yes  | `?limit=` — recent runs and the items they returned (not currently called by the frontend — Search shows live prices across stores instead) |
 | DELETE | /recommendations/history | Yes  | Clear them (Phase 5)                            |
 | POST   | /true-cost              | Yes   | `{ offer_ids[], quantity?, fulfilment?, use_my_location? }` — itemised true cost per offer, cheapest flagged |
 | GET    | /true-cost/{offer_id}   | Yes   | `?quantity=&fulfilment=&use_my_location=` — one offer, itemised |
@@ -154,7 +154,6 @@ closed:
   `comparison_lists` tables (`sql/005_phase5_shopping_list.sql`). A list saved
   in a browser by an earlier build is uploaded once.
 - **Deleting** a spend or a budget; **editing** residence and student number.
-- **Recent searches** on For you, from `/recommendations/history`, with clear.
 - **CORS** limited to `CORS_ORIGINS`.
 
 Still open: store prices are modelled estimates (the live-price adapter needs
@@ -418,13 +417,11 @@ The React app now uses the Phase 3 endpoints rather than only the Phase 2 ones:
   describes: the message verbatim, a "left today" bar, the "from tomorrow" rate,
   survival mode, and the allowance-exhausted state. After a purchase it takes
   `daily_split` from the transaction response and shows `daily_limit_message`.
-- **Search**: a "Recommended for you" panel calls `POST /recommendations`. It
-  shows the true cost, the plain-English explanation, a closest-match notice
-  when `matched_query` is false, and survival mode, and links to For you.
-- **For you** (`/recommendations`, Member 7): the recommendation-results
-  screen — cards with rank, true cost, explanation and budget fit; category,
-  max-price, delivery/collection and "over today's allowance" filters; sort by
-  rank, true cost, distance or rating.
+- **Search**: a search box plus live product cards from `GET /live-search`
+  (Checkers, Shoprite, SuperbHyper) merged with Pick n Pay and SPAR's
+  catalogue matches, replacing the separate filter rail and the
+  `POST /recommendations` panel this section used to describe. The old
+  `/recommendations` address redirects to Search.
 - **Daily Budget Split component** (`src/components/budget/DailyBudgetSplit.jsx`,
   Member 8): the dashboard's "Safe to spend" card, including the next 7 days
   of the schedule.

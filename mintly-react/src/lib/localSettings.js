@@ -1,16 +1,17 @@
 /**
  * Device-only app settings (Settings screen).
  *
- * The backend has no settings endpoint — only profile + shopping preferences,
- * which live on the Profile screen and ARE saved to the account. Anything here
- * is stored in this browser only, and the Settings screen says so.
- *
- * applyStoredSettings() runs once at start-up (main.jsx) so a saved choice is
- * in force on every screen from the first paint — not only while the Settings
- * screen happens to be open, which is how the first version behaved.
+ * The backend has no generic settings endpoint, so these accessibility
+ * preferences are stored in this browser only. Profile and shopping
+ * preferences remain account-level settings elsewhere in the app.
  */
 
 const REDUCED_MOTION_KEY = 'uniwallet.reducedMotion';
+const TEXT_SIZE_KEY = 'uniwallet.textSize';
+const CONTRAST_KEY = 'uniwallet.contrast';
+
+const TEXT_SIZES = new Set(['default', 'large', 'extra-large']);
+const CONTRAST_MODES = new Set(['default', 'high']);
 
 function safeGet(key) {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -26,10 +27,41 @@ export function getReducedMotion() {
 
 export function setReducedMotion(on) {
   safeSet(REDUCED_MOTION_KEY, on ? '1' : '0');
-  document.documentElement.dataset.reducedMotion = on ? 'true' : 'false';
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.reducedMotion = on ? 'true' : 'false';
+  }
+}
+
+export function getTextSize() {
+  const value = safeGet(TEXT_SIZE_KEY);
+  return TEXT_SIZES.has(value) ? value : 'default';
+}
+
+export function setTextSize(size) {
+  const value = TEXT_SIZES.has(size) ? size : 'default';
+  safeSet(TEXT_SIZE_KEY, value);
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.textSize = value;
+  }
+}
+
+export function getContrastMode() {
+  const value = safeGet(CONTRAST_KEY);
+  return CONTRAST_MODES.has(value) ? value : 'default';
+}
+
+export function setContrastMode(mode) {
+  const value = CONTRAST_MODES.has(mode) ? mode : 'default';
+  safeSet(CONTRAST_KEY, value);
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.contrast = value;
+  }
 }
 
 export function applyStoredSettings() {
   if (typeof document === 'undefined') return;
-  document.documentElement.dataset.reducedMotion = getReducedMotion() ? 'true' : 'false';
+  const root = document.documentElement;
+  root.dataset.reducedMotion = getReducedMotion() ? 'true' : 'false';
+  root.dataset.textSize = getTextSize();
+  root.dataset.contrast = getContrastMode();
 }

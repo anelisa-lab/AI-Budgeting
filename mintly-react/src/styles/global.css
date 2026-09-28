@@ -81,7 +81,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   position: sticky;
   top: env(safe-area-inset-top, 0px);
   z-index: 50;
-  background: rgba(247, 244, 234, 0.93);
+  background: rgba(244, 249, 248, 0.93);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--c-line);
 }
@@ -125,8 +125,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   .nav__links::-webkit-scrollbar { display: none; }
   /* Fade the right edge so it is obvious there are more links to swipe to. */
   .nav__links {
-    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
-    mask-image: linear-gradient(to right, #000 88%, transparent);
+    -webkit-mask-image: linear-gradient(to right, #112222 88%, transparent);
+    mask-image: linear-gradient(to right, #112222 88%, transparent);
     padding-right: var(--s-8);
   }
   .nav__link { white-space: nowrap; }
@@ -199,13 +199,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .btn--secondary:hover:not(:disabled) { background: var(--c-butter-dark); }
 
 .btn--ghost { background: transparent; color: var(--c-forest); border-color: var(--c-line-strong); }
-.btn--ghost:hover:not(:disabled) { border-color: var(--c-forest); background: rgba(46, 86, 68, 0.05); }
+.btn--ghost:hover:not(:disabled) { border-color: var(--c-forest); background: rgba(55, 106, 102, 0.05); }
 
 .btn--quiet { background: transparent; color: var(--c-muted); }
 .btn--quiet:hover:not(:disabled) { background: var(--c-cream-2); color: var(--c-forest); }
 
 .btn--danger { background: var(--c-danger-bg); color: var(--c-danger); }
-.btn--danger:hover:not(:disabled) { background: #F2D2C6; }
+.btn--danger:hover:not(:disabled) { background: #b6d9d2; }
 
 /* ==========================================================================
    FIELD / INPUT / SELECT
@@ -241,10 +241,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .input:focus, .select:focus {
   outline: none;
   border-color: var(--c-forest);
-  box-shadow: 0 0 0 3px rgba(46, 86, 68, 0.12);
+  box-shadow: 0 0 0 3px rgba(55, 106, 102, 0.12);
 }
 .input--invalid, .select--invalid { border-color: var(--c-danger); }
-.input--invalid:focus, .select--invalid:focus { box-shadow: 0 0 0 3px rgba(163, 52, 24, 0.14); }
+.input--invalid:focus, .select--invalid:focus { box-shadow: 0 0 0 3px rgba(55, 106, 102, 0.14); }
 .input:disabled, .select:disabled { background: var(--c-cream-2); cursor: not-allowed; }
 
 .input-group { position: relative; display: flex; align-items: center; }
@@ -400,7 +400,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .skeleton {
-  background: linear-gradient(90deg, var(--c-cream-2) 25%, #E8E2D2 37%, var(--c-cream-2) 63%);
+  background: linear-gradient(90deg, var(--c-cream-2) 25%, #dbece8 37%, var(--c-cream-2) 63%);
   background-size: 400% 100%;
   animation: shimmer 1.3s ease infinite;
   border-radius: var(--r-md);
@@ -437,8 +437,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .dash-amount { font-family: var(--font-display); font-size: var(--t-3xl); letter-spacing: -0.02em; line-height: 1.05; }
 .dash-label { font-size: var(--t-sm); font-weight: var(--fw-extra); }
 .dash-sub { font-size: var(--t-xs); margin-top: var(--s-1); }
-.dash-sub--on-dark { color: rgba(243, 239, 226, 0.7); }
-.dash-sub--on-butter { color: rgba(28, 28, 25, 0.62); }
+.dash-sub--on-dark { color: rgba(244, 249, 248, 0.7); }
+.dash-sub--on-butter { color: rgba(17,34,34, 0.62); }
 
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-3); }
 .stat { padding: var(--s-4) var(--s-5); background: var(--c-paper); border: 1px solid var(--c-line); border-radius: var(--r-lg); }
@@ -498,7 +498,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .result:hover { border-color: var(--c-line-strong); box-shadow: var(--e-1); }
-.result--best { border-color: var(--c-forest); background: rgba(46, 86, 68, 0.03); }
+.result--best { border-color: var(--c-forest); background: rgba(55, 106, 102, 0.03); }
 .result__icon { width: 56px; height: 56px; border-radius: var(--r-md); display: grid; place-items: center; font-size: 26px; background: var(--c-cream-2); }
 .result__name { font-weight: var(--fw-extra); font-size: var(--t-base); line-height: 1.25; }
 .result__meta { font-size: var(--t-xs); color: var(--c-muted-light); font-weight: var(--fw-semibold); margin-top: 2px; }
@@ -535,7 +535,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .cmp-row__fill { height: 100%; border-radius: var(--r-sm); transition: width 0.45s var(--ease); }
 .cmp-row__val { text-align: right; font-weight: var(--fw-black); font-size: var(--t-sm); }
 .cmp-row--best .cmp-row__val { color: var(--c-forest); }
-.cmp-row__sub { display: block; font-size: 10px; font-weight: var(--fw-bold); color: var(--c-muted-light); line-height: 1.2; }
+.cmp-row__sub { display: block; font-size: 0.625rem; font-weight: var(--fw-bold); color: var(--c-muted-light); line-height: 1.2; }
 .cmp-row__breakdown { font-size: var(--t-xs); color: var(--c-muted-light); margin-top: 2px; }
 .cmp-missing { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: var(--s-1); }
 .cmp-missing li { display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--c-muted); }
@@ -670,6 +670,13 @@ html[data-reduced-motion='true'] *::after {
   box-shadow: var(--e-2);
 }
 .skip-link:focus { transform: translateY(0); text-decoration: none; }
+/* <main> takes focus programmatically (skip link, route changes) so reading
+   starts at the page content; it is not an interactive control, so it gets
+   no ring — the next Tab lands on the first real control, which does. */
+main[tabindex='-1']:focus { outline: none; }
+/* A hint inside a checkbox label sits on its own line under the label text
+   (it rendered as "Reduce motionAnimations, …" on one line before). */
+.checkbox .checkbox__hint { display: block; margin-top: 2px; font-size: var(--t-xs); }
 
 .btn:focus-visible,
 .input:focus-visible,
@@ -701,7 +708,7 @@ html[data-reduced-motion='true'] *::after {
 /* The comparison page should remain readable when a presenter prints/saves
    a PDF for the backup demo artefact. */
 @media print {
-  body { background: #fff; }
+  body { background: #f4f9f8; }
   .nav, .toast-region, .backend-status, .skip-link, button { display: none !important; }
   .app-body { padding: 0; }
   .page { max-width: none; padding: 0; }
@@ -733,3 +740,39 @@ html[data-reduced-motion='true'] *::after {
   font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
+
+
+/* Settings → Text size (lib/localSettings.js). Every type token is in rem, so
+   scaling the root scales all text; px spacing and layout stay put. */
+html[data-text-size='large'] { font-size: 112.5%; }
+html[data-text-size='extra-large'] { font-size: 125%; }
+
+html[data-text-size='large'] .nav__links,
+html[data-text-size='extra-large'] .nav__links {
+  scrollbar-width: thin;
+}
+
+html[data-text-size='extra-large'] .nav__link {
+  white-space: nowrap;
+}
+
+/* Settings → Stronger contrast. Opt-in only: the default palette is not
+   touched. Re-points the secondary text and line tokens at darker values
+   ALREADY in the palette, so small grey text (muted-light is ~3:1 on cream)
+   reaches WCAG AA, and card, input and button edges are clearly visible. */
+html[data-contrast='high'] {
+  --c-muted: #112222;        /* = --c-ink */
+  --c-muted-light: #376a66;  /* = default --c-muted, 4.9:1 on cream */
+  --c-warning: #253c3b;      /* = --c-on-butter */
+  --c-line: rgba(55, 106, 102, 0.32);        /* = default --c-line-strong */
+  --c-line-strong: #376a66;                /* = --c-forest */
+}
+html[data-contrast='high'] .card,
+html[data-contrast='high'] .input,
+html[data-contrast='high'] .select,
+html[data-contrast='high'] .btn,
+html[data-contrast='high'] .nav {
+  border-color: var(--c-line-strong);
+}
+
+body { overflow-x: hidden; }

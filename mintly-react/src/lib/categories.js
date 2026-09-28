@@ -1,7 +1,7 @@
 /**
  * The ONE category list for the whole frontend.
  *
- * Before Phase 4 the same idea was typed out four times (Search, For you,
+ * Before Phase 4 the same idea was typed out four times (Search,
  * Dashboard, Profile) and the copies had drifted: the dashboard knew about
  * "Transport" and "Airtime & data", the recommender screen did not, and none
  * of them knew about "Maintenance". Everything now imports from here.

@@ -89,7 +89,9 @@ export default function Login() {
   }
 
   return (
-    <div className="auth">
+    // The auth screens have no AppShell, so they carry their own <main>
+    // landmark (and the id RouteFocus moves focus to).
+    <main className="auth" id="main" tabIndex={-1}>
       <div className="auth__card">
         <BackendStatus compact />
         <div className="stack" style={{ justifyItems: 'center', marginBottom: 'var(--s-6)' }}>
@@ -167,6 +169,6 @@ export default function Login() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
