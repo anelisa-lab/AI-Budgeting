@@ -6,7 +6,7 @@ only for now), and only ever returning items whose items.store is that
 store's name, so rows left in the database by a switched-off store are
 never shown:
 
-  searched within LIVE_SEARCH_TTL_HOURS (default 6)  -> answer from the DB   ("cache")
+  searched within LIVE_SEARCH_TTL_HOURS (default 4)  -> answer from the DB   ("cache")
   otherwise                                          -> ask the store, upsert
                                                         into items, remember
                                                         the result order     ("live")
@@ -33,7 +33,7 @@ from app.scrapers import active_stores, parallel_search, search_store, store_nam
 
 log = logging.getLogger(__name__)
 
-DEFAULT_TTL_HOURS = 6.0
+DEFAULT_TTL_HOURS = 4.0
 
 
 def cache_ttl() -> timedelta:

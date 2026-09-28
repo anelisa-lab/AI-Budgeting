@@ -7,8 +7,8 @@ product. Only rows whose items.store belongs to a switched-on store are
 returned (filtered in SQL), so another store's old rows never show.
 
 Answers come from the database when the same query was searched within
-LIVE_SEARCH_TTL_HOURS (default 6), so Checkers is asked at most once per
-query per six hours however many students search. Cache rules:
+LIVE_SEARCH_TTL_HOURS (default 4), so each store is asked at most once per
+query per four hours however many students search. Cache rules:
 app/live_search.py.
 
 Separate from GET /search, which searches the curated catalogue

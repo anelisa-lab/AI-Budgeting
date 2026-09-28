@@ -58,21 +58,38 @@ def cmd_probe(args):
 
 
 def cmd_refresh(args):
+    if args.provider == "csv":
+        from app.price_feed.service import run_csv_refresh
+        plan, skipped = run_csv_refresh(args.file, dry_run=args.dry_run)
+        if skipped:
+            print(f"skipping switched-off store(s): {', '.join(skipped)} "
+                  f"(LIVE_PRICE_STORES={','.join(enabled_stores()) or '(empty)'}) — "
+                  "their prices are left as they are")
+        print(plan.summary())
+        for u in plan.updates:
+            print(f"  UPDATE #{u.offer_id}: R{u.old_price} -> R{u.new_price}  ({u.title})")
+        for line in plan.review:
+            print(f"  REVIEW {line}")
+        if args.verbose:
+            for line in plan.unmatched:
+                print(f"  UNMATCHED {line}")
+        if args.dry_run:
+            print("dry run — nothing written")
+        else:
+            print(f"wrote {len(plan.updates)} price(s)")
+        return
+
     conn = _connect()
     try:
         with conn, conn.cursor() as cur:
             offers = load_catalogue_offers(cur)
             # Only stores listed in LIVE_PRICE_STORES are refreshed; every other
             # store's product_offers rows keep the last price written to them.
-            if args.provider == "csv":
-                provider = CsvPriceProvider(args.file)
-                listings = provider.fetch()
-            else:
-                provider = RapidApiSaGroceryProvider(max_requests=args.max_requests)
-                wanted = sorted({(o.store_key, f"{o.brand or ''} {o.product_name}".strip())
-                                 for o in offers
-                                 if o.store_key in provider.store_map and is_enabled(o.store_key)})
-                listings = provider.fetch_for(wanted)
+            provider = RapidApiSaGroceryProvider(max_requests=args.max_requests)
+            wanted = sorted({(o.store_key, f"{o.brand or ''} {o.product_name}".strip())
+                             for o in offers
+                             if o.store_key in provider.store_map and is_enabled(o.store_key)})
+            listings = provider.fetch_for(wanted)
             listings, covered, skipped = only_enabled_stores(
                 listings, provider.covered_stores(), enabled_stores())
             if skipped:

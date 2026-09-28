@@ -24,7 +24,7 @@ def test_ttl_from_env(monkeypatch):
     monkeypatch.setenv("LIVE_SEARCH_TTL_HOURS", "2")
     assert live_search.cache_ttl().total_seconds() == 7200
     monkeypatch.setenv("LIVE_SEARCH_TTL_HOURS", "junk")
-    assert live_search.cache_ttl().total_seconds() == 6 * 3600
+    assert live_search.cache_ttl().total_seconds() == 4 * 3600
 
 
 # Parallel dispatch itself (parallel_search / store_timeout_seconds) lives in

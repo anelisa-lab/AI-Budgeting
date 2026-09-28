@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.price_feed import scheduler as price_feed_scheduler
 from app.routers import (
     auth,
     profile,
@@ -70,6 +71,16 @@ app.add_middleware(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+def _start_price_feed_scheduler():
+    price_feed_scheduler.start()
+
+
+@app.on_event("shutdown")
+def _stop_price_feed_scheduler():
+    price_feed_scheduler.stop()
 
 
 app.include_router(auth.router)
