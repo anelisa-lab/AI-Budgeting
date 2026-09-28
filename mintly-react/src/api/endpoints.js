@@ -296,6 +296,25 @@ export function search(token, params = {}, opts = {}) {
 }
 
 /* =======================================================================
+ * LIVE STORE SEARCH  —  app/routers/live_search.py   ("/live-search")
+ * =====================================================================*/
+
+/**
+ * GET /live-search?query=bread ->  LiveSearchResponse
+ *   { query, results: LiveSearchItem[], count, stores: LiveSearchStoreStatus[], message }
+ * LiveSearchItem: { id, name, price (Decimal), image_url, product_url, store, brand,
+ *                   category, on_promotion, in_stock, last_updated }
+ * stores[].source: cache | live | stale | unavailable
+ *
+ * Live prices from the stores switched on in the backend's LIVE_PRICE_STORES
+ * (Checkers Sixty60 for now), cached server-side for 6 hours per store/query.
+ * query must be 2-100 characters (422 otherwise).
+ */
+export function liveSearch(token, query, opts = {}) {
+  return request('/live-search', { token, query: { query }, ...opts });
+}
+
+/* =======================================================================
  * BUDGET SPLIT  —  app/routers/budget_split.py   (router prefix "/budget-split")
  * =====================================================================*/
 
@@ -447,16 +466,27 @@ export function getPriceStatus(token, opts = {}) {
  * SHOPPING LIST  —  app/routers/shopping_list.py   (prefix "/shopping-list")  Phase 5
  * =====================================================================*/
 
-/** GET /shopping-list  ->  ShoppingListOut { items: ShoppingListLineOut[] } */
+/**
+ * GET /shopping-list  ->  ShoppingListOut {
+ *   items: ShoppingListLineOut[],          catalogue offers
+ *   live_items: LiveListLineOut[],         live store items (Checkers Sixty60)
+ *   summary: { total, count, unavailable_count, changed_count }
+ * }
+ * summary.total is at the prices SAVED when each item was added, and leaves
+ * out anything that can't be bought right now.
+ */
 export function getShoppingList(token, opts = {}) {
   return request('/shopping-list', { token, ...opts });
 }
 
-/** POST /shopping-list/items  { offer_id, qty }  — adds to the quantity if already listed. */
-export function addShoppingListItem(token, { offer_id: offerId, qty = 1 }, opts = {}) {
-  return request('/shopping-list/items', {
-    method: 'POST', body: { offer_id: offerId, qty }, token, ...opts,
-  });
+/**
+ * POST /shopping-list/items  { offer_id, qty } or { item_id, qty }
+ * — adds to the quantity if already listed. 409 when it's out of stock or
+ * has no price, so such an item can never be added.
+ */
+export function addShoppingListItem(token, { offer_id: offerId, item_id: itemId, qty = 1 }, opts = {}) {
+  const body = itemId != null ? { item_id: itemId, qty } : { offer_id: offerId, qty };
+  return request('/shopping-list/items', { method: 'POST', body, token, ...opts });
 }
 
 /** PUT /shopping-list/items/{offer_id}  { qty }  — 0 removes the line. */
@@ -469,6 +499,20 @@ export function setShoppingListQty(token, offerId, qty, opts = {}) {
 /** DELETE /shopping-list/items/{offer_id} */
 export function removeShoppingListItem(token, offerId, opts = {}) {
   return request(`/shopping-list/items/${encodeURIComponent(offerId)}`, {
+    method: 'DELETE', token, ...opts,
+  });
+}
+
+/** PATCH /shopping-list/live-items/{item_id}  { qty }  — 0 removes the line. */
+export function setShoppingListLiveQty(token, itemId, qty, opts = {}) {
+  return request(`/shopping-list/live-items/${encodeURIComponent(itemId)}`, {
+    method: 'PATCH', body: { qty }, token, ...opts,
+  });
+}
+
+/** DELETE /shopping-list/live-items/{item_id} */
+export function removeShoppingListLiveItem(token, itemId, opts = {}) {
+  return request(`/shopping-list/live-items/${encodeURIComponent(itemId)}`, {
     method: 'DELETE', token, ...opts,
   });
 }

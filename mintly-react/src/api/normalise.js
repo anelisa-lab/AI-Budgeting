@@ -348,6 +348,61 @@ export function searchResponseFromApi(payload) {
   };
 }
 
+/* ------------------------------------------------------ live store search */
+
+/** LiveSearchItem — one product from GET /api/search. */
+/** A real price as a number, or null. 0, negatives and junk are never a price. */
+export function priceOrNull(value) {
+  const n = numOrNull(value);
+  return n != null && n > 0 ? n : null;
+}
+
+/**
+ * LiveSearchItem — one product from GET /api/search. price is null (never 0)
+ * when the store has no price right now; last_known_price is the last real
+ * price seen. `buyable` is the one flag screens should use.
+ */
+export function liveItemFromApi(i) {
+  const inStock = i.in_stock !== false;
+  const price = inStock ? priceOrNull(i.price) : null;
+  return {
+    id: i.id,
+    name: i.name,
+    price,
+    last_known_price: priceOrNull(i.last_known_price),
+    last_priced_at: i.last_priced_at || null,
+    buyable: inStock && price != null,
+    image_url: i.image_url || null,
+    product_url: i.product_url || null,
+    store: i.store,
+    brand: i.brand || null,
+    category: i.category || null,
+    on_promotion: Boolean(i.on_promotion),
+    in_stock: inStock,
+    last_updated: i.last_updated || null,
+  };
+}
+
+/** LiveSearchResponse. stores[].source is cache | live | stale | unavailable. */
+export function liveSearchFromApi(payload) {
+  const results = Array.isArray(payload?.results) ? payload.results.map(liveItemFromApi) : [];
+  return {
+    query: payload?.query || '',
+    results,
+    count: num(payload?.count, results.length),
+    stores: Array.isArray(payload?.stores)
+      ? payload.stores.map((s) => ({
+        store: s.store,
+        name: s.name || s.store,
+        source: s.source,
+        fetched_at: s.fetched_at || null,
+        count: num(s.count, 0),
+      }))
+      : [],
+    message: payload?.message || null,
+  };
+}
+
 /* -------------------------------------------------------- recommendations */
 
 /** RecommendedOffer — one ranked result from POST /recommendations. */
@@ -587,8 +642,47 @@ export function shoppingLineFromApi(l) {
   };
 }
 
+/** LiveListLineOut — a live store item (Checkers) on the list. */
+export function liveListLineFromApi(l) {
+  return {
+    item_id: l.item_id,
+    name: l.name,
+    store: l.store,
+    brand: l.brand || null,
+    image_url: l.image_url || null,
+    product_url: l.product_url || null,
+    price: num(l.price),                        // saved when added
+    current_price: priceOrNull(l.current_price), // today; null = no price now
+    in_stock: l.in_stock !== false,
+    buyable: Boolean(l.buyable),
+    price_changed: Boolean(l.price_changed),
+    qty: num(l.qty, 1),
+    line_total: num(l.line_total),
+    added_at: l.added_at || null,
+  };
+}
+
+export const EMPTY_LIST = Object.freeze({
+  lines: [], liveLines: [],
+  summary: { total: 0, count: 0, unavailable_count: 0, changed_count: 0 },
+});
+
+/**
+ * ShoppingListOut -> { lines (catalogue offers), liveLines (live items), summary }.
+ * summary.total is at saved prices and only counts what can be bought now.
+ */
 export function shoppingListFromApi(payload) {
-  return Array.isArray(payload?.items) ? payload.items.map(shoppingLineFromApi) : [];
+  const s = payload?.summary || {};
+  return {
+    lines: Array.isArray(payload?.items) ? payload.items.map(shoppingLineFromApi) : [],
+    liveLines: Array.isArray(payload?.live_items) ? payload.live_items.map(liveListLineFromApi) : [],
+    summary: {
+      total: num(s.total),
+      count: num(s.count),
+      unavailable_count: num(s.unavailable_count),
+      changed_count: num(s.changed_count),
+    },
+  };
 }
 
 /* --------------------------------------------------------------- location */

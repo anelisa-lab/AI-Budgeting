@@ -149,3 +149,17 @@ def test_real_catalogue_basket_adds_up():
         if fulfilment == "delivery":
             assert all(s["store_name"] != "Shoprite Warwick Junction" or not s["fulfilment_available"]
                        for s in out["stores"])
+
+
+def test_out_of_stock_or_zero_price_never_counts_as_cheapest_or_in_a_total():
+    # Store 1 lists bread at R0 (unknown price) and store 2 has it out of stock
+    # at R5; only store 3's R25 bread can actually be bought.
+    offers = {10: [offer(1, 10, 1, "0.00", "Bread"),
+                   offer(2, 10, 2, "5.00", "Bread", availability_status="out_of_stock"),
+                   offer(3, 10, 3, "25.00", "Bread")]}
+    out = compare_basket([BasketLine(10)], offers, STORES, {}, "delivery")
+    # Stores with nothing buyable aren't quoted at all — no R0 or R5 basket.
+    assert [(q["store_id"], q["total"]) for q in out["stores"]] == [(3, D("25.00"))]
+    assert out["best_single_store_id"] == 3
+    rows = out["items"][0]["offers"]
+    assert [(o["store_id"], o["in_stock"]) for o in rows] == [(3, True), (1, False), (2, False)]

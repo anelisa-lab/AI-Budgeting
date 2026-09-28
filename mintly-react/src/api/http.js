@@ -26,14 +26,12 @@
 /* ------------------------------------------------------------------ config */
 
 /**
- * The backend's own README starts it with:
- *   uvicorn app.main:app --reload --port 4000
- * ...and app/main.py mounts every router at the ROOT (no `/api` prefix).
- * So the default here is the backend's real default, not an invented one.
+ * In Replit, Vite forwards /api requests to FastAPI and strips the prefix.
+ * FastAPI still mounts its routers at the root (no /api prefix).
  *
  * Override per-environment in `.env.local` with VITE_API_BASE_URL.
  */
-export const DEFAULT_API_BASE_URL = 'http://localhost:4000';
+export const DEFAULT_API_BASE_URL = '/api';
 
 /**
  * Read the configured base URL.

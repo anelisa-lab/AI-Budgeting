@@ -46,6 +46,22 @@ class RefreshPlan:
                 f"{len(self.stores_without_source)} stores with no live source")
 
 
+def only_enabled_stores(listings: Iterable[LivePrice], covered_stores: Iterable[str],
+                        enabled: Iterable[str]):
+    """
+    Drop listings and covered stores that LIVE_PRICE_STORES doesn't list, so a
+    refresh never writes a switched-off store's prices. Their product_offers
+    rows are left exactly as they are (last price written stays).
+    Returns (listings, covered_stores, skipped_store_keys).
+    """
+    enabled = {e.lower() for e in enabled}
+    listings = list(listings)
+    covered = set(covered_stores) | {l.store_key for l in listings}
+    kept = [l for l in listings if l.store_key.lower() in enabled]
+    skipped = sorted(s for s in covered if s.lower() not in enabled)
+    return kept, sorted(s for s in covered if s.lower() in enabled), skipped
+
+
 def plan_refresh(
     offers: Sequence[CatalogueOffer],
     listings: Iterable[LivePrice],

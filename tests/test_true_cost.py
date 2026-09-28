@@ -265,3 +265,11 @@ def test_rejects_bad_input():
         store_true_cost(offer(), quantity=0)
     with pytest.raises(ValueError):
         store_true_cost(offer(), fulfilment="teleport")
+
+
+def test_cheapest_never_picks_a_zero_price():
+    from app.true_cost import cheapest
+    real = store_true_cost(offer(price="18.99", store_type="physical"), fulfilment="collection")
+    unknown = store_true_cost(offer(price="0.00", store_type="physical"), fulfilment="collection")
+    assert cheapest([unknown, real]) is real
+    assert cheapest([unknown]) is None

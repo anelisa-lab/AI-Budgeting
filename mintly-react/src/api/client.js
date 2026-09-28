@@ -35,7 +35,9 @@ import {
   preferencesFromApi,
   recommendationsFromApi,
   searchResponseFromApi,
+  liveSearchFromApi,
   shoppingListFromApi,
+  EMPTY_LIST,
   transactionFromApi,
   transactionResultFromApi,
   transactionToApi,
@@ -345,8 +347,18 @@ export const search = {
    * Search screen builds them in one place (buildSearchParams in lib/search.js)
    * so the mapping from filter UI to query string is readable in one sitting.
    */
-  async offers(token, params) {
-    return searchResponseFromApi(await endpoints.search(token, params));
+  async offers(token, params, opts = {}) {
+    return searchResponseFromApi(await endpoints.search(token, params, opts));
+  },
+
+  /**
+   * GET /api/search — live prices straight from the stores the backend has
+   * switched on (Checkers Sixty60 for now), with product images and links.
+   * Separate from offers(): these are not catalogue offers and have no
+   * offer_id, so they cannot go on the shopping list.
+   */
+  async live(token, query, opts = {}) {
+    return liveSearchFromApi(await endpoints.liveSearch(token, query, opts));
   },
 
   /**
@@ -417,13 +429,24 @@ export const shoppingList = {
     listToken = userId ? token : null;
     localList.setOwner(userId);
   },
+  /** Every call resolves to { lines, liveLines, summary } — see shoppingListFromApi. */
   async list() {
-    if (!listToken) return [];
+    if (!listToken) return EMPTY_LIST;
     await uploadDeviceList(listToken);
     return shoppingListFromApi(await endpoints.getShoppingList(listToken));
   },
   async add(offer, qty = 1) {
     return shoppingListFromApi(await endpoints.addShoppingListItem(listToken, { offer_id: offer.offer_id, qty }));
+  },
+  /** A live store item from GET /api/search (by its items.id). */
+  async addLive(item, qty = 1) {
+    return shoppingListFromApi(await endpoints.addShoppingListItem(listToken, { item_id: item.id, qty }));
+  },
+  async setLiveQty(itemId, qty) {
+    return shoppingListFromApi(await endpoints.setShoppingListLiveQty(listToken, itemId, Math.max(0, Math.round(qty))));
+  },
+  async removeLive(itemId) {
+    return shoppingListFromApi(await endpoints.removeShoppingListLiveItem(listToken, itemId));
   },
   async setQty(offerId, qty) {
     return shoppingListFromApi(await endpoints.setShoppingListQty(listToken, offerId, Math.max(0, Math.round(qty))));

@@ -86,3 +86,15 @@ export function fullDate(value) {
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' });
 }
+
+/** "just now", "12 min ago", "3 h ago", "2 days ago" — for "prices checked …". */
+export function timeAgo(value, now = Date.now()) {
+  const then = new Date(value).getTime();
+  if (!Number.isFinite(then)) return '';
+  const minutes = Math.max(0, Math.round((now - then) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return plural(Math.round(hours / 24), 'day', 'days') + ' ago';
+}

@@ -14,6 +14,7 @@
  *   app/routers/profile.py /profile/, /profile/preferences
  *   app/routers/budgets.py /budgets, /budgets/current, /budgets/{id}, …
  *   app/routers/search.py  /search and its query parameters
+ *   app/routers/live_search.py       /live-search (live store prices)
  *   app/routers/budget_split.py      /budget-split, /budget-split/check
  *   app/routers/recommendations.py   /recommendations
  *   app/routers/true_cost.py         /true-cost
@@ -145,6 +146,11 @@ export const ROUTES = [
     ],
   },
   {
+    name: 'liveSearch',
+    method: 'GET', pattern: /^\/live-search$/, auth: true,
+    query: ['query'],
+  },
+  {
     name: 'getBudgetSplit',
     method: 'GET', pattern: /^\/budget-split$/, auth: true,
   },
@@ -198,7 +204,8 @@ export const ROUTES = [
   {
     name: 'addShoppingListItem',
     method: 'POST', pattern: /^\/shopping-list\/items$/, auth: true,
-    body: ['offer_id', 'qty'], requiredBody: ['offer_id'],
+    // exactly one of offer_id / item_id (ShoppingListItemIn's validator)
+    body: ['offer_id', 'item_id', 'qty'], requiredBody: [],
   },
   {
     name: 'setShoppingListQty',
@@ -208,6 +215,25 @@ export const ROUTES = [
   {
     name: 'removeShoppingListItem',
     method: 'DELETE', pattern: /^\/shopping-list\/items\/\d+$/, auth: true,
+  },
+  {
+    name: 'setShoppingListQtyPatch',
+    method: 'PATCH', pattern: /^\/shopping-list\/items\/\d+$/, auth: true,
+    body: ['qty'], requiredBody: ['qty'],
+  },
+  {
+    name: 'setShoppingListLiveQty',
+    method: 'PATCH', pattern: /^\/shopping-list\/live-items\/\d+$/, auth: true,
+    body: ['qty'], requiredBody: ['qty'],
+  },
+  {
+    name: 'setShoppingListLiveQtyPut',
+    method: 'PUT', pattern: /^\/shopping-list\/live-items\/\d+$/, auth: true,
+    body: ['qty'], requiredBody: ['qty'],
+  },
+  {
+    name: 'removeShoppingListLiveItem',
+    method: 'DELETE', pattern: /^\/shopping-list\/live-items\/\d+$/, auth: true,
   },
 ];
 

@@ -3,8 +3,16 @@ uvicorn[standard]==0.30.6
 psycopg2-binary>=2.9.10
 passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.5.0
 python-dotenv==1.0.1
+
+# Live Checkers search (app/scrapers/checkers.py)
+requests>=2.31
+
+# Live SuperbHyper search (app/scrapers/superbhyper.py) — plain
+# server-rendered HTML, needs an HTML parser (Checkers/Shoprite are a JSON
+# API and don't)
+beautifulsoup4>=4.12
 pydantic[email]==2.9.2
 
 # Testing. The recommender, true-cost and budget-split logic is pure Python
@@ -13,3 +21,4 @@ pytest==8.3.3
 
 # zoneinfo needs this on Windows, which ships no timezone database
 tzdata>=2024.1
+requests>=2.31

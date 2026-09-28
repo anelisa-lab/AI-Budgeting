@@ -330,9 +330,12 @@ export function rank(offers, { budget = 0, preferences = null } = {}) {
   // effective_cost is what the student pays the way they are getting it
   // (shelf price when collecting); older responses only have total_cost.
   const costOf = (o) => o.effective_cost ?? o.total_cost;
-  const costs = offers.map(costOf);
-  const minCost = Math.min(...costs);
-  const maxCost = Math.max(...costs);
+  // "Cheapest" is only measured across offers that can actually be bought:
+  // an out-of-stock or unpriced offer never sets (or wins) the low end.
+  const rankable = (o) => o.availability_status !== 'out_of_stock' && Number(o.price) > 0;
+  const costs = offers.filter(rankable).map(costOf);
+  const minCost = costs.length ? Math.min(...costs) : 0;
+  const maxCost = costs.length ? Math.max(...costs) : 0;
   const spread = maxCost - minCost || 1;
 
   const preferredStores = (preferences?.preferred_stores || []).map((s) => String(s).toLowerCase());
@@ -340,6 +343,14 @@ export function rank(offers, { budget = 0, preferences = null } = {}) {
 
   return offers
     .map((o) => {
+      if (!rankable(o)) {
+        // Can't be bought: always ranked last, never called cheapest.
+        return {
+          ...o,
+          score: -1,
+          why: Number(o.price) > 0 ? 'out of stock right now' : 'price unavailable',
+        };
+      }
       // 1. Value — cheapest total cost in this result set scores highest.
       const cost = costOf(o);
       const valueScore = 1 - (cost - minCost) / spread;
@@ -390,8 +401,13 @@ export function rank(offers, { budget = 0, preferences = null } = {}) {
 
 /* ---------------------------------------------------------- comparison maths */
 
-/** Only an offer the backend says is in stock can be bought today. */
-export const isBuyable = (o) => o && o.availability_status === 'available';
+/**
+ * Only an offer the backend says is in stock, with a real price, can be
+ * bought today. A 0 / missing price means "unknown" — never "free" — so it
+ * can't be the cheapest or go into a total.
+ */
+export const isBuyable = (o) => Boolean(o) && o.availability_status === 'available'
+  && Number(o.price) > 0;
 
 /**
  * Delivery for ONE order at a store, from the offers bought there.

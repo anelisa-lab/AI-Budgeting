@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.price_feed import scheduler as price_feed_scheduler
 from app.routers import (
     auth,
     profile,
@@ -18,6 +19,7 @@ from app.routers import (
     compare,
     prices,
     shopping_list,
+    live_search,
 )
 
 load_dotenv()
@@ -71,6 +73,16 @@ def health():
     return {"status": "ok"}
 
 
+@app.on_event("startup")
+def _start_price_feed_scheduler():
+    price_feed_scheduler.start()
+
+
+@app.on_event("shutdown")
+def _stop_price_feed_scheduler():
+    price_feed_scheduler.stop()
+
+
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(budgets.router)
@@ -81,3 +93,4 @@ app.include_router(budget_split.router)      # Member 6 — /budget-split
 app.include_router(compare.router)
 app.include_router(prices.router)
 app.include_router(shopping_list.router)      # Phase 5 — /shopping-list
+app.include_router(live_search.router)        # live store prices — /api/search

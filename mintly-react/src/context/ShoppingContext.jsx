@@ -8,7 +8,9 @@
  * API instead of filtering an array. See lib/search.js.
  *
  * What remains here is the list itself, which is shared by Search (add to
- * list), the nav (the count badge) and Compare (price it at every store).
+ * list — catalogue offers and live Checkers items), the nav (count + total
+ * badge), Compare (the list, and pricing it at every store) and Budget
+ * (the list against what's left).
  *
  * The list is saved to the student's account (Phase 5, /shopping-list), so
  * it follows them to any device. A list saved in this browser by an earlier
@@ -19,6 +21,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState,
 } from 'react';
 import { api } from '../api/client.js';
+import { EMPTY_LIST } from '../api/normalise.js';
 import { useAuth } from './AuthContext.jsx';
 
 const ShoppingContext = createContext(null);
@@ -26,7 +29,9 @@ const ShoppingContext = createContext(null);
 export function ShoppingProvider({ children }) {
   const { user, token } = useAuth();
   const userId = user?.id ?? null;
-  const [lines, setLines] = useState([]);
+  // { lines: catalogue offers, liveLines: live store items, summary } — the
+  // server's answer, replaced whole after every change.
+  const [list, setList] = useState(EMPTY_LIST);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
 
@@ -38,10 +43,10 @@ export function ShoppingProvider({ children }) {
     setReady(false);
     setError(null);
     api.shoppingList.list()
-      .then((rows) => { if (!cancelled) setLines(rows); })
+      .then((result) => { if (!cancelled) setList(result); })
       .catch((err) => {
         if (cancelled) return;
-        setLines([]);
+        setList(EMPTY_LIST);
         setError(err?.message || 'Could not load your shopping list.');
       })
       .finally(() => { if (!cancelled) setReady(true); });
@@ -49,55 +54,74 @@ export function ShoppingProvider({ children }) {
   }, [userId, token]);
 
   const addOffer = useCallback(async (offer, qty = 1) => {
-    setLines(await api.shoppingList.add(offer, qty));
+    setList(await api.shoppingList.add(offer, qty));
   }, []);
 
   const setQty = useCallback(async (offerId, qty) => {
-    setLines(await api.shoppingList.setQty(offerId, qty));
+    setList(await api.shoppingList.setQty(offerId, qty));
   }, []);
 
   const removeOffer = useCallback(async (offerId) => {
-    setLines(await api.shoppingList.remove(offerId));
+    setList(await api.shoppingList.remove(offerId));
+  }, []);
+
+  /** A live store item (GET /api/search result). Refused by the server if it can't be bought. */
+  const addLive = useCallback(async (item, qty = 1) => {
+    setList(await api.shoppingList.addLive(item, qty));
+  }, []);
+
+  const setLiveQty = useCallback(async (itemId, qty) => {
+    setList(await api.shoppingList.setLiveQty(itemId, qty));
+  }, []);
+
+  const removeLive = useCallback(async (itemId) => {
+    setList(await api.shoppingList.removeLive(itemId));
   }, []);
 
   const clearList = useCallback(async () => {
-    setLines(await api.shoppingList.clear());
+    setList(await api.shoppingList.clear());
   }, []);
 
-  /**
-   * Item prices only. Delivery is an ORDER-level cost and is added once per
-   * store on the Compare screen — adding each offer's shipping_cost per line
-   * would charge a student one delivery fee per item, which is simply wrong.
-   */
-  const listTotal = useMemo(
-    () => Number(lines.reduce((sum, l) => sum + l.price * l.qty, 0).toFixed(2)),
-    [lines],
-  );
+  const { lines, liveLines, summary } = list;
 
-  const listCount = useMemo(
-    () => lines.reduce((sum, l) => sum + l.qty, 0),
-    [lines],
-  );
+  /**
+   * The list total at the prices SAVED when each item was added, counting
+   * only what can still be bought (worked out by the backend). Item prices
+   * only: delivery is an order-level cost that Compare adds once per store.
+   */
+  const listTotal = summary.total;
+  const listCount = summary.count;
 
   const qtyOf = useCallback(
     (offerId) => lines.find((l) => l.offer_id === offerId)?.qty || 0,
     [lines],
   );
 
+  const liveQtyOf = useCallback(
+    (itemId) => liveLines.find((l) => l.item_id === itemId)?.qty || 0,
+    [liveLines],
+  );
+
   const value = useMemo(() => ({
     lines,
+    liveLines,
+    summary,
     ready,
     error,
     listTotal,
     listCount,
     qtyOf,
+    liveQtyOf,
     addOffer,
     setQty,
     removeOffer,
+    addLive,
+    setLiveQty,
+    removeLive,
     clearList,
     isLocalOnly: api.shoppingList.isLocalOnly,
-  }), [lines, ready, error, listTotal, listCount, qtyOf, addOffer, setQty,
-       removeOffer, clearList]);
+  }), [lines, liveLines, summary, ready, error, listTotal, listCount, qtyOf, liveQtyOf,
+       addOffer, setQty, removeOffer, addLive, setLiveQty, removeLive, clearList]);
 
   return <ShoppingContext.Provider value={value}>{children}</ShoppingContext.Provider>;
 }

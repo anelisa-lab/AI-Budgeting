@@ -31,7 +31,7 @@ from app.true_cost import Offer, load_store_charges, money, store_true_cost
 router = APIRouter(prefix="/true-cost", tags=["true cost"])
 
 _OFFER_QUERY = """
-    SELECT o.id AS offer_id, o.price, o.shipping_cost, o.currency,
+    SELECT o.id AS offer_id, o.price, o.shipping_cost, o.currency, o.availability_status,
            p.name AS product_name,
            s.id AS store_id, s.name AS store_name, s.store_type,
            s.latitude AS store_latitude, s.longitude AS store_longitude,
@@ -119,8 +119,12 @@ def compare_true_cost(
     # rejected, but never let one win the comparison. This mirrors
     # app.true_cost.cheapest(): the requested fulfilment is part of the
     # definition of a comparable price.
-    results.sort(key=lambda r: (not r.fulfilment_available, r.true_cost, r.offer_id))
-    eligible = [r for r in results if r.fulfilment_available]
+    # Out-of-stock offers and unknown (0) prices are shown but can never win.
+    buyable = {r["offer_id"] for r in rows
+               if r.get("availability_status", "available") == "available" and r["price"] > 0}
+    results.sort(key=lambda r: (not (r.fulfilment_available and r.offer_id in buyable),
+                                r.true_cost, r.offer_id))
+    eligible = [r for r in results if r.fulfilment_available and r.offer_id in buyable]
 
     saving = (
         money(eligible[-1].true_cost - eligible[0].true_cost)

@@ -280,6 +280,13 @@ def search_offers(
         conditions.append(f"s.latitude IS NOT NULL AND s.longitude IS NOT NULL AND {distance} <= %s")
         params.append(max_distance_km)
         active_filters.append(f"within {max_distance_km:g} km")
+    # A price of 0 (or less) is never a real price — it means "unknown", and
+    # must not show as R0 or win "cheapest". Such offers are never returned.
+    conditions.append("o.price > 0")
+    # A price filter is about what you can buy: out-of-stock offers never
+    # count towards it, whatever `availability` says.
+    if (min_price is not None or max_price is not None) and availability != "available":
+        conditions.append("o.availability_status = 'available'")
     if min_price is not None:
         conditions.append(f"{cost} >= %s")
         params.append(min_price)
@@ -300,7 +307,10 @@ def search_offers(
         active_filters.append("essentials only")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    order_by = SORT_MAP[sort].format(cost=cost, distance=distance)
+    # Buyable offers always come first, so an out-of-stock one can never be
+    # the "cheapest" at the top of a price sort (availability=any).
+    order_by = "(o.availability_status <> 'available'), " + SORT_MAP[sort].format(
+        cost=cost, distance=distance)
 
     base_from = """
         FROM product_offers o

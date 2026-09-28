@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
@@ -546,8 +546,16 @@ class PriceStatusOut(BaseModel):
 # -------------------------
 
 class ShoppingListItemIn(BaseModel):
-    offer_id: int
+    """Exactly one of: offer_id (a catalogue offer) or item_id (a live store item)."""
+    offer_id: Optional[int] = None
+    item_id: Optional[int] = None
     qty: int = Field(default=1, ge=1, le=99)
+
+    @model_validator(mode="after")
+    def one_product(self):
+        if (self.offer_id is None) == (self.item_id is None):
+            raise ValueError("Send exactly one of offer_id or item_id.")
+        return self
 
 
 class ShoppingListQtyIn(BaseModel):
@@ -574,5 +582,75 @@ class ShoppingListLineOut(BaseModel):
     added_at: datetime
 
 
+class LiveListLineOut(BaseModel):
+    """A live store item (GET /api/search) on the list."""
+    item_id: int
+    name: str
+    store: str
+    brand: Optional[str] = None
+    image_url: Optional[str] = None
+    product_url: Optional[str] = None
+    price: Decimal                         # unit price saved when it was added
+    current_price: Optional[Decimal] = None  # the store's price today; None = no price now
+    in_stock: bool
+    buyable: bool                          # in stock with a real price today
+    price_changed: bool                    # today's price differs from the saved one
+    qty: int
+    line_total: Decimal                    # saved price x qty
+    added_at: datetime
+
+
+class ShoppingListSummary(BaseModel):
+    """
+    total: saved prices x qty for every line that can still be bought — an
+    out-of-stock or unpriced line is never counted. Today's prices never
+    change it; they are only shown next to the saved one.
+    """
+    total: Decimal
+    count: int                             # all quantities, every line
+    unavailable_count: int                 # lines left out of the total
+    changed_count: int                     # lines whose price moved since added
+
+
 class ShoppingListOut(BaseModel):
-    items: List[ShoppingListLineOut]
+    items: List[ShoppingListLineOut]       # catalogue offers
+    live_items: List[LiveListLineOut] = []  # live store items
+    summary: ShoppingListSummary
+
+
+# -------------------------
+# Live store search — GET /api/search (app/routers/live_search.py)
+# -------------------------
+
+class LiveSearchItem(BaseModel):
+    id: int
+    name: str
+    # The store's current price. None — never 0 — when it has none right now
+    # (out of stock). last_known_price is the last real price seen, if any.
+    price: Optional[Decimal] = None
+    last_known_price: Optional[Decimal] = None
+    last_priced_at: Optional[datetime] = None
+    image_url: Optional[str] = None
+    product_url: Optional[str] = None
+    store: str
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    on_promotion: bool = False
+    in_stock: bool = True
+    last_updated: datetime
+
+
+class LiveSearchStoreStatus(BaseModel):
+    store: str                      # key from app/scrapers, e.g. "checkers"
+    name: str                       # the items.store value its results carry, e.g. "Checkers"
+    source: str                     # cache | live | stale | unavailable
+    fetched_at: Optional[datetime] = None
+    count: int
+
+
+class LiveSearchResponse(BaseModel):
+    query: str
+    results: List[LiveSearchItem]
+    count: int
+    stores: List[LiveSearchStoreStatus]
+    message: Optional[str] = None

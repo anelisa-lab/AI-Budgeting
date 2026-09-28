@@ -84,7 +84,9 @@ class BasketOffer:
 
     @property
     def in_stock(self) -> bool:
-        return self.availability_status == "available"
+        """Buyable: listed as available AND with a real price. A 0 price means
+        "unknown", so such an offer can never be picked or added to a total."""
+        return self.availability_status == "available" and self.price > 0
 
     @property
     def is_estimate(self) -> bool:

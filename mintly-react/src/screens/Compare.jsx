@@ -32,12 +32,18 @@
  *
  * "Can I afford this today?" is POST /budget-split/check (Member 6), asked
  * about the cheapest whole-list total.
+ *
+ * Live Checkers items (added from the Search page's live cards) are listed
+ * here too, at the price saved when they were added ("was R18,99, now
+ * R19,99" when today's differs). They are one store's own prices, so they
+ * are not part of the store comparison. The list vs budget card uses the
+ * saved-price total, like the nav badge and the Budget page.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Progress, Select, Skeleton,
+  Alert, Badge, Button, Card, EmptyState, Eyebrow, Field, Select, Skeleton,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
@@ -47,6 +53,7 @@ import { api } from '../api/client.js';
 import { money, plural } from '../lib/format.js';
 import { categoryIcon } from '../lib/categories.js';
 import { basketOffersByProduct, chosenListTotal, itemGroups } from '../lib/search.js';
+import ListBudgetSummary from '../components/list/ListBudgetSummary.jsx';
 
 /**
  * Store ids are integers from the backend, so a colour cannot be keyed off a
@@ -71,7 +78,8 @@ function extrasText(q) {
 export default function Compare() {
   const { token } = useAuth();
   const {
-    lines, listCount, ready: shoppingReady, error: shoppingError, setQty, removeOffer, clearList,
+    lines, liveLines, listCount, listTotal, ready: shoppingReady, error: shoppingError,
+    setQty, removeOffer, setLiveQty, removeLive, clearList,
   } = useShopping();
   const { remaining, budget } = useBudget();
   const toast = useToast();
@@ -220,6 +228,22 @@ export default function Compare() {
     }
   }
 
+  async function handleLiveQty(itemId, qty) {
+    try {
+      await setLiveQty(itemId, qty);
+    } catch (err) {
+      toast.error(err.message || 'Could not update that item.');
+    }
+  }
+
+  async function handleLiveRemove(itemId) {
+    try {
+      await removeLive(itemId);
+    } catch (err) {
+      toast.error(err.message || 'Could not remove that item.');
+    }
+  }
+
   async function handleRemove(offerId) {
     try {
       await removeOffer(offerId);
@@ -274,7 +298,12 @@ export default function Compare() {
   const gap = best && worst ? Number((worst.total - best.total).toFixed(2)) : 0;
   const maxTotal = Math.max(...complete.map((r) => r.total), 1);
   const noCompleteStore = pricesReady && usable.length > 0 && complete.length === 0;
-  const overBudget = Boolean(budget) && pricesReady && chosen.total > remaining;
+  // Budget is judged on the list total at SAVED prices (the same figure as
+  // the nav badge and Budget page); today's prices only inform the chart.
+  const overBudget = Boolean(budget) && listTotal > remaining;
+  const hasCatalogue = lines.length > 0;
+  const liveTotal = Number(liveLines.filter((l) => l.buyable)
+    .reduce((sum, l) => sum + l.line_total, 0).toFixed(2));
   const unavailable = comparison?.unavailable || [];
   const priceInfo = comparison?.prices;
   const travelUnknown = pricesReady && fulfilment === 'collection' && comparison && !comparison.location_known;
@@ -287,7 +316,8 @@ export default function Compare() {
           Where should you shop?
         </h1>
         <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)', maxWidth: '58ch' }}>
-          {plural(listCount, 'item')} on your list, priced at every store that stocks them.
+          {plural(listCount, 'item')} on your list
+          {hasCatalogue ? ', priced at every store that stocks them.' : '.'}
         </p>
         <div style={{ maxWidth: 260, marginTop: 'var(--s-4)' }}>
           <Field id="cmp-fulfilment" label="Getting it" hint="Collecting from a store you can walk into has no delivery fee.">
@@ -327,15 +357,18 @@ export default function Compare() {
       )}
 
       {overBudget && (
-        <Alert tone="warning" title="This list is more than you have left">
-          Your list as chosen comes to {money(chosen.total)}, but you have {money(remaining)} left
+        <Alert tone="danger" title="This list is more than you have left">
+          Your list comes to {money(listTotal)}, but you have {money(remaining)} left
           this period.
-          {cheapestTotal > 0 && cheapestTotal < chosen.total
-            ? ` Shopping it the cheapest way brings it to ${money(cheapestTotal)}.`
+          {hasCatalogue && cheapestTotal > 0 && cheapestTotal < chosen.total
+            ? ` Shopping the catalogue items the cheapest way brings them to ${money(cheapestTotal)}.`
             : ' Remove something or look for cheaper alternatives in Search.'}
         </Alert>
       )}
 
+      {/* Store comparison is for catalogue items only; live Checkers items
+          are one store's own prices, listed below. */}
+      {hasCatalogue && (<>
       {/* ------------------------------------------- store-by-store chart */}
       <Card>
         <h2 className="card__title">Your whole list, by store</h2>
@@ -579,6 +612,8 @@ export default function Compare() {
         </Card>
       )}
 
+      </>)}
+
       {/* --------------------------------------------------- the list itself */}
       <Card>
         <div className="card__head">
@@ -634,7 +669,22 @@ export default function Compare() {
           })}
         </div>
 
+        {liveLines.length > 0 && (
+          <div style={{ marginTop: hasCatalogue ? 'var(--s-5)' : 'var(--s-4)' }}>
+            <p style={{ fontSize: 'var(--t-xs)', fontWeight: 'var(--fw-extra)', color: 'var(--c-muted)' }}>
+              Live from Checkers Sixty60 — at the price when you added it
+            </p>
+            {liveLines.map((line) => <LiveListLine
+              key={line.item_id}
+              line={line}
+              onQty={(qty) => handleLiveQty(line.item_id, qty)}
+              onRemove={() => handleLiveRemove(line.item_id)}
+            />)}
+          </div>
+        )}
+
         <div className="stack stack--tight" style={{ marginTop: 'var(--s-5)', paddingTop: 'var(--s-5)', borderTop: '1.5px solid var(--c-line)' }}>
+          {hasCatalogue && (<>
           <div className="row row--between">
             <span style={{ color: 'var(--c-muted)', fontSize: 'var(--t-sm)' }}>Items</span>
             <span className="num" style={{ fontWeight: 'var(--fw-bold)' }}>{money(chosen.items)}</span>
@@ -663,23 +713,78 @@ export default function Compare() {
               longer has it in stock. Search for it again to pick another store.
             </p>
           )}
+          </>)}
+          {liveLines.length > 0 && (
+            <div className="row row--between">
+              <span style={{ color: 'var(--c-muted)', fontWeight: 'var(--fw-semibold)' }}>
+                Checkers live items
+              </span>
+              <span className="num" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--t-xl)', color: 'var(--c-forest)' }}>
+                {money(liveTotal)}
+              </span>
+            </div>
+          )}
         </div>
 
-        {budget && pricesReady && (
-          <div style={{ marginTop: 'var(--s-4)' }}>
-            <Progress
-              value={remaining > 0 ? Math.min(1, chosen.total / remaining) : 1}
-              tone={overBudget ? 'danger' : 'brand'}
-              label="Share of your remaining budget"
-            />
-            <p style={{ fontSize: 'var(--t-xs)', color: 'var(--c-muted)', marginTop: 'var(--s-2)' }}>
-              {overBudget
-                ? `This list is ${money(chosen.total - remaining)} more than you have left.`
-                : `This would leave you ${money(remaining - chosen.total)} for the rest of the period.`}
-            </p>
-          </div>
-        )}
       </Card>
+
+      <ListBudgetSummary showLink={false} title="Your list vs your budget" />
+    </div>
+  );
+}
+
+/**
+ * A live Checkers item on the list. The total uses the price saved when it
+ * was added; a different price today is shown, never silently swapped in.
+ */
+function LiveListLine({ line, onQty, onRemove }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const note = !line.buyable
+    ? (line.in_stock ? 'no price right now — not counted' : 'out of stock right now — not counted')
+    : line.price_changed
+      ? `was ${money(line.price)}, now ${money(line.current_price)}`
+      : null;
+  return (
+    <div className="basket-line">
+      {line.image_url && !imageFailed ? (
+        <img className="live-line__img" src={line.image_url} alt="" loading="lazy"
+          onError={() => setImageFailed(true)} />
+      ) : (
+        <span className="live-line__img" aria-hidden="true">🛒</span>
+      )}
+      <div className="grow">
+        <p className="txn__name">
+          {line.product_url
+            ? <a href={line.product_url} target="_blank" rel="noreferrer noopener">{line.name}</a>
+            : line.name}
+        </p>
+        <p className="txn__meta">
+          {line.store} · {money(line.price)} each
+          {note && (
+            <span style={{ color: line.buyable ? 'var(--c-muted)' : 'var(--c-warning)' }}> · {note}</span>
+          )}
+        </p>
+      </div>
+      <div className="row basket-line__controls" style={{ gap: 'var(--s-2)', flexWrap: 'nowrap' }}>
+        <Button
+          variant="ghost" size="sm"
+          onClick={() => onQty(line.qty - 1)}
+          aria-label={line.qty === 1 ? `Remove ${line.name}` : `One fewer ${line.name}`}
+        >−</Button>
+        <span className="num" style={{ minWidth: 20, textAlign: 'center', fontWeight: 'var(--fw-extra)' }} aria-label={`Quantity ${line.qty}`}>
+          {line.qty}
+        </span>
+        <Button
+          variant="ghost" size="sm"
+          onClick={() => onQty(line.qty + 1)}
+          disabled={line.qty >= 20 || !line.buyable}
+          aria-label={`One more ${line.name}`}
+        >+</Button>
+        <span className="num" style={{ minWidth: 76, textAlign: 'right', fontWeight: 'var(--fw-extra)', textDecoration: line.buyable ? undefined : 'line-through' }}>
+          {money(line.line_total)}
+        </span>
+        <Button variant="quiet" size="sm" onClick={onRemove} aria-label={`Remove ${line.name}`}>✕</Button>
+      </div>
     </div>
   );
 }

@@ -587,4 +587,87 @@ CREATE TRIGGER trg_alert_preferences_updated_at
 BEFORE UPDATE ON alert_preferences
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- -------------------------
+-- Live store prices (app/scrapers + app/live_items.py) — see sql/006_live_items.sql
+-- -------------------------
+
+CREATE TABLE IF NOT EXISTS items (
+  id            SERIAL PRIMARY KEY,
+  store         VARCHAR(50)   NOT NULL,
+  sku           VARCHAR(100)  NOT NULL,
+  name          TEXT          NOT NULL,
+  -- NULL when the store has no price right now (e.g. out of stock) — never 0.
+  -- See sql/008_live_items_missing_price.sql.
+  price         NUMERIC(12,2) CONSTRAINT chk_items_price_positive
+                              CHECK (price IS NULL OR price > 0),
+  last_known_price NUMERIC(12,2) CONSTRAINT chk_items_last_known_price_positive
+                              CHECK (last_known_price IS NULL OR last_known_price > 0),
+  last_priced_at   TIMESTAMPTZ,
+  image_url     TEXT,
+  product_url   TEXT,
+  brand         VARCHAR(150),
+  category      VARCHAR(100),
+  on_promotion  BOOLEAN       NOT NULL DEFAULT FALSE,
+  in_stock      BOOLEAN       NOT NULL DEFAULT TRUE,
+  last_updated  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_items_store_sku UNIQUE (store, sku)
+);
+
+CREATE INDEX IF NOT EXISTS idx_items_last_updated ON items (last_updated);
+
+-- Which items each live search returned (GET /api/search cache) — see sql/007_live_search_cache.sql
+CREATE TABLE IF NOT EXISTS live_searches (
+  id            SERIAL PRIMARY KEY,
+  store         VARCHAR(50)  NOT NULL,     -- key from app/scrapers SCRAPERS, e.g. 'checkers'
+  query         VARCHAR(200) NOT NULL,     -- lower-cased, single-spaced
+  searched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  result_count  INTEGER      NOT NULL DEFAULT 0,
+  CONSTRAINT uq_live_searches_store_query UNIQUE (store, query)
+);
+
+CREATE TABLE IF NOT EXISTS live_search_results (
+  search_id  INTEGER NOT NULL REFERENCES live_searches(id) ON DELETE CASCADE,
+  item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  rank       INTEGER NOT NULL,
+  PRIMARY KEY (search_id, item_id)
+);
+
+-- Shopping list lines can hold live store items — see sql/009_shopping_list_live_items.sql
+-- A line needs its own id now that offer_id can be empty.
+ALTER TABLE comparison_items ADD COLUMN IF NOT EXISTS id SERIAL;
+DO $$
+DECLARE pk TEXT;
+BEGIN
+  SELECT conname INTO pk FROM pg_constraint
+   WHERE conrelid = 'comparison_items'::regclass AND contype = 'p';
+  IF pk IS DISTINCT FROM 'comparison_items_line_pkey' THEN
+    IF pk IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE comparison_items DROP CONSTRAINT %I', pk);
+    END IF;
+    ALTER TABLE comparison_items ADD CONSTRAINT comparison_items_line_pkey PRIMARY KEY (id);
+  END IF;
+END $$;
+
+ALTER TABLE comparison_items ALTER COLUMN offer_id DROP NOT NULL;
+ALTER TABLE comparison_items
+  ADD COLUMN IF NOT EXISTS item_id INTEGER REFERENCES items(id) ON DELETE CASCADE;
+
+-- One line per product per list (NULLs don't collide, so each rule only
+-- applies to its own kind of line).
+DO $$ BEGIN
+  ALTER TABLE comparison_items
+    ADD CONSTRAINT uq_comparison_items_offer UNIQUE (comparison_list_id, offer_id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE comparison_items
+    ADD CONSTRAINT uq_comparison_items_item UNIQUE (comparison_list_id, item_id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE comparison_items
+    ADD CONSTRAINT chk_comparison_items_one_product CHECK ((offer_id IS NULL) <> (item_id IS NULL));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 COMMIT;

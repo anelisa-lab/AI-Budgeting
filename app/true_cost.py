@@ -405,8 +405,9 @@ def cheapest(breakdowns: Iterable[TrueCostBreakdown]) -> Optional[TrueCostBreakd
 
     Only offers that can be fulfilled the way the student asked are eligible;
     a store that can't deliver is not "the cheapest delivery" (rule 7).
+    A zero subtotal means the price is unknown, not free, so it never wins.
     """
-    items = [b for b in breakdowns if b.fulfilment_available]
+    items = [b for b in breakdowns if b.fulfilment_available and b.subtotal > 0]
     if not items:
         return None
     return min(items, key=lambda b: (b.true_cost, b.offer_id))
