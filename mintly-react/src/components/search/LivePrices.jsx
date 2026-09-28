@@ -46,6 +46,7 @@ export default function LivePrices({ token, query }) {
   const [error, setError] = useState(null);
   const [catalogueItems, setCatalogueItems] = useState([]);
   const [showAll, setShowAll] = useState(false);
+  const [hideOutOfStock, setHideOutOfStock] = useState(false);
   const controller = useRef(null);
 
   const load = useCallback(async () => {
@@ -100,8 +101,12 @@ export default function LivePrices({ token, query }) {
   // shows cards from a store the backend says is switched on.
   const activeNames = new Set((data?.stores || []).map((s) => s.name));
   const liveItems = (data?.results || []).filter((item) => activeNames.has(item.store));
-  const items = [...liveItems, ...catalogueItems];
-  const visible = showAll ? items : items.slice(0, FIRST_ROWS);
+  // In stock first within each section — a store's own sort order is kept,
+  // only the in/out-of-stock split moves.
+  const byStock = (list) => list.slice().sort((a, b) => (a.in_stock === b.in_stock ? 0 : a.in_stock ? -1 : 1));
+  const items = [...byStock(liveItems), ...byStock(catalogueItems)];
+  const shown = hideOutOfStock ? items.filter((i) => i.in_stock) : items;
+  const visible = showAll ? shown : shown.slice(0, FIRST_ROWS);
 
   return (
     <Card className="stack live-prices" style={{ marginBottom: 'var(--s-5)' }}>
@@ -124,13 +129,25 @@ export default function LivePrices({ token, query }) {
         )}
       </div>
 
-      <p className="live-prices__count" aria-live="polite">
-        {loading
-          ? `Checking live prices for “${term}”…`
-          : (data || catalogueItems.length > 0) && items.length > 0
-            ? `${plural(items.length, 'product')} for “${term}”`
-            : ''}
-      </p>
+      <div className="row row--between" style={{ flexWrap: 'wrap', gap: 'var(--s-2)' }}>
+        <p className="live-prices__count" aria-live="polite">
+          {loading
+            ? `Checking live prices for “${term}”…`
+            : (data || catalogueItems.length > 0) && items.length > 0
+              ? `${plural(shown.length, 'product')} for “${term}”`
+              : ''}
+        </p>
+        {!loading && items.length > 0 && (
+          <label className="row" style={{ gap: 'var(--s-1)', fontSize: 'var(--t-sm)' }}>
+            <input
+              type="checkbox"
+              checked={hideOutOfStock}
+              onChange={(e) => setHideOutOfStock(e.target.checked)}
+            />
+            Hide out of stock
+          </label>
+        )}
+      </div>
 
       {loading ? (
         <div className="live-grid" aria-busy="true">
@@ -155,13 +172,19 @@ export default function LivePrices({ token, query }) {
             </Alert>
           )}
           {data?.message && <p className="live-prices__empty">{data.message}</p>}
-          <ul className="live-grid">
-            {visible.map((item) => <LiveCard key={item.id} item={item} />)}
-          </ul>
-          {items.length > FIRST_ROWS && (
-            <Button variant="ghost" block onClick={() => setShowAll((v) => !v)}>
-              {showAll ? 'Show fewer' : `Show all ${items.length}`}
-            </Button>
+          {shown.length === 0 ? (
+            <p className="live-prices__empty">All results are out of stock.</p>
+          ) : (
+            <>
+              <ul className="live-grid">
+                {visible.map((item) => <LiveCard key={item.id} item={item} />)}
+              </ul>
+              {shown.length > FIRST_ROWS && (
+                <Button variant="ghost" block onClick={() => setShowAll((v) => !v)}>
+                  {showAll ? 'Show fewer' : `Show all ${shown.length}`}
+                </Button>
+              )}
+            </>
           )}
           <p className="live-prices__note">
             Live cards are straight from the store&apos;s website; {CATALOGUE_ONLY_STORES.join(', ')} cards
@@ -207,7 +230,7 @@ function LiveCard({ item }) {
   const [imageFailed, setImageFailed] = useState(false);
   const body = (
     <>
-      <div className="live-card__image">
+      <div className="live-card__image" style={!item.in_stock ? { opacity: 0.55 } : undefined}>
         {item.image_url && !imageFailed ? (
           <img
             src={item.image_url}
@@ -246,7 +269,7 @@ function LiveCard({ item }) {
           {body}
         </a>
       ) : <div className="live-card__link">{body}</div>}
-      <ListButton item={item} />
+      {item.in_stock && <ListButton item={item} />}
     </li>
   );
 }
@@ -290,11 +313,12 @@ function ListButton({ item }) {
   const add = () => (isCatalogue ? addOffer({ offer_id: item.offer_id }, 1) : addLive(item, 1));
   const changeQty = (next) => (isCatalogue ? setQty(item.offer_id, next) : setLiveQty(item.id, next));
 
+  // Out-of-stock items never reach here — LiveCard skips ListButton for them.
   if (!item.buyable) {
     return (
       <div className="live-card__actions">
         <Button size="sm" variant="secondary" block disabled aria-disabled="true">
-          {!item.in_stock ? 'Unavailable' : 'No price — can’t add'}
+          No price — can’t add
         </Button>
       </div>
     );
@@ -338,12 +362,23 @@ function ListButton({ item }) {
 }
 
 /**
- * Never "R0,00": a price only shows when the item can be bought. Otherwise
- * the last real price seen, in grey, or "Price unavailable".
+ * Never "R0,00": a price only shows when the item can be bought. An
+ * out-of-stock item shows a last-known price if there is one, and no price
+ * line at all otherwise — the "Out of stock" badge is its only status, so
+ * this must not also say "Price unavailable". An in-stock item with no
+ * price (rare) still says so, since nothing else on the card explains why
+ * it can't be added.
  */
 function LivePrice({ item }) {
   if (item.buyable) {
     return <div className="live-card__price num">{money(item.price)}</div>;
+  }
+  if (!item.in_stock) {
+    return item.last_known_price != null ? (
+      <p className="live-card__no-price">
+        Last seen <span className="num">{money(item.last_known_price)}</span>
+      </p>
+    ) : null;
   }
   return (
     <p className="live-card__no-price">
