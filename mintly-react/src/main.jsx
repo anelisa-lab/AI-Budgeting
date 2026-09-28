@@ -18,6 +18,7 @@ import App from './App.jsx';
 import ErrorBoundary from './components/layout/ErrorBoundary.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { BudgetProvider } from './context/BudgetContext.jsx';
+import { NotificationsProvider } from './context/NotificationsContext.jsx';
 import { ShoppingProvider } from './context/ShoppingContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
 
@@ -36,7 +37,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <AuthProvider>
           <BudgetProvider>
             <ShoppingProvider>
-              <ErrorBoundary><App /></ErrorBoundary>
+              <NotificationsProvider>
+                <ErrorBoundary><App /></ErrorBoundary>
+              </NotificationsProvider>
             </ShoppingProvider>
           </BudgetProvider>
         </AuthProvider>

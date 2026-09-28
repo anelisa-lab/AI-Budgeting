@@ -9,6 +9,14 @@
  *   PUT /profile              { name, residence, student_number }
  *   PUT /profile/location     { latitude, longitude, label }   (Phase 5)
  *   PUT /profile/preferences  { preferred_categories, preferred_stores, max_distance_km }
+ *   GET/PUT /sms/preferences  { phone_number, sms_enabled, low_balance_threshold }  (Phase 6)
+ *
+ * The SMS card is what actually turns "SMS Mode" from a screen you have to
+ * open into something that reaches you: every exchange there (and the
+ * survival-mode / low-balance alerts app/routers/budgets.py fires on their
+ * own) always lands under Notifications, but it is only texted to a real
+ * phone once a number is saved here and the switch is on — see
+ * app/notifications.dispatch_sms.
  *
  * These are not decoration. The recommender (app/recommender.py) scores
  * `preference_match` on categories and stores, and uses `max_distance_km` as
@@ -21,7 +29,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Button, Card, Eyebrow, Field, Input, Select,
+  Alert, Button, Card, Eyebrow, Field, Input, Select, Switch,
 } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -143,6 +151,71 @@ export default function Profile() {
       setLocationError(err.message || 'Could not remove your location.');
     } finally {
       setSavingLocation(false);
+    }
+  }
+
+  // SMS delivery — GET/PUT /sms/preferences (Phase 6). Loaded independently of
+  // the shopping preferences above; a failure here shouldn't block the rest
+  // of the page, so it gets its own state instead of piggy-backing on prefsState.
+  const [smsPhone, setSmsPhone] = useState('');
+  const [smsEnabled, setSmsEnabled] = useState(false);
+  const [smsThreshold, setSmsThreshold] = useState('');
+  const [smsPhoneError, setSmsPhoneError] = useState(null);
+  const [smsThresholdError, setSmsThresholdError] = useState(null);
+  const [smsState, setSmsState] = useState('loading'); // loading | ready | error
+  const [savingSms, setSavingSms] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.sms.getPreferences(token)
+      .then((p) => {
+        if (cancelled) return;
+        setSmsPhone(p.phone_number || '');
+        setSmsEnabled(p.sms_enabled);
+        setSmsThreshold(p.low_balance_threshold == null ? '' : String(p.low_balance_threshold));
+        setSmsState('ready');
+      })
+      .catch(() => { if (!cancelled) setSmsState('error'); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  async function saveSmsPreferences(event) {
+    event.preventDefault();
+    const phone = smsPhone.trim();
+    const phoneError = phone && !/^[+\d][\d\s-]{6,29}$/.test(phone)
+      ? 'Enter a phone number using digits only, e.g. 0821234567 or +27821234567.'
+      : null;
+    const blankThreshold = String(smsThreshold).trim() === '';
+    const thresholdNum = Number(smsThreshold);
+    const thresholdError = !blankThreshold && !(Number.isFinite(thresholdNum) && thresholdNum >= 0)
+      ? 'Enter a rand amount of 0 or more.'
+      : null;
+    setSmsPhoneError(phoneError);
+    setSmsThresholdError(thresholdError);
+    if (phoneError || thresholdError) return;
+
+    // A switch turned on with no phone number saved would just silently log
+    // "no_phone" on every text — tell the student now instead of later.
+    if (smsEnabled && !phone) {
+      setSmsPhoneError('Add your number before turning SMS delivery on.');
+      return;
+    }
+
+    setSavingSms(true);
+    try {
+      const saved = await api.sms.updatePreferences(token, {
+        phone_number: phone,
+        sms_enabled: smsEnabled,
+        ...(blankThreshold ? {} : { low_balance_threshold: thresholdNum }),
+      });
+      setSmsPhone(saved.phone_number || '');
+      setSmsEnabled(saved.sms_enabled);
+      setSmsThreshold(saved.low_balance_threshold == null ? '' : String(saved.low_balance_threshold));
+      toast.success('SMS preferences saved.');
+    } catch (err) {
+      toast.error(err.message || 'Could not save your SMS preferences.');
+    } finally {
+      setSavingSms(false);
     }
   }
 
@@ -420,6 +493,96 @@ export default function Profile() {
               </form>
             )}
           </div>
+        </Card>
+
+        <Card>
+          <form onSubmit={saveSmsPreferences} noValidate className="stack">
+            <h2 className="card__title">Notifications &amp; SMS</h2>
+            <p style={{ color: 'var(--c-muted)', fontSize: 'var(--t-sm)' }}>
+              Everything UniWallet tells you — SMS Mode replies, entering survival mode,
+              a low balance — always shows up under{' '}
+              <button
+                type="button"
+                onClick={() => navigate('/notifications')}
+                style={{ background: 'none', border: 0, padding: 0, color: 'var(--c-forest)', textDecoration: 'underline', cursor: 'pointer' }}
+              >
+                Notifications
+              </button>
+              . Add your number and switch this on to also get them as a real text.
+            </p>
+
+            {smsState === 'error' && (
+              <Alert tone="warning" title="Could not load your SMS preferences">
+                Refresh the page to try again.
+              </Alert>
+            )}
+
+            <Field
+              id="profile-sms-phone"
+              label="Phone number"
+              hint="Used only to send you these alerts."
+              error={smsPhoneError}
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="e.g. 0821234567"
+                  value={smsPhone}
+                  invalid={invalid}
+                  describedBy={describedBy}
+                  disabled={smsState === 'loading'}
+                  onChange={(e) => { setSmsPhone(e.target.value); setSmsPhoneError(null); }}
+                />
+              )}
+            </Field>
+
+            <div className="switch-row">
+              <div className="switch-row__text">
+                <label htmlFor="profile-sms-enabled" className="switch-row__label">
+                  Text me these alerts
+                </label>
+                <span className="switch-row__hint">
+                  {smsEnabled ? 'On — sent to your phone when a number is saved.' : 'Off — still logged under Notifications.'}
+                </span>
+              </div>
+              <Switch
+                id="profile-sms-enabled"
+                checked={smsEnabled}
+                onChange={setSmsEnabled}
+                disabled={smsState === 'loading'}
+                label="Text me these alerts"
+              />
+            </div>
+
+            <Field
+              id="profile-sms-threshold"
+              label="Also alert me when my balance drops below"
+              hint="Optional. Separate from Survival mode's own threshold, so you can hear about it earlier. Leave blank to turn off this alert."
+              error={smsThresholdError}
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  inputMode="decimal"
+                  prefix="R"
+                  placeholder="e.g. 100"
+                  value={smsThreshold}
+                  invalid={invalid}
+                  describedBy={describedBy}
+                  disabled={smsState === 'loading'}
+                  onChange={(e) => { setSmsThreshold(e.target.value.replace(/[^\d.]/g, '')); setSmsThresholdError(null); }}
+                />
+              )}
+            </Field>
+
+            <div>
+              <Button type="submit" loading={savingSms} disabled={smsState !== 'ready'}>
+                {savingSms ? 'Saving…' : 'Save notification settings'}
+              </Button>
+            </div>
+          </form>
         </Card>
 
         <Card>

@@ -32,11 +32,13 @@ import {
   budgetToApi,
   budgetUpdateToApi,
   dashboardFromApi,
+  notificationListFromApi,
   preferencesFromApi,
   recommendationsFromApi,
   searchResponseFromApi,
   liveSearchFromApi,
   shoppingListFromApi,
+  smsPreferencesFromApi,
   EMPTY_LIST,
   transactionFromApi,
   transactionResultFromApi,
@@ -87,12 +89,14 @@ export const profile = {
   },
 
   /**
-   * PUT /profile/ — name, and optionally residence / student number
-   * (undefined = leave as is, '' = clear).
+   * PUT /profile/ — name, and optionally residence / student number / phone
+   * number (undefined = leave as is, '' = clear).
    */
-  async update(token, { name, residence, student_number: studentNumber }) {
+  async update(token, {
+    name, residence, student_number: studentNumber, phone_number: phoneNumber,
+  }) {
     return userFromApi(await endpoints.updateProfile(token, {
-      name, residence, student_number: studentNumber,
+      name, residence, student_number: studentNumber, phone_number: phoneNumber,
     }));
   },
 
@@ -462,6 +466,47 @@ export const shoppingList = {
   get ownerId() { return listUserId; },
 };
 
+/* -------------------------------------------------------------------- sms */
+
+/**
+ * SMS mode (Phase 6) — app/routers/sms.py. `send` returns the reply text and
+ * the notification it created, so the SMS Mode screen can render the
+ * exchange without a second round trip.
+ */
+export const sms = {
+  async send(token, body) {
+    const payload = await endpoints.smsReply(token, body);
+    return { command: payload.command, reply: payload.reply, notification: payload.notification };
+  },
+  async getPreferences(token) {
+    return smsPreferencesFromApi(await endpoints.getSmsPreferences(token));
+  },
+  async updatePreferences(token, patch) {
+    return smsPreferencesFromApi(await endpoints.updateSmsPreferences(token, patch));
+  },
+};
+
+/* ------------------------------------------------------------ notifications */
+
+/**
+ * The Notifications tab (Phase 6) — mirrors every SMS exchange plus
+ * app-triggered alerts (entering survival mode, ...). See app/notifications.py.
+ */
+export const notifications = {
+  async list(token, { limit } = {}) {
+    return notificationListFromApi(await endpoints.getNotifications(token, { limit }));
+  },
+  async markRead(token, id) {
+    return endpoints.markNotificationRead(token, id);
+  },
+  async markAllRead(token) {
+    return endpoints.markAllNotificationsRead(token);
+  },
+  async remove(token, id) {
+    await endpoints.deleteNotification(token, id);
+  },
+};
+
 /* ------------------------------------------------------------------ health */
 
 export const system = {
@@ -474,7 +519,7 @@ export const system = {
 /** Grouped default export, for `import { api } from '../api/client.js'`. */
 export const api = {
   auth, profile, budgets, budgetSplit, recommendations, trueCost, compare, prices,
-  transactions, search, shoppingList, system,
+  transactions, search, shoppingList, system, sms, notifications,
 };
 
 export default api;

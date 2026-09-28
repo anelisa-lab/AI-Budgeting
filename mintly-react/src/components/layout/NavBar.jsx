@@ -13,6 +13,7 @@ import { Button, Logo } from '../ui/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useShopping } from '../../context/ShoppingContext.jsx';
 import { useBudget } from '../../context/BudgetContext.jsx';
+import { useNotifications } from '../../context/NotificationsContext.jsx';
 import { money } from '../../lib/format.js';
 
 const LINKS = [
@@ -21,6 +22,8 @@ const LINKS = [
   { to: '/search', label: 'Search' },
   { to: '/compare', label: 'Compare' },
   { to: '/budget', label: 'Budget' },
+  { to: '/sms', label: 'SMS Mode' },
+  { to: '/notifications', label: 'Notifications' },
   { to: '/profile', label: 'Profile' },
   { to: '/settings', label: 'Settings' },
 ];
@@ -29,6 +32,7 @@ export default function NavBar() {
   const { isAuthenticated, user, logout } = useAuth();
   const { listCount, listTotal } = useShopping();
   const { budget, remaining } = useBudget();
+  const { unreadCount } = useNotifications();
   const listOver = Boolean(budget) && listTotal > remaining;
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -76,6 +80,12 @@ export default function NavBar() {
                     <span className="sr-only">
                       {` items in your list${listOver ? ', over your remaining budget' : ''}`}
                     </span>
+                  </span>
+                )}
+                {l.to === '/notifications' && unreadCount > 0 && (
+                  <span className="nav__list nav__list--over num" title={`${unreadCount} unread`}>
+                    {unreadCount}
+                    <span className="sr-only">{' unread notifications'}</span>
                   </span>
                 )}
               </NavLink>

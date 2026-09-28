@@ -12,6 +12,8 @@
  *   /recommendations private  ranked picks             (Member 7, Phase 3)
  *   /compare         private  basket comparison        (Member 9)
  *   /profile         private  profile & preferences    (Member 8, Phase 3)
+ *   /sms             private  SMS Mode short codes      (Phase 6)
+ *   /notifications   private  Notifications tab         (Phase 6)
  *   *                         not found
  *
  * Private routes are wrapped in <ProtectedRoute>, which waits for the stored
@@ -34,6 +36,8 @@ import Recommendations from './screens/Recommendations.jsx';
 import Compare from './screens/Compare.jsx';
 import Profile from './screens/Profile.jsx';
 import Settings from './screens/Settings.jsx';
+import SmsMode from './screens/SmsMode.jsx';
+import Notifications from './screens/Notifications.jsx';
 import NotFound from './screens/NotFound.jsx';
 
 import { useAuth } from './context/AuthContext.jsx';
@@ -92,6 +96,14 @@ export default function App() {
       <Route
         path="/settings"
         element={<ProtectedRoute><AppShell><Settings /></AppShell></ProtectedRoute>}
+      />
+      <Route
+        path="/sms"
+        element={<ProtectedRoute><AppShell><SmsMode /></AppShell></ProtectedRoute>}
+      />
+      <Route
+        path="/notifications"
+        element={<ProtectedRoute><AppShell><Notifications /></AppShell></ProtectedRoute>}
       />
 
       <Route path="*" element={<AppShell><NotFound /></AppShell>} />

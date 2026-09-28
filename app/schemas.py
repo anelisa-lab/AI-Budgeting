@@ -42,6 +42,7 @@ class UserOut(BaseModel):
     email: EmailStr
     residence: Optional[str] = None
     student_number: Optional[str] = None
+    phone_number: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -55,6 +56,8 @@ class UpdateProfileRequest(BaseModel):
     # Optional, like at sign-up. Omitted = unchanged; "" = clear it.
     residence: Optional[str] = Field(default=None, max_length=100)
     student_number: Optional[str] = Field(default=None, max_length=9)
+    # Phase 6: where SMS mode's replies get texted. Omitted = unchanged; "" = clear it.
+    phone_number: Optional[str] = Field(default=None, max_length=30)
 
     @field_validator("student_number")
     @classmethod
@@ -654,3 +657,49 @@ class LiveSearchResponse(BaseModel):
     count: int
     stores: List[LiveSearchStoreStatus]
     message: Optional[str] = None
+
+
+# -------------------------
+# Notifications (Phase 6) — /notifications
+# -------------------------
+
+class NotificationOut(BaseModel):
+    id: int
+    category: str            # sms_in | sms_out | survival | balance | system
+    channel: str              # app | sms
+    title: str
+    body: str
+    sms_status: Optional[str] = None   # sent | simulated | no_phone | disabled | failed | null
+    is_read: bool
+    created_at: datetime
+
+
+class NotificationListOut(BaseModel):
+    items: List[NotificationOut]
+    unread_count: int
+
+
+# -------------------------
+# SMS mode (Phase 6) — /sms
+# -------------------------
+
+class SmsRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=160)
+
+
+class SmsReplyOut(BaseModel):
+    command: str
+    reply: str
+    notification: NotificationOut
+
+
+class SmsPreferencesOut(BaseModel):
+    phone_number: Optional[str] = None
+    sms_enabled: bool = False
+    low_balance_threshold: Optional[Decimal] = None
+
+
+class SmsPreferencesUpdate(BaseModel):
+    phone_number: Optional[str] = Field(default=None, max_length=30)
+    sms_enabled: Optional[bool] = None
+    low_balance_threshold: Optional[Decimal] = Field(default=None, ge=0)

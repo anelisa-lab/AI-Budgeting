@@ -22,7 +22,7 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT id, name, email, created_at,
-                          residence_area_code AS residence, student_number
+                          residence_area_code AS residence, student_number, phone_number
                    FROM users WHERE id = %s""",
                 (user_id,),
             )
@@ -38,12 +38,16 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
 @router.put("/", response_model=UserOut, include_in_schema=False)
 def update_profile(payload: UpdateProfileRequest, user_id: int = Depends(get_current_user_id)):
     """
-    Name always; residence and student number only when sent. An empty
-    string clears either one. Returns the same fields as GET /profile, so
-    saving a name doesn't make the frontend forget the other two.
+    Name always; residence, student number and phone number only when sent.
+    An empty string clears any of them. Returns the same fields as
+    GET /profile, so saving a name doesn't make the frontend forget the rest.
     """
     sets, params = ["name = %s"], [payload.name]
-    for field, column in (("residence", "residence_area_code"), ("student_number", "student_number")):
+    for field, column in (
+        ("residence", "residence_area_code"),
+        ("student_number", "student_number"),
+        ("phone_number", "phone_number"),
+    ):
         if field in payload.model_fields_set:
             sets.append(f"{column} = %s")
             params.append(getattr(payload, field) or None)
@@ -53,7 +57,7 @@ def update_profile(payload: UpdateProfileRequest, user_id: int = Depends(get_cur
             cur.execute(
                 f"""UPDATE users SET {", ".join(sets)} WHERE id = %s
                     RETURNING id, name, email, created_at,
-                              residence_area_code AS residence, student_number""",
+                              residence_area_code AS residence, student_number, phone_number""",
                 (*params, user_id),
             )
             user = cur.fetchone()

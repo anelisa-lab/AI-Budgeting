@@ -600,7 +600,43 @@ export function userFromApi(u) {
     email: u.email,
     residence: u.residence || null,
     student_number: u.student_number || null,
+    phone_number: u.phone_number || null,
     created_at: u.created_at || null,
+  };
+}
+
+/* -------------------------------------------------------------- SMS mode */
+
+/** SmsPreferencesOut. */
+export function smsPreferencesFromApi(p) {
+  return {
+    phone_number: p?.phone_number || null,
+    sms_enabled: Boolean(p?.sms_enabled),
+    low_balance_threshold: numOrNull(p?.low_balance_threshold),
+  };
+}
+
+/* ----------------------------------------------------------- notifications */
+
+/** NotificationOut. */
+export function notificationFromApi(n) {
+  return {
+    id: n.id,
+    category: n.category,
+    channel: n.channel,
+    title: n.title,
+    body: n.body,
+    sms_status: n.sms_status || null,
+    is_read: Boolean(n.is_read),
+    created_at: n.created_at,
+  };
+}
+
+/** NotificationListOut. */
+export function notificationListFromApi(payload) {
+  return {
+    items: Array.isArray(payload?.items) ? payload.items.map(notificationFromApi) : [],
+    unread_count: num(payload?.unread_count, 0),
   };
 }
 
