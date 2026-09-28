@@ -60,20 +60,23 @@ function storeHomepage(storeName) {
   const prefix = Object.keys(STORE_HOMEPAGES).find((p) => (storeName || '').startsWith(p));
   return prefix ? STORE_HOMEPAGES[prefix] : null;
 }
+// icon + a soft background tint, so a card with no real photo reads as a
+// deliberate category badge rather than an empty box with a stray emoji.
 const CATEGORY_ICONS = [
-  [/bread|loaf|bun|roll/, '🍞'],
-  [/milk|cheese|yog|dairy|butter/, '🥛'],
-  [/meat|chicken|beef|pork|mince|boerewors|fish/, '🍗'],
-  [/fruit|apple|banana|orange|veg|tomato|potato|onion/, '🥦'],
-  [/rice|maize|pasta|flour|mealie|cereal/, '🌾'],
-  [/soap|shampoo|toothpaste|deodorant|toiletr/, '🧴'],
-  [/juice|cooldrink|soda|water|beverage|tea|coffee/, '🥤'],
-  [/washing|detergent|clean|dish/, '🧽'],
+  [/bread|loaf|bun|roll/, '🍞', '#f6e3c5'],
+  [/milk|cheese|yog|dairy|butter/, '🥛', '#e4eef7'],
+  [/meat|chicken|beef|pork|mince|boerewors|fish/, '🍗', '#f8dede'],
+  [/fruit|apple|banana|orange|veg|tomato|potato|onion/, '🥦', '#e3f1e1'],
+  [/rice|maize|pasta|flour|mealie|cereal/, '🌾', '#f3ecd8'],
+  [/soap|shampoo|toothpaste|deodorant|toiletr/, '🧴', '#eae3f3'],
+  [/juice|cooldrink|soda|water|beverage|tea|coffee/, '🥤', '#dff3f1'],
+  [/washing|detergent|clean|dish/, '🧽', '#dff0f6'],
 ];
+const DEFAULT_ICON = { icon: '🛒', color: '#eee7da' };
 function fallbackIcon(item) {
   const text = `${item.category || ''} ${item.name || ''}`.toLowerCase();
   const hit = CATEGORY_ICONS.find(([re]) => re.test(text));
-  return hit ? hit[1] : '🛒';
+  return hit ? { icon: hit[1], color: hit[2] } : DEFAULT_ICON;
 }
 
 export default function LivePrices({ token, query }) {
@@ -317,7 +320,9 @@ function LiveCard({ item }) {
             onError={() => setImageFailed(true)}
           />
         ) : (
-          <span aria-hidden="true">{fallbackIcon(item)}</span>
+          <span className="live-card__icon-badge" style={{ background: fallbackIcon(item).color }} aria-hidden="true">
+            {fallbackIcon(item).icon}
+          </span>
         )}
       </div>
       <div className="live-card__body">
