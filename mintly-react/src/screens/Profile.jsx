@@ -30,7 +30,25 @@ import * as v from '../lib/validation.js';
 import { CATALOGUE_CATEGORIES, canonicalCategory } from '../lib/categories.js';
 import { fullDate } from '../lib/format.js';
 import { RESIDENCES } from '../lib/residences.js';
-import { CAMPUSES, campusByValue } from '../lib/campuses.js';
+
+/**
+ * Parse "-29.8547, 31.0084" (the format Google Maps copies when you
+ * right-click a spot) into coordinates. Returns { latitude, longitude } or
+ * { error }.
+ */
+function parseCoordinates(text) {
+  const parts = String(text).trim().split(/[\s,;]+/).filter(Boolean);
+  if (parts.length !== 2) {
+    return { error: 'Enter your latitude and longitude, like -29.8547, 31.0084.' };
+  }
+  const [latitude, longitude] = parts.map(Number);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return { error: 'Latitude and longitude must be numbers, like -29.8547, 31.0084.' };
+  }
+  if (latitude < -90 || latitude > 90) return { error: 'Latitude must be between -90 and 90.' };
+  if (longitude < -180 || longitude > 180) return { error: 'Longitude must be between -180 and 180.' };
+  return { latitude, longitude };
+}
 
 /** Toggle `value` in a list. */
 const toggle = (list, value) => (list.includes(value)
@@ -54,7 +72,10 @@ export default function Profile() {
   // Where the student is — distance search, "near me", proximity, taxi fares.
   const [location, setLocationState] = useState(undefined); // undefined = loading
   const [locationError, setLocationError] = useState(null);
-  const [campus, setCampus] = useState('');
+  const [showManual, setShowManual] = useState(false);
+  const [coordsText, setCoordsText] = useState('');
+  const [coordsError, setCoordsError] = useState(null);
+  const [locationLabel, setLocationLabel] = useState('');
   const [savingLocation, setSavingLocation] = useState(false);
 
   useEffect(() => {
@@ -70,6 +91,9 @@ export default function Profile() {
     setLocationError(null);
     try {
       setLocationState(await api.profile.setLocation(token, coords));
+      setShowManual(false);
+      setCoordsText('');
+      setLocationLabel('');
       toast.success('Location saved — distances and taxi fares now use it.');
     } catch (err) {
       setLocationError(err.message || 'Could not save your location.');
@@ -78,16 +102,23 @@ export default function Profile() {
     }
   }
 
-  function saveCampus(event) {
+  function saveManualLocation(event) {
     event.preventDefault();
-    const picked = campusByValue(campus);
-    if (!picked) { setLocationError('Pick a campus first.'); return; }
-    saveLocation({ latitude: picked.latitude, longitude: picked.longitude, label: picked.label });
+    const parsed = parseCoordinates(coordsText);
+    if (parsed.error) { setCoordsError(parsed.error); return; }
+    const label = locationLabel.trim().replace(/\s+/g, ' ');
+    if (label.length > 100) { setCoordsError('Keep the name under 100 characters.'); return; }
+    setCoordsError(null);
+    saveLocation({
+      latitude: parsed.latitude,
+      longitude: parsed.longitude,
+      label: label || 'My location',
+    });
   }
 
   function shareDeviceLocation() {
     if (!navigator.geolocation) {
-      setLocationError('This browser cannot share its location. Pick your campus instead.');
+      setLocationError('This browser cannot share its location. Use "Insert your location" instead.');
       return;
     }
     setSavingLocation(true);
@@ -97,7 +128,7 @@ export default function Profile() {
       }),
       () => {
         setSavingLocation(false);
-        setLocationError('Location permission was not given. Pick your campus instead.');
+        setLocationError('Location permission was not given. Use "Insert your location" instead.');
       },
       { timeout: 10000, maximumAge: 300000 },
     );
@@ -323,29 +354,71 @@ export default function Profile() {
               </Alert>
             )}
             {locationError && <Alert tone="danger" title="Location">{locationError}</Alert>}
-            <form onSubmit={saveCampus} className="stack" noValidate>
-              <Field id="profile-campus" label="Your campus" hint="Campus areas are approximate.">
-                {({ id, describedBy }) => (
-                  <Select
-                    id={id} describedBy={describedBy} value={campus}
-                    onChange={(e) => setCampus(e.target.value)}
-                    options={[{ value: '', label: 'Choose a campus…' },
-                      ...CAMPUSES.map((c) => ({ value: c.value, label: c.label }))]}
-                  />
-                )}
-              </Field>
-              <div className="row" style={{ gap: 'var(--s-3)', flexWrap: 'wrap' }}>
-                <Button type="submit" loading={savingLocation} disabled={!campus}>Use this campus</Button>
-                <Button type="button" variant="ghost" onClick={shareDeviceLocation} disabled={savingLocation}>
-                  Use my current location
+            <div className="row" style={{ gap: 'var(--s-3)', flexWrap: 'wrap' }}>
+              <Button
+                type="button"
+                variant={showManual ? 'ghost' : undefined}
+                onClick={() => { setShowManual((open) => !open); setCoordsError(null); setLocationError(null); }}
+                disabled={savingLocation}
+                aria-expanded={showManual}
+                aria-controls="profile-manual-location"
+              >
+                Insert your location
+              </Button>
+              <Button type="button" variant="ghost" onClick={shareDeviceLocation} disabled={savingLocation}>
+                Use my current location
+              </Button>
+              {location && (
+                <Button type="button" variant="quiet" onClick={forgetLocation} disabled={savingLocation}>
+                  Remove
                 </Button>
-                {location && (
-                  <Button type="button" variant="quiet" onClick={forgetLocation} disabled={savingLocation}>
-                    Remove
+              )}
+            </div>
+            {showManual && (
+              <form
+                id="profile-manual-location"
+                onSubmit={saveManualLocation}
+                className="stack"
+                noValidate
+              >
+                <Field
+                  id="profile-coords"
+                  label="Latitude and longitude"
+                  hint="In Google Maps, right-click your spot and tap the numbers to copy them, then paste here."
+                  error={coordsError}
+                  required
+                >
+                  {({ id, describedBy, invalid }) => (
+                    <Input
+                      id={id}
+                      inputMode="text"
+                      placeholder="-29.8547, 31.0084"
+                      value={coordsText}
+                      invalid={invalid}
+                      describedBy={describedBy}
+                      onChange={(e) => { setCoordsText(e.target.value); setCoordsError(null); }}
+                    />
+                  )}
+                </Field>
+                <Field id="profile-location-label" label="Name this place" hint="Optional, e.g. “My digs”.">
+                  {({ id, describedBy }) => (
+                    <Input
+                      id={id}
+                      maxLength={100}
+                      placeholder="My location"
+                      value={locationLabel}
+                      describedBy={describedBy}
+                      onChange={(e) => setLocationLabel(e.target.value)}
+                    />
+                  )}
+                </Field>
+                <div>
+                  <Button type="submit" loading={savingLocation} disabled={!coordsText.trim()}>
+                    Save location
                   </Button>
-                )}
-              </div>
-            </form>
+                </div>
+              </form>
+            )}
           </div>
         </Card>
 
