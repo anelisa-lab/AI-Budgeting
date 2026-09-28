@@ -55,6 +55,56 @@ def create_notification(
     return cur.fetchone()
 
 
+def _dispatch_via_africastalking(phone_number: str, body: str) -> str:
+    """
+    POST to Africa's Talking's messaging endpoint. `AFRICASTALKING_USERNAME`
+    is literally "sandbox" for a free Sandbox app (production apps use the
+    app's real username); `from` is omitted for Sandbox — it has no
+    registered sender ID to send from.
+    """
+    import requests  # local import: only needed on the configured path
+
+    username = os.getenv("AFRICASTALKING_USERNAME")
+    api_key = os.getenv("AFRICASTALKING_API_KEY")
+    sender_id = os.getenv("AFRICASTALKING_SENDER_ID")
+    is_sandbox = username == "sandbox"
+
+    url = (
+        "https://api.sandbox.africastalking.com/version1/messaging"
+        if is_sandbox
+        else "https://api.africastalking.com/version1/messaging"
+    )
+    data = {"username": username, "to": phone_number, "message": body}
+    if sender_id:
+        data["from"] = sender_id
+
+    response = requests.post(
+        url,
+        data=data,
+        headers={
+            "apiKey": api_key,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        },
+        timeout=5,
+    )
+    if not response.ok:
+        logger.warning(
+            "Africa's Talking rejected the message: %s %s", response.status_code, response.text
+        )
+        response.raise_for_status()
+
+    # Africa's Talking answers 201 (or 200) with 200 *and* per-recipient
+    # statuses inside the body — a delivery failure doesn't raise, it's
+    # buried in Recipients[0].status, so it has to be checked explicitly.
+    payload = response.json()
+    recipients = payload.get("SMSMessageData", {}).get("Recipients", [])
+    if not recipients or recipients[0].get("status") != "Success":
+        logger.warning("Africa's Talking did not report success: %s", payload)
+        raise RuntimeError(f"Africa's Talking send failed: {payload}")
+    return "sent"
+
+
 def _dispatch_via_twilio(phone_number: str, body: str) -> str:
     """
     POST to Twilio's Messages resource directly (no `twilio` SDK dependency —
@@ -104,33 +154,34 @@ def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> s
     Never raises — a caller should always be able to log the result and move
     on, the way a real gateway's outcome would arrive out-of-band anyway.
 
-    Tries, in order: Twilio (if TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/
-    TWILIO_FROM_NUMBER are all set), then a generic SMS_GATEWAY_URL (for any
-    other provider), then simulation. `phone_number` must be in E.164 format
-    (e.g. +27821234567) for Twilio to accept it — a trial Twilio account can
-    only text numbers verified in its console.
+    Tries, in order: Africa's Talking (if AFRICASTALKING_USERNAME/
+    AFRICASTALKING_API_KEY are set), then Twilio (if TWILIO_ACCOUNT_SID/
+    TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER are all set), then a generic
+    SMS_GATEWAY_URL (for any other provider), then simulation.
+    `phone_number` must be in E.164 format (e.g. +27821234567).
     """
     if not phone_number:
         return "no_phone"
     if not sms_enabled:
         return "disabled"
 
+    at_configured = all(
+        os.getenv(k) for k in ("AFRICASTALKING_USERNAME", "AFRICASTALKING_API_KEY")
+    )
     twilio_configured = all(
         os.getenv(k) for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER")
     )
     gateway_url = os.getenv("SMS_GATEWAY_URL")
 
-    # TEMPORARY debug line — remove once Twilio delivery is confirmed working.
+    # TEMPORARY debug line — remove once real delivery is confirmed working.
     logger.warning(
-        "dispatch_sms debug: twilio_configured=%s SID=%r TOKEN_set=%s FROM=%r gateway_url=%r",
-        twilio_configured,
-        os.getenv("TWILIO_ACCOUNT_SID"),
-        bool(os.getenv("TWILIO_AUTH_TOKEN")),
-        os.getenv("TWILIO_FROM_NUMBER"),
-        gateway_url,
+        "dispatch_sms debug: at_configured=%s twilio_configured=%s gateway_url=%r",
+        at_configured, twilio_configured, gateway_url,
     )
 
     try:
+        if at_configured:
+            return _dispatch_via_africastalking(phone_number, body)
         if twilio_configured:
             return _dispatch_via_twilio(phone_number, body)
         if gateway_url:
