@@ -1,15 +1,26 @@
 /**
- * Live prices — product cards from GET /api/search.
+ * Live prices — product cards from GET /live-search, plus Pick n Pay's
+ * catalogue matches shown in the same grid.
  *
  * Shown on the Search screen for the word in the search box, above the
- * catalogue results. The backend asks the stores it has switched on
- * (Checkers Sixty60 only for now) at most once per query every 6 hours, so
- * running this on every search is cheap.
+ * catalogue results below. The backend asks the stores it has switched on
+ * at most once per query every 6 hours, so running this on every search is
+ * cheap.
  *
- * These are not catalogue offers — no offer_id, no delivery fee, no fees
- * from store_charges. Each card links to the store, and "Add to list" puts
- * the item on the student's list (POST /shopping-list/items {item_id}) at
- * today's price, saved.
+ * Pick n Pay has no live scraper (its robots.txt disallows its search path
+ * — see app/scrapers/__init__.py). Its cards here come from the EXISTING
+ * catalogue (GET /search?store=Pick n Pay, the same endpoint the results
+ * below use) rather than a live fetch, so they can sit in the same grid
+ * without a second scraper. Every Pick n Pay card is tagged "Catalogue
+ * price, not live" so it's never mistaken for a Checkers/Shoprite one, and
+ * "Add to list" for it goes through the ordinary catalogue-offer flow
+ * (offer_id), not the live-item one (item_id) — Pick n Pay was never
+ * scraped, so it has no items-table row to point at.
+ *
+ * Live cards are not catalogue offers — no offer_id, no delivery fee, no
+ * fees from store_charges. Each card links to the store, and "Add to list"
+ * puts the item on the student's list (POST /shopping-list/items {item_id})
+ * at today's price, saved.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,11 +33,16 @@ import { money, plural, timeAgo } from '../../lib/format.js';
 const FIRST_ROWS = 8;
 const STORE_LABELS = { checkers: 'Checkers Sixty60' };
 
+// Not scraped — shown from the catalogue instead. See the module docstring.
+const CATALOGUE_ONLY_STORE = 'Pick n Pay';
+const CATALOGUE_MATCH_LIMIT = 8;
+
 export default function LivePrices({ token, query }) {
   const term = (query || '').trim();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [catalogueItems, setCatalogueItems] = useState([]);
   const [showAll, setShowAll] = useState(false);
   const controller = useRef(null);
 
@@ -34,21 +50,34 @@ export default function LivePrices({ token, query }) {
     controller.current?.abort();
     setData(null);
     setError(null);
+    setCatalogueItems([]);
     setShowAll(false);
     if (!token || term.length < 2) { setLoading(false); return; }
 
     const ctrl = new AbortController();
     controller.current = ctrl;
     setLoading(true);
+
+    // Independent of each other: Pick n Pay's catalogue lookup failing (or
+    // being empty) must never hide genuinely live Checkers/Shoprite results,
+    // and vice versa.
+    const live = api.search.live(token, term, { signal: ctrl.signal });
+    const catalogue = api.search.offers(token, {
+      q: term, store: CATALOGUE_ONLY_STORE, availability: 'any', limit: CATALOGUE_MATCH_LIMIT,
+    }, { signal: ctrl.signal }).catch(() => null);
+
     try {
-      const result = await api.search.live(token, term, { signal: ctrl.signal });
+      const result = await live;
       if (!ctrl.signal.aborted) setData(result);
     } catch (err) {
       if (err?.name === 'AbortError' || ctrl.signal.aborted) return;
       setError(err.message || 'Live prices are unavailable right now.');
-    } finally {
-      if (!ctrl.signal.aborted) setLoading(false);
     }
+    const catalogueResult = await catalogue;
+    if (!ctrl.signal.aborted && catalogueResult) {
+      setCatalogueItems(catalogueResult.results.map(catalogueOfferToCard));
+    }
+    if (!ctrl.signal.aborted) setLoading(false);
   }, [token, term]);
 
   useEffect(() => {
@@ -58,22 +87,28 @@ export default function LivePrices({ token, query }) {
 
   if (term.length < 2) return null;
 
-  const storeNames = (data?.stores || []).map((s) => STORE_LABELS[s.store] || s.name);
-  const title = storeNames.length ? `Live prices · ${storeNames.join(', ')}` : 'Live prices';
+  const liveStoreNames = (data?.stores || []).map((s) => STORE_LABELS[s.store] || s.name);
+  const title = liveStoreNames.length ? `Live prices · ${liveStoreNames.join(', ')}` : 'Live prices';
   const fetchedAt = data?.stores?.map((s) => s.fetched_at).filter(Boolean).sort()[0];
   const stale = data?.stores?.some((s) => s.source === 'stale');
   // Belt and braces: the backend already filters by store in SQL; this only
-  // shows cards from a store the backend says is switched on (Checkers).
+  // shows cards from a store the backend says is switched on.
   const activeNames = new Set((data?.stores || []).map((s) => s.name));
-  const items = (data?.results || []).filter((item) => activeNames.has(item.store));
+  const liveItems = (data?.results || []).filter((item) => activeNames.has(item.store));
+  const items = [...liveItems, ...catalogueItems];
   const visible = showAll ? items : items.slice(0, FIRST_ROWS);
 
   return (
     <Card className="stack live-prices" style={{ marginBottom: 'var(--s-5)' }}>
       <div className="row row--between">
-        <h2 style={{ fontSize: 'var(--t-md)', fontFamily: 'var(--font-sans)', fontWeight: 'var(--fw-extra)' }}>
-          <span aria-hidden="true">●</span> {title}
-        </h2>
+        <div className="row" style={{ gap: 'var(--s-2)', flexWrap: 'wrap' }}>
+          <h2 style={{ fontSize: 'var(--t-md)', fontFamily: 'var(--font-sans)', fontWeight: 'var(--fw-extra)' }}>
+            <span aria-hidden="true">●</span> {title}
+          </h2>
+          {catalogueItems.length > 0 && (
+            <Badge tone="neutral">+ {CATALOGUE_ONLY_STORE} (catalogue, not live)</Badge>
+          )}
+        </div>
         {fetchedAt && (
           <span className="live-prices__checked">
             {stale && <Badge tone="warning">May be out of date</Badge>}{' '}
@@ -85,7 +120,7 @@ export default function LivePrices({ token, query }) {
       <p className="live-prices__count" aria-live="polite">
         {loading
           ? `Checking live prices for “${term}”…`
-          : data && items.length > 0
+          : (data || catalogueItems.length > 0) && items.length > 0
             ? `${plural(items.length, 'product')} for “${term}”`
             : ''}
       </p>
@@ -94,7 +129,7 @@ export default function LivePrices({ token, query }) {
         <div className="live-grid" aria-busy="true">
           {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} height={250} radius="var(--r-lg)" />)}
         </div>
-      ) : error ? (
+      ) : error && items.length === 0 ? (
         <Alert tone="warning" title="Live prices unavailable">
           {error} The catalogue results below still work.
           <div style={{ marginTop: 'var(--s-3)' }}>
@@ -107,7 +142,12 @@ export default function LivePrices({ token, query }) {
         </p>
       ) : (
         <>
-          {data.message && <p className="live-prices__empty">{data.message}</p>}
+          {error && (
+            <Alert tone="warning" title="Some live prices are unavailable">
+              {error}
+            </Alert>
+          )}
+          {data?.message && <p className="live-prices__empty">{data.message}</p>}
           <ul className="live-grid">
             {visible.map((item) => <LiveCard key={item.id} item={item} />)}
           </ul>
@@ -117,13 +157,43 @@ export default function LivePrices({ token, query }) {
             </Button>
           )}
           <p className="live-prices__note">
-            Straight from the store&apos;s website. Delivery and store fees aren&apos;t included.
+            Live cards are straight from the store&apos;s website; {CATALOGUE_ONLY_STORE} cards are
+            from our catalogue, not fetched live. Delivery and store fees aren&apos;t included.
             Items you add keep the price they had when you added them.
           </p>
         </>
       )}
     </Card>
   );
+}
+
+/**
+ * A Pick n Pay catalogue offer (GET /search), reshaped into the same card
+ * shape a live item has, so LiveCard can render either without knowing the
+ * difference. `source: 'catalogue'` is the one thing that tells them apart.
+ */
+function catalogueOfferToCard(offer) {
+  const inStock = offer.availability_status === 'available';
+  // The shelf price, not effective_cost/total_cost — those add the store's
+  // delivery fee (e.g. +R45 by default), and this grid's own note says
+  // "delivery and store fees aren't included", matching how live cards work.
+  const rawPrice = offer.price;
+  const buyable = inStock && Number(rawPrice) > 0;
+  return {
+    id: `catalogue-offer-${offer.offer_id}`,
+    offer_id: offer.offer_id,
+    name: offer.product_name,
+    price: buyable ? Number(rawPrice) : null,
+    last_known_price: !buyable && Number(rawPrice) > 0 ? Number(rawPrice) : null,
+    image_url: null,               // the catalogue has no product photos — see module docstring
+    product_url: offer.product_url || null,
+    store: offer.store_name,
+    brand: offer.brand,
+    on_promotion: false,
+    in_stock: inStock,
+    buyable,
+    source: 'catalogue',
+  };
 }
 
 function LiveCard({ item }) {
@@ -144,6 +214,9 @@ function LiveCard({ item }) {
         )}
       </div>
       <div className="live-card__body">
+        <p className="live-card__store">
+          {item.store}{item.source === 'catalogue' && ' · catalogue'}
+        </p>
         <h3 className="live-card__name">{item.name}</h3>
         <LivePrice item={item} />
         <div className="result__tags">
@@ -176,11 +249,15 @@ function LiveCard({ item }) {
  *   buyable          -> "Add to list", then "Added ✓ +1" and a quantity stepper
  *   no price / stock -> disabled, so an unpriced item can never be added
  * The server refuses an unbuyable item too (409), so this is not the only guard.
+ *
+ * A live item (item_id) and a Pick n Pay catalogue card (offer_id) go on the
+ * SAME shopping list, just through the matching half of useShopping().
  */
 function ListButton({ item }) {
-  const { liveQtyOf, addLive, setLiveQty } = useShopping();
+  const isCatalogue = item.source === 'catalogue';
+  const { liveQtyOf, addLive, setLiveQty, qtyOf, addOffer, setQty } = useShopping();
   const toast = useToast();
-  const qty = liveQtyOf(item.id);
+  const qty = isCatalogue ? qtyOf(item.offer_id) : liveQtyOf(item.id);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(0);      // bumps on every successful add
   const timer = useRef(null);
@@ -203,11 +280,14 @@ function ListButton({ item }) {
     }
   }
 
+  const add = () => (isCatalogue ? addOffer({ offer_id: item.offer_id }, 1) : addLive(item, 1));
+  const changeQty = (next) => (isCatalogue ? setQty(item.offer_id, next) : setLiveQty(item.id, next));
+
   if (!item.buyable) {
     return (
       <div className="live-card__actions">
         <Button size="sm" variant="secondary" block disabled aria-disabled="true">
-          {item.in_stock ? 'No price — can’t add' : 'Out of stock'}
+          {!item.in_stock ? 'Unavailable' : 'No price — can’t add'}
         </Button>
       </div>
     );
@@ -220,7 +300,7 @@ function ListButton({ item }) {
           size="sm"
           block
           loading={busy}
-          onClick={() => run(() => addLive(item, 1), true)}
+          onClick={() => run(add, true)}
           aria-label={`Add to list: ${item.name}, ${money(item.price)}`}
         >
           Add to list
@@ -234,7 +314,7 @@ function ListButton({ item }) {
       <div className="live-card__stepper">
         <Button
           variant="ghost" size="sm" disabled={busy}
-          onClick={() => run(() => setLiveQty(item.id, qty - 1), false)}
+          onClick={() => run(() => changeQty(qty - 1), false)}
           aria-label={qty === 1 ? `Remove ${item.name} from your list` : `One fewer ${item.name}`}
         >−</Button>
         <span className="num" aria-live="polite" style={{ fontWeight: 'var(--fw-extra)' }}>
@@ -242,7 +322,7 @@ function ListButton({ item }) {
         </span>
         <Button
           variant="ghost" size="sm" disabled={busy || qty >= 20}
-          onClick={() => run(() => addLive(item, 1), true)}
+          onClick={() => run(add, true)}
           aria-label={`One more ${item.name}`}
         >+</Button>
       </div>

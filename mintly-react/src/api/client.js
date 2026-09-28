@@ -347,8 +347,8 @@ export const search = {
    * Search screen builds them in one place (buildSearchParams in lib/search.js)
    * so the mapping from filter UI to query string is readable in one sitting.
    */
-  async offers(token, params) {
-    return searchResponseFromApi(await endpoints.search(token, params));
+  async offers(token, params, opts = {}) {
+    return searchResponseFromApi(await endpoints.search(token, params, opts));
   },
 
   /**

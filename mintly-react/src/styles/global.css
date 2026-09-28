@@ -592,6 +592,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .live-card__image img { width: 100%; height: 100%; object-fit: contain; }
 .live-card__body { padding: var(--s-3); display: grid; gap: var(--s-2); align-content: start; }
+.live-card__store {
+  font-size: var(--t-xs); font-weight: var(--fw-extra); color: var(--c-muted);
+  text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.2;
+}
 .live-card__name {
   font-size: var(--t-sm); font-weight: var(--fw-bold); line-height: 1.3; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
