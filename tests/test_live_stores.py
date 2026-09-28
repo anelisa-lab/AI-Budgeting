@@ -70,6 +70,29 @@ def test_shoprite_is_registered_and_can_be_switched_on(monkeypatch):
     assert scrapers.active_stores() == ["checkers"]
 
 
+def test_superbhyper_is_registered_and_can_be_switched_on(monkeypatch):
+    assert scrapers.SCRAPERS["superbhyper"] == "app.scrapers.superbhyper:search"
+    monkeypatch.setenv("LIVE_PRICE_STORES", "checkers,shoprite,superbhyper")
+    assert scrapers.active_stores() == ["checkers", "shoprite", "superbhyper"]
+    assert scrapers.store_name("superbhyper") == "SuperbHyper"
+    monkeypatch.setenv("LIVE_PRICE_STORES", "checkers")
+    assert scrapers.active_stores() == ["checkers"]
+
+
+def test_superbhyper_failing_does_not_hide_real_checkers_results(monkeypatch):
+    """Same guarantee as test_checkers_failing_does_not_hide_real_shoprite_results,
+    through the actual registered modules, so a wiring mistake would show up here."""
+    import app.scrapers.checkers as checkers_module
+    import app.scrapers.superbhyper as superbhyper_module
+
+    monkeypatch.setattr(superbhyper_module, "search",
+                        lambda query: (_ for _ in ()).throw(RuntimeError("SuperbHyper is down")))
+    monkeypatch.setattr(checkers_module, "search",
+                        lambda query: [{"name": "Bread", "store": "Checkers"}])
+    monkeypatch.setenv("LIVE_PRICE_STORES", "checkers,superbhyper")
+    assert scrapers.search_live("bread") == [{"name": "Bread", "store": "Checkers"}]
+
+
 def test_checkers_failing_does_not_hide_real_shoprite_results(monkeypatch):
     """Same guarantee as test_one_failing_store_does_not_hide_another_store,
     but through the actual registered checkers/shoprite modules rather than

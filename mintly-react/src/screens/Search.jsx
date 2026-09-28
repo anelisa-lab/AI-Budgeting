@@ -29,7 +29,7 @@ export default function Search() {
           What are you looking for?
         </h1>
         <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)', maxWidth: '58ch' }}>
-          Search Checkers, Shoprite, Pick n Pay and SPAR at once.
+          Search Checkers, Shoprite, SuperbHyper, Pick n Pay and SPAR at once.
         </p>
       </div>
 

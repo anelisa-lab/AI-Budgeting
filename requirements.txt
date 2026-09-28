@@ -8,6 +8,11 @@ python-dotenv==1.0.1
 
 # Live Checkers search (app/scrapers/checkers.py)
 requests>=2.31
+
+# Live SuperbHyper search (app/scrapers/superbhyper.py) — plain
+# server-rendered HTML, needs an HTML parser (Checkers/Shoprite are a JSON
+# API and don't)
+beautifulsoup4>=4.12
 pydantic[email]==2.9.2
 
 # Testing. The recommender, true-cost and budget-split logic is pure Python

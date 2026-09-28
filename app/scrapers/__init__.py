@@ -37,6 +37,7 @@ SCRAPERS: Dict[str, str] = {
     "checkers": "app.scrapers.checkers:search",   # Checkers Sixty60
     "shoprite": "app.scrapers.shoprite:search",   # same platform as Checkers — see
                                                    # app/scrapers/sixty60_platform.py
+    "superbhyper": "app.scrapers.superbhyper:search",  # Durban Metro & North Coast — WooCommerce
 }
 
 # The `store` value each scraper writes into its results (and so into
@@ -46,6 +47,7 @@ STORE_NAMES: Dict[str, str] = {
     "checkers": "Checkers",
     "shoprite": "Shoprite",
     "pnp": "Pick n Pay",
+    "superbhyper": "SuperbHyper",
 }
 
 DEFAULT_LIVE_STORES = "checkers"
