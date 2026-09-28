@@ -43,8 +43,6 @@ const PERIODS = [
 
 const PRESETS = [
   { label: 'NSFAS living allowance', amount: NSFAS.livingAllowanceMonthly, days: 30 },
-  { label: 'Living + personal care', amount: NSFAS.livingAllowanceMonthly + NSFAS.personalCareMonthly, days: 30 },
-  { label: 'Personal care only', amount: NSFAS.personalCareMonthly, days: 30 },
 ];
 
 const RULES = {
@@ -270,7 +268,7 @@ export default function BudgetEntry() {
                   id={id}
                   inputMode="decimal"
                   prefix="R"
-                  placeholder="1650"
+                  placeholder="1715"
                   value={values.amount}
                   invalid={invalid}
                   describedBy={describedBy}

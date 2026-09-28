@@ -17,3 +17,4 @@ export { default as PriceSourceBadge } from './PriceSourceBadge.jsx';
 export { default as Progress } from './Progress.jsx';
 export { default as Select } from './Select.jsx';
 export { default as Skeleton } from './Skeleton.jsx';
+export { default as Switch } from './Switch.jsx';

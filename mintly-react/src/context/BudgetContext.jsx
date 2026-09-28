@@ -35,8 +35,7 @@ import { daysUntil } from '../lib/format.js';
 
 /** 2026 NSFAS caps — the defaults the budget screen offers. Presentational. */
 export const NSFAS = {
-  livingAllowanceMonthly: 1650,
-  personalCareMonthly: 290,
+  livingAllowanceMonthly: 1715,
   transportMonthly: 625,
   booksOnceOff: 5200,
   academicMonths: 10,

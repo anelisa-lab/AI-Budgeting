@@ -138,6 +138,33 @@ answer 400 with "Set your location in Profile to search by distance."
 dev and preview servers on localhost; set it to the frontend's real address
 for the demo.
 
+## Phase 6 — SMS mode + Notifications, and the 2026 NSFAS figure
+
+- **SMS mode** — `POST /sms/reply` answers short-code commands (`BAL`,
+  `TODAY`, `CMP <item>`, `NEAR`, `HELP`) with the exact text a real
+  SMS/USSD gateway's webhook would get back; the in-app **SMS Mode** screen
+  calls the same route, so the feature works with no gateway account.
+- **Notifications tab** — every SMS exchange, plus two app-triggered alerts
+  (`app/routers/budgets.py`), is logged to a `notifications` table
+  (`sql/012_phase6_sms_notifications.sql`) and shown under **Notifications**:
+  entering **survival mode**, and now crossing the student's own
+  **low-balance threshold** (`sms_low_balance_threshold`, previously stored
+  by `PUT /sms/preferences` but never checked — it only fires the moment the
+  balance crosses it, not on every purchase after, the same rule survival
+  mode already used).
+- **Actually reaching a phone** — `PUT /sms/preferences` (`phone_number`,
+  `sms_enabled`, `low_balance_threshold`) had no UI. Profile now has a
+  **Notifications & SMS** card to set all three; `app/notifications.dispatch_sms`
+  texts through `SMS_GATEWAY_URL` once one is configured, and otherwise logs
+  what would have been sent (`sms_status: "simulated"`), which the
+  Notifications tab and SMS Mode both show honestly rather than claiming a
+  text went out.
+- **NSFAS living allowance** updated to R1 715 (from R1 650) on the "Start
+  from a known amount" presets on Budget entry and the landing page copy —
+  both read the one constant, `NSFAS.livingAllowanceMonthly`
+  (`src/context/BudgetContext.jsx`). The separate "Personal care only" preset
+  was removed, leaving the single NSFAS preset.
+
 ## Phase 5 — closing the integration gaps
 
 **Read `docs/PHASE5_GAPS_REPORT.md`.** The gaps the Phase 4 review found, now

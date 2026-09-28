@@ -78,13 +78,16 @@ export function getProfile(token, opts = {}) {
 
 /**
  * PUT /profile/  ->  UserOut.
- * Body: UpdateProfileRequest { name: str, residence?: str, student_number?: str }
- * residence / student_number are only changed when sent; "" clears one (Phase 5).
+ * Body: UpdateProfileRequest { name: str, residence?: str, student_number?: str, phone_number?: str }
+ * residence / student_number / phone_number are only changed when sent; "" clears one (Phase 5/6).
  */
-export function updateProfile(token, { name, residence, student_number: studentNumber }, opts = {}) {
+export function updateProfile(token, {
+  name, residence, student_number: studentNumber, phone_number: phoneNumber,
+}, opts = {}) {
   const body = { name };
   if (residence !== undefined) body.residence = residence;
   if (studentNumber !== undefined) body.student_number = studentNumber;
+  if (phoneNumber !== undefined) body.phone_number = phoneNumber;
   return request('/profile/', { method: 'PUT', body, token, ...opts });
 }
 
@@ -520,6 +523,70 @@ export function removeShoppingListLiveItem(token, itemId, opts = {}) {
 /** DELETE /shopping-list  — empties it. */
 export function clearShoppingList(token, opts = {}) {
   return request('/shopping-list', { method: 'DELETE', token, ...opts });
+}
+
+/* =======================================================================
+ * SMS MODE  —  app/routers/sms.py   (prefix "/sms")   Phase 6
+ * =====================================================================*/
+
+/**
+ * POST /sms/reply  ->  SmsReplyOut { command, reply, notification: NotificationOut }
+ * Body: SmsRequest { body: str (1..160) }
+ *
+ * Works exactly like texting UniWallet's shortcode would: send the raw text
+ * a student typed ("BAL", "CMP bread", ...), get back the plain-text reply.
+ * The exchange is also logged under /notifications and, if the student has a
+ * phone number saved and SMS turned on, actually dispatched to it.
+ */
+export function smsReply(token, body, opts = {}) {
+  return request('/sms/reply', { method: 'POST', body: { body }, token, ...opts });
+}
+
+/** GET /sms/preferences  ->  SmsPreferencesOut { phone_number, sms_enabled, low_balance_threshold } */
+export function getSmsPreferences(token, opts = {}) {
+  return request('/sms/preferences', { token, ...opts });
+}
+
+/**
+ * PUT /sms/preferences  ->  SmsPreferencesOut
+ * Body: SmsPreferencesUpdate — any subset of { phone_number, sms_enabled, low_balance_threshold }.
+ * Omitted = unchanged, like PUT /profile/.
+ */
+export function updateSmsPreferences(token, patch, opts = {}) {
+  return request('/sms/preferences', { method: 'PUT', body: patch, token, ...opts });
+}
+
+/* =======================================================================
+ * NOTIFICATIONS  —  app/routers/notifications.py   (prefix "/notifications")   Phase 6
+ * =====================================================================*/
+
+/**
+ * GET /notifications?limit=N  ->  NotificationListOut { items: NotificationOut[], unread_count }
+ * Every SMS exchange, plus app-triggered alerts like entering survival mode —
+ * the same thing a real phone would have received, kept here too.
+ */
+export function getNotifications(token, { limit } = {}, opts = {}) {
+  const query = limit === undefined ? undefined : { limit };
+  return request('/notifications', { token, query, ...opts });
+}
+
+/** PUT /notifications/{id}/read  ->  NotificationOut */
+export function markNotificationRead(token, notificationId, opts = {}) {
+  return request(`/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: 'PUT', token, ...opts,
+  });
+}
+
+/** PUT /notifications/read-all  ->  { updated: number } */
+export function markAllNotificationsRead(token, opts = {}) {
+  return request('/notifications/read-all', { method: 'PUT', token, ...opts });
+}
+
+/** DELETE /notifications/{id}  ->  204 */
+export function deleteNotification(token, notificationId, opts = {}) {
+  return request(`/notifications/${encodeURIComponent(notificationId)}`, {
+    method: 'DELETE', token, ...opts,
+  });
 }
 
 /* =======================================================================

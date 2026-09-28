@@ -17,6 +17,8 @@
  *                             every store already surfaces the same picks),
  *                             and this keeps bookmarks and old links from
  *                             landing on a 404
+ *   /sms             private  SMS Mode short codes      (Phase 6)
+ *   /notifications   private  Notifications tab         (Phase 6)
  *   *                         not found
  *
  * Private routes are wrapped in <ProtectedRoute>, which waits for the stored
@@ -39,6 +41,8 @@ import Search from './screens/Search.jsx';
 import Compare from './screens/Compare.jsx';
 import Profile from './screens/Profile.jsx';
 import Settings from './screens/Settings.jsx';
+import SmsMode from './screens/SmsMode.jsx';
+import Notifications from './screens/Notifications.jsx';
 import NotFound from './screens/NotFound.jsx';
 
 import { useAuth } from './context/AuthContext.jsx';
@@ -95,6 +99,14 @@ export default function App() {
         <Route
           path="/settings"
           element={<ProtectedRoute><AppShell><Settings /></AppShell></ProtectedRoute>}
+        />
+        <Route
+          path="/sms"
+          element={<ProtectedRoute><AppShell><SmsMode /></AppShell></ProtectedRoute>}
+        />
+        <Route
+          path="/notifications"
+          element={<ProtectedRoute><AppShell><Notifications /></AppShell></ProtectedRoute>}
         />
 
         <Route path="/recommendations" element={<Navigate to="/search" replace />} />

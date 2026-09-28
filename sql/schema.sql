@@ -34,10 +34,15 @@ CREATE TABLE IF NOT EXISTS users (
   residence_area_code VARCHAR(100),
   student_number      VARCHAR(9),
   email_verified_at   TIMESTAMPTZ,
+  -- Phase 6: SMS mode's on/off switch and its low-balance trigger.
+  sms_enabled                BOOLEAN NOT NULL DEFAULT FALSE,
+  sms_low_balance_threshold  NUMERIC(12,2),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT chk_users_student_number_format
-    CHECK (student_number IS NULL OR student_number ~ '^[0-9]{8,9}$')
+    CHECK (student_number IS NULL OR student_number ~ '^[0-9]{8,9}$'),
+  CONSTRAINT chk_users_sms_low_balance_threshold_positive
+    CHECK (sms_low_balance_threshold IS NULL OR sms_low_balance_threshold >= 0)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower
@@ -669,5 +674,31 @@ DO $$ BEGIN
     ADD CONSTRAINT chk_comparison_items_one_product CHECK ((offer_id IS NULL) <> (item_id IS NULL));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- -------------------------
+-- Notifications (Phase 6) — see sql/012_phase6_sms_notifications.sql
+-- -------------------------
+-- One row per message the student would see, whether it started as an
+-- inbound SMS command (POST /sms/reply), the reply to one, or an
+-- app-triggered alert (e.g. entering survival mode). A row with
+-- channel='app' never touched SMS at all (sms_status stays NULL).
+CREATE TABLE IF NOT EXISTS notifications (
+  id           SERIAL PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category     VARCHAR(30) NOT NULL DEFAULT 'system'
+               CHECK (category IN ('sms_in', 'sms_out', 'survival', 'balance', 'system')),
+  channel      VARCHAR(10) NOT NULL DEFAULT 'app'
+               CHECK (channel IN ('app', 'sms')),
+  title        VARCHAR(150) NOT NULL,
+  body         TEXT NOT NULL,
+  sms_status   VARCHAR(20),
+  read_at      TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+  ON notifications (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+  ON notifications (user_id) WHERE read_at IS NULL;
 
 COMMIT;

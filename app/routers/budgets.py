@@ -12,6 +12,7 @@ from app.budget_calc import (
 from app.budget_split import build_split
 from app.database import get_connection
 from app.dependencies import get_current_user_id
+from app.notifications import create_notification, dispatch_sms
 from app.routers.budget_split import persist_split, spent_by_date, split_to_out
 from app.schemas import (
     BudgetCreateRequest,
@@ -294,6 +295,56 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
             )
             updated_budget = cur.fetchone()
             split_after = _fresh_split(cur, updated_budget)
+
+            # This purchase could fire two different alerts below — survival
+            # mode and the student's own low-balance line — so one lookup of
+            # `users` covers both rather than querying it twice.
+            became_survival = split_before.mode != "survival" and split_after.mode == "survival"
+            cur.execute(
+                "SELECT phone_number, sms_enabled, sms_low_balance_threshold FROM users WHERE id = %s",
+                (user_id,),
+            )
+            notify_user = cur.fetchone()
+            phone_number = notify_user["phone_number"] if notify_user else None
+            sms_enabled = bool(notify_user["sms_enabled"]) if notify_user else False
+            threshold = notify_user["sms_low_balance_threshold"] if notify_user else None
+            threshold_check_needed = (
+                threshold is not None
+                and budget["remaining_amount"] > threshold
+                and impact.new_remaining <= threshold
+            )
+
+            # This purchase is what tipped the budget into survival mode —
+            # tell the student the same way SMS mode would, and log it under
+            # Notifications, not just leave it for the dashboard to notice
+            # next time it's opened.
+            if became_survival:
+                survival_body = (
+                    f"You've hit survival mode: R{split_after.remaining_amount:.2f} left for "
+                    f"{split_after.days_remaining} more days. UniWallet will suggest essentials only."
+                )
+                sms_status = dispatch_sms(phone_number, sms_enabled, survival_body)
+                create_notification(
+                    cur, user_id, category="survival",
+                    channel="sms" if sms_status in ("sent", "simulated") else "app",
+                    title="You're in survival mode", body=survival_body, sms_status=sms_status,
+                )
+
+            # The student's own "tell me when it's getting low" line — set in
+            # Profile under Notifications & SMS, separate from (and usually
+            # higher than) the survival threshold. Only fires the moment the
+            # balance crosses it, not on every purchase after.
+            if threshold_check_needed:
+                balance_body = (
+                    f"Low balance alert: only R{impact.new_remaining:.2f} left — "
+                    f"you asked to hear about it below R{threshold:.2f}."
+                )
+                sms_status = dispatch_sms(phone_number, sms_enabled, balance_body)
+                create_notification(
+                    cur, user_id, category="balance",
+                    channel="sms" if sms_status in ("sent", "simulated") else "app",
+                    title="Low balance alert", body=balance_body, sms_status=sms_status,
+                )
 
         warning_message = None
         if impact.overspend_warning:
