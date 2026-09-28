@@ -104,7 +104,7 @@ export default function SmsMode() {
             SMS Mode
           </h1>
           <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)' }}>
-            Everything here works exactly like texting UniWallet's shortcode would —
+            Everything here works exactly like texting UniWallet&rsquo;s shortcode would —
             useful when data runs out. Turn on real SMS delivery to your phone in{' '}
             <button
               type="button"

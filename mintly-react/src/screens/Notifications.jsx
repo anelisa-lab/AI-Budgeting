@@ -100,7 +100,7 @@ export default function Notifications() {
           )}
           {ready && !error && items.length === 0 && (
             <EmptyState icon="🔔" title="Nothing yet">
-              Text a command to UniWallet's SMS Mode — like BAL or TODAY — and the
+              Text a command to UniWallet&rsquo;s SMS Mode — like BAL or TODAY — and the
               reply will show up here too.
               <div style={{ marginTop: 'var(--s-4)' }}>
                 <Button size="sm" onClick={() => navigate('/sms')}>Open SMS Mode →</Button>
