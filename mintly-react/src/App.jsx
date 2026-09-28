@@ -10,6 +10,7 @@
  *   /budget          private  budget entry / edit      (Member 8)
  *   /search          private  search + results         (Member 9)
  *   /compare         private  basket comparison        (Member 9)
+ *   /chat            private  budgeting chatbot        (Phase 7)
  *   /profile         private  profile & preferences    (Member 8, Phase 3)
  *   /settings        private  device & account settings
  *   /recommendations          redirects to /search — the old "For you"
@@ -39,6 +40,7 @@ import Dashboard from './screens/Dashboard.jsx';
 import BudgetEntry from './screens/BudgetEntry.jsx';
 import Search from './screens/Search.jsx';
 import Compare from './screens/Compare.jsx';
+import Chat from './screens/Chat.jsx';
 import Profile from './screens/Profile.jsx';
 import Settings from './screens/Settings.jsx';
 import SmsMode from './screens/SmsMode.jsx';
@@ -90,6 +92,10 @@ export default function App() {
         <Route
           path="/compare"
           element={<ProtectedRoute><AppShell><Compare /></AppShell></ProtectedRoute>}
+        />
+        <Route
+          path="/chat"
+          element={<ProtectedRoute><AppShell><Chat /></AppShell></ProtectedRoute>}
         />
 
         <Route

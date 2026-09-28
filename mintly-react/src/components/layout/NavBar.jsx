@@ -20,6 +20,7 @@ const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/search', label: 'Search' },
   { to: '/compare', label: 'Compare' },
+  { to: '/chat', label: 'Chat' },
   { to: '/budget', label: 'Budget' },
   { to: '/sms', label: 'SMS Mode' },
   { to: '/notifications', label: 'Notifications' },

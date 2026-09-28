@@ -507,6 +507,20 @@ export const notifications = {
   },
 };
 
+/* -------------------------------------------------------------------- chat */
+
+/**
+ * The budgeting chatbot — POST /chat (app/routers/chat.py, app/chatbot.py).
+ * Stateless server-side: every call resends the conversation's plain-text
+ * turns as `history`, oldest first, and gets back only the final reply plus
+ * which tools grounded it (e.g. checked the budget, searched live prices).
+ */
+export const chat = {
+  async send(token, message, history = []) {
+    return endpoints.sendChatMessage(token, { message, history });
+  },
+};
+
 /* ------------------------------------------------------------------ health */
 
 export const system = {
@@ -519,7 +533,7 @@ export const system = {
 /** Grouped default export, for `import { api } from '../api/client.js'`. */
 export const api = {
   auth, profile, budgets, budgetSplit, recommendations, trueCost, compare, prices,
-  transactions, search, shoppingList, system, sms, notifications,
+  transactions, search, shoppingList, system, sms, notifications, chat,
 };
 
 export default api;
