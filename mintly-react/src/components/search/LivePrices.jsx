@@ -84,6 +84,7 @@ export default function LivePrices({ token, query }) {
   const [catalogueItems, setCatalogueItems] = useState([]);
   const [showAll, setShowAll] = useState(false);
   const [hideOutOfStock, setHideOutOfStock] = useState(false);
+  const [storeFilter, setStoreFilter] = useState('All');
   const controller = useRef(null);
 
   const load = useCallback(async () => {
@@ -92,6 +93,7 @@ export default function LivePrices({ token, query }) {
     setError(null);
     setCatalogueItems([]);
     setShowAll(false);
+    setStoreFilter('All');
     if (!token || term.length < 2) { setLoading(false); return; }
 
     const ctrl = new AbortController();
@@ -142,7 +144,17 @@ export default function LivePrices({ token, query }) {
   // only the in/out-of-stock split moves.
   const byStock = (list) => list.slice().sort((a, b) => (a.in_stock === b.in_stock ? 0 : a.in_stock ? -1 : 1));
   const items = [...byStock(liveItems), ...byStock(catalogueItems)];
-  const shown = hideOutOfStock ? items.filter((i) => i.in_stock) : items;
+  // One chip per store that actually has a result, in the same order stores
+  // appear in `items` (live stores first, then catalogue stores) — never a
+  // fixed list, so a store with nothing for this word just has no chip.
+  const storeOrder = [];
+  const storeCounts = {};
+  for (const item of items) {
+    if (!(item.store in storeCounts)) storeOrder.push(item.store);
+    storeCounts[item.store] = (storeCounts[item.store] || 0) + 1;
+  }
+  const byStoreFilter = storeFilter === 'All' ? items : items.filter((i) => i.store === storeFilter);
+  const shown = hideOutOfStock ? byStoreFilter.filter((i) => i.in_stock) : byStoreFilter;
   const visible = showAll ? shown : shown.slice(0, FIRST_ROWS);
 
   return (
@@ -165,6 +177,31 @@ export default function LivePrices({ token, query }) {
           </span>
         )}
       </div>
+
+      {!loading && storeOrder.length > 1 && (
+        <div className="row live-prices__store-filter" role="group" aria-label="Filter by store"
+             style={{ flexWrap: 'wrap', gap: 'var(--s-2)' }}>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={storeFilter === 'All'}
+            onClick={() => setStoreFilter('All')}
+          >
+            All ({items.length})
+          </button>
+          {storeOrder.map((store) => (
+            <button
+              key={store}
+              type="button"
+              className="chip"
+              aria-pressed={storeFilter === store}
+              onClick={() => setStoreFilter(store)}
+            >
+              {store} ({storeCounts[store]})
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="row row--between" style={{ flexWrap: 'wrap', gap: 'var(--s-2)' }}>
         <p className="live-prices__count" aria-live="polite">
