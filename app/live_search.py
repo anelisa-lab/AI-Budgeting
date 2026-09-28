@@ -113,14 +113,16 @@ def _cached(conn, store: str, q: str):
 def _items_for(conn, store: str, q: str) -> List[dict]:
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT i.id, i.name, i.price, i.image_url, i.product_url, i.store,
+            """SELECT i.id, i.name, i.price, i.last_known_price, i.last_priced_at,
+                      i.image_url, i.product_url, i.store,
                       i.brand, i.category, i.on_promotion, i.in_stock, i.last_updated
                FROM live_searches s
                JOIN live_search_results r ON r.search_id = s.id
                JOIN items i ON i.id = r.item_id
                WHERE s.store = %s AND s.query = %s
                  AND i.store = %s              -- never another store's rows
-               ORDER BY r.rank""",
+               -- buyable first (in stock with a real price), then the store's order
+               ORDER BY (i.in_stock AND i.price IS NOT NULL) DESC, r.rank""",
             (store, q, store_name(store)),
         )
         cols = [d[0] for d in cur.description]

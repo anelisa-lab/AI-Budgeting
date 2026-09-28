@@ -351,18 +351,34 @@ export function searchResponseFromApi(payload) {
 /* ------------------------------------------------------ live store search */
 
 /** LiveSearchItem — one product from GET /api/search. */
+/** A real price as a number, or null. 0, negatives and junk are never a price. */
+export function priceOrNull(value) {
+  const n = numOrNull(value);
+  return n != null && n > 0 ? n : null;
+}
+
+/**
+ * LiveSearchItem — one product from GET /api/search. price is null (never 0)
+ * when the store has no price right now; last_known_price is the last real
+ * price seen. `buyable` is the one flag screens should use.
+ */
 export function liveItemFromApi(i) {
+  const inStock = i.in_stock !== false;
+  const price = inStock ? priceOrNull(i.price) : null;
   return {
     id: i.id,
     name: i.name,
-    price: num(i.price),
+    price,
+    last_known_price: priceOrNull(i.last_known_price),
+    last_priced_at: i.last_priced_at || null,
+    buyable: inStock && price != null,
     image_url: i.image_url || null,
     product_url: i.product_url || null,
     store: i.store,
     brand: i.brand || null,
     category: i.category || null,
     on_promotion: Boolean(i.on_promotion),
-    in_stock: i.in_stock !== false,
+    in_stock: inStock,
     last_updated: i.last_updated || null,
   };
 }

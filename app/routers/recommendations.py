@@ -81,7 +81,9 @@ def _candidate_sql(payload: RecommendationRequest, parsed: ParsedQuery) -> tuple
     proper happens in Python, where true cost and the daily allowance are
     available and SQL can't help.
     """
-    conditions = ["o.availability_status = 'available'"]
+    # In stock, with a real price: a 0 price means "unknown" and must never
+    # be recommended as the cheapest.
+    conditions = ["o.availability_status = 'available'", "o.price > 0"]
     params: list = []
 
     # Only an EXPLICIT category filters. A category the parser inferred from a

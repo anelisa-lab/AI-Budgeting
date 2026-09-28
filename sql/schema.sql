@@ -596,7 +596,13 @@ CREATE TABLE IF NOT EXISTS items (
   store         VARCHAR(50)   NOT NULL,
   sku           VARCHAR(100)  NOT NULL,
   name          TEXT          NOT NULL,
-  price         NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+  -- NULL when the store has no price right now (e.g. out of stock) — never 0.
+  -- See sql/008_live_items_missing_price.sql.
+  price         NUMERIC(12,2) CONSTRAINT chk_items_price_positive
+                              CHECK (price IS NULL OR price > 0),
+  last_known_price NUMERIC(12,2) CONSTRAINT chk_items_last_known_price_positive
+                              CHECK (last_known_price IS NULL OR last_known_price > 0),
+  last_priced_at   TIMESTAMPTZ,
   image_url     TEXT,
   product_url   TEXT,
   brand         VARCHAR(150),

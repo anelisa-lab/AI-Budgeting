@@ -142,9 +142,9 @@ function LiveCard({ item }) {
       </div>
       <div className="live-card__body">
         <h3 className="live-card__name">{item.name}</h3>
-        <div className="live-card__price num">{money(item.price)}</div>
+        <LivePrice item={item} />
         <div className="result__tags">
-          {item.on_promotion && <Badge tone="accent">Promotion</Badge>}
+          {item.buyable && item.on_promotion && <Badge tone="accent">Promotion</Badge>}
           {!item.in_stock && <Badge tone="danger">Out of stock</Badge>}
         </div>
       </div>
@@ -158,11 +158,35 @@ function LiveCard({ item }) {
           href={item.product_url}
           target="_blank"
           rel="noreferrer noopener"
-          aria-label={`${item.name}, ${money(item.price)} at ${item.store} (opens the store's website)`}
+          aria-label={`${item.name}, ${priceLabel(item)} at ${item.store} (opens the store's website)`}
         >
           {body}
         </a>
       ) : body}
     </li>
   );
+}
+
+/**
+ * Never "R0,00": a price only shows when the item can be bought. Otherwise
+ * the last real price seen, in grey, or "Price unavailable".
+ */
+function LivePrice({ item }) {
+  if (item.buyable) {
+    return <div className="live-card__price num">{money(item.price)}</div>;
+  }
+  return (
+    <p className="live-card__no-price">
+      {item.last_known_price != null
+        ? <>Last seen <span className="num">{money(item.last_known_price)}</span></>
+        : 'Price unavailable'}
+    </p>
+  );
+}
+
+function priceLabel(item) {
+  if (item.buyable) return money(item.price);
+  const status = item.in_stock ? 'price unavailable' : 'out of stock';
+  return item.last_known_price != null
+    ? `${status}, last seen ${money(item.last_known_price)}` : status;
 }

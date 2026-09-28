@@ -80,10 +80,16 @@ def add_item(payload: ShoppingListItemIn, user_id: int = Depends(get_current_use
     conn = get_connection()
     try:
         with conn, conn.cursor() as cur:
-            cur.execute("SELECT price FROM product_offers WHERE id = %s", (payload.offer_id,))
+            cur.execute("SELECT price, availability_status FROM product_offers WHERE id = %s",
+                        (payload.offer_id,))
             offer = cur.fetchone()
             if not offer:
                 raise HTTPException(status_code=404, detail="That item is no longer listed.")
+            # Only something you can buy goes into a list total: never an
+            # out-of-stock offer, never an unknown (0) price.
+            if offer["availability_status"] != "available" or offer["price"] <= 0:
+                raise HTTPException(status_code=409,
+                                    detail="That item is out of stock or has no price right now.")
             list_id = _list_id(cur, user_id)
             cur.execute(
                 """INSERT INTO comparison_items (comparison_list_id, offer_id, qty, price_when_added)

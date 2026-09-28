@@ -39,7 +39,7 @@ const {
   buildSearchParams, filtersFromUrl, filtersToUrl, rank,
   basketOffersByProduct, itemGroups,
   chosenListTotal, validateFilters, canonicalise, describeFilters, recommendationsCanHonour,
-  isRankedSort, DEFAULT_FILTERS,
+  isRankedSort, DEFAULT_FILTERS, isBuyable,
 } = await import('../../src/lib/search.js');
 const {
   CATALOGUE_CATEGORIES, SPENDING_CATEGORIES, canonicalCategory, CATEGORIES_WITHOUT_LISTINGS,
@@ -464,6 +464,45 @@ await test('live search calls GET /api/search?query= and coerces the Decimal pri
   assert.equal(live.results[0].image_url.startsWith('https://'), true);
   assert.equal(live.stores[0].source, 'cache');
   assert.equal(live.stores[0].name, 'Checkers');
+});
+
+await test('an out-of-stock live item with price 0 or null is never R0', async () => {
+  const oos = (price) => ({
+    id: 9, name: 'Pride Red Speckled Beans 2kg', price, last_known_price: dec(18.99),
+    image_url: null, product_url: null, store: 'Checkers', brand: 'Pride', category: null,
+    on_promotion: false, in_stock: false, last_updated: '2026-09-28T00:00:00+02:00',
+  });
+  for (const price of [null, dec(0), 0]) {
+    installFetch(() => ({ body: {
+      query: 'beans', count: 1, message: null, results: [oos(price)],
+      stores: [{ store: 'checkers', name: 'Checkers', source: 'live', fetched_at: null, count: 1 }],
+    } }));
+    const [item] = (await search.live(TOKEN, 'beans')).results;
+    assert.equal(item.price, null, `price ${price} must become null, not 0`);
+    assert.equal(item.buyable, false);
+    assert.equal(item.last_known_price, 18.99);
+  }
+  installFetch(() => ({ body: {
+    query: 'beans', count: 1, message: null,
+    results: [{ ...oos(dec(0)), in_stock: true, last_known_price: null }],
+    stores: [{ store: 'checkers', name: 'Checkers', source: 'live', fetched_at: null, count: 1 }],
+  } }));
+  const [zero] = (await search.live(TOKEN, 'beans')).results;
+  assert.equal(zero.price, null, 'an in-stock R0 is "price unavailable", not free');
+  assert.equal(zero.buyable, false);
+});
+
+await test('out-of-stock and unpriced offers are never "cheapest" and never buyable', () => {
+  const o = (id, price, availability_status = 'available') => ({
+    offer_id: id, price, effective_cost: price, total_cost: price, availability_status,
+    store_name: 'S', category: 'Groceries',
+  });
+  const ranked = rank([o(1, 0), o(2, 5, 'out_of_stock'), o(3, 30), o(4, 20)], { budget: 100 });
+  assert.deepEqual(ranked.map((r) => r.offer_id).slice(0, 2), [4, 3], 'buyable first, cheapest on top');
+  assert.ok(!ranked.slice(2).some((r) => /cheapest/.test(r.why)));
+  assert.equal(isBuyable(o(1, 0)), false);
+  assert.equal(isBuyable(o(2, 5, 'out_of_stock')), false);
+  assert.equal(isBuyable(o(4, 20)), true);
 });
 
 await test('only sorts the backend implements are ever sent', () => {

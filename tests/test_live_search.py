@@ -36,6 +36,7 @@ def conn():
     with c.cursor() as cur:
         cur.execute((SQL / "006_live_items.sql").read_text())
         cur.execute((SQL / "007_live_search_cache.sql").read_text())
+        cur.execute((SQL / "008_live_items_missing_price.sql").read_text())
         cur.execute("TRUNCATE items, live_searches, live_search_results RESTART IDENTITY CASCADE")
     c.commit()
     yield c
@@ -111,6 +112,16 @@ def test_other_stores_rows_never_come_back(conn, caplog):
     assert cached.source == "cache"
     assert {i["store"] for i in cached.items} == {"Checkers"}
     assert cached.name == "Checkers"
+
+
+def test_out_of_stock_items_come_last_with_no_price(conn):
+    fake = FakeStore([{**_product("gone"), "price": 0, "in_stock": False},
+                      _product("dear", 25.0), _product("cheap", 12.0)])
+    [result] = live_search.search(conn, "beans", scrape=fake, stores=["checkers"])
+    assert [i["name"] for i in result.items] == ["Bread dear", "Bread cheap", "Bread gone"]
+    gone = result.items[-1]
+    assert gone["price"] is None and gone["in_stock"] is False
+    assert all(i["price"] is None or i["price"] > 0 for i in result.items)   # never R0
 
 
 def test_no_active_stores(conn):

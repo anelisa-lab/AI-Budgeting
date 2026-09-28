@@ -585,7 +585,11 @@ class ShoppingListOut(BaseModel):
 class LiveSearchItem(BaseModel):
     id: int
     name: str
-    price: Decimal
+    # The store's current price. None — never 0 — when it has none right now
+    # (out of stock). last_known_price is the last real price seen, if any.
+    price: Optional[Decimal] = None
+    last_known_price: Optional[Decimal] = None
+    last_priced_at: Optional[datetime] = None
     image_url: Optional[str] = None
     product_url: Optional[str] = None
     store: str

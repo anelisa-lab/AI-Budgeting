@@ -5,6 +5,8 @@ trimmed from a real get-products-filter response (search "bread", Sep 2026).
 
 from unittest.mock import Mock
 
+import pytest
+
 import requests
 
 from app.scrapers import checkers
@@ -46,10 +48,39 @@ def test_promotional_price_and_fallbacks():
 
 
 def test_skips_duplicates_and_junk():
-    products = [_product(), _product(storeId="other"), _product(name="", displayName=""), "x",
-                _product(articleNumber="2", price=None, discountedPrice=None,
-                         priceWithoutDecimal=None)]
+    products = [_product(), _product(storeId="other"), _product(name="", displayName=""), "x"]
     assert len(checkers.parse_products({"products": products})) == 1
+
+
+# Trimmed from the real response for "red speckled beans" (Sep 2026): an
+# out-of-stock product comes with price 0, priceWithoutDecimal 0,
+# discountedPrice null, outOfStock true and isStockAvailable false.
+OUT_OF_STOCK = dict(name="Pride Red Speckled Beans 2kg", displayName="Pride Red Speckled Beans 2kg",
+                    articleNumber="10500001", price=0, discountedPrice=None, oldPrice=0,
+                    priceWithoutDecimal=0, outOfStock=True, isStockAvailable=False,
+                    stockOnHand=None, ranged=False, storeProductActive=False)
+
+
+def test_out_of_stock_product_has_no_price_never_zero():
+    [p] = checkers.parse_products({"products": [_product(**OUT_OF_STOCK)]})
+    assert p["price"] is None and p["price"] != 0
+    assert p["in_stock"] is False
+
+
+@pytest.mark.parametrize("flags", [{"outOfStock": True}, {"isStockAvailable": False}])
+def test_either_stock_flag_means_out_of_stock(flags):
+    [p] = checkers.parse_products({"products": [_product(**flags)]})
+    assert (p["price"], p["in_stock"]) == (None, False)
+
+
+@pytest.mark.parametrize("prices", [
+    {"price": 0, "discountedPrice": 0, "priceWithoutDecimal": 0},
+    {"price": None, "discountedPrice": None, "priceWithoutDecimal": None},
+    {"price": -1, "discountedPrice": None, "priceWithoutDecimal": 0},
+])
+def test_zero_or_missing_price_in_stock_is_none(prices):
+    [p] = checkers.parse_products({"products": [_product(**prices)]})
+    assert p["price"] is None and p["in_stock"] is True
 
 
 def test_slug_matches_site_rule():

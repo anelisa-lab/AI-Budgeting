@@ -130,35 +130,52 @@ def parse_products(payload: dict) -> List[dict]:
 
 
 def _to_product(item: dict) -> Optional[dict]:
+    """
+    One product. price is None — never 0 — when Checkers has no price for it
+    (out of stock, or no positive price in the JSON); in_stock says which.
+    """
     name = (item.get("displayName") or item.get("name") or "").strip()
-    price = _price(item)
     sku = item.get("articleNumber") or item.get("id")
-    if not name or price is None or not sku:
+    if not name or not sku:
         return None
+    in_stock = _in_stock(item)
     return {
         "name": name,
-        "price": price,
+        "price": _price(item) if in_stock else None,
         "image_url": (item.get("imageProductCardURL") or item.get("imageURL")
                       or item.get("imagePDPURL")),
         "product_url": product_url(item),
         "sku": str(sku),
         "brand": item.get("brand"),
         "on_promotion": bool(item.get("isOnPromotion")),
-        "in_stock": not item.get("outOfStock", False),
+        "in_stock": in_stock,
         "store": STORE,
     }
 
 
+def _in_stock(item: dict) -> bool:
+    """
+    Checkers marks an unavailable product with "outOfStock": true and
+    "isStockAvailable": false (and sends price 0, priceWithoutDecimal 0,
+    discountedPrice null). Either flag means out of stock.
+    """
+    return not item.get("outOfStock", False) and item.get("isStockAvailable", True) is not False
+
+
 def _price(item: dict) -> Optional[float]:
-    """The price you pay: discountedPrice when it's lower, else price (both rand)."""
+    """
+    The price you pay in rand: the lower of price and discountedPrice. Only
+    positive numbers count — Checkers sends 0 for "no price", which must never
+    become R0 — so this returns None rather than 0.
+    """
     prices = []
     for key in ("price", "discountedPrice"):
         value = item.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
             prices.append(float(value))
-    if not prices and isinstance(item.get("priceWithoutDecimal"), int):
-        factor = item.get("priceFactor") or 100
-        prices.append(item["priceWithoutDecimal"] / factor)
+    cents = item.get("priceWithoutDecimal")
+    if not prices and isinstance(cents, int) and not isinstance(cents, bool) and cents > 0:
+        prices.append(cents / (item.get("priceFactor") or 100))
     return round(min(prices), 2) if prices else None
 
 

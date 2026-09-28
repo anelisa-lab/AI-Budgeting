@@ -20,13 +20,18 @@ outbound request to the store.
 Response:
     {
       "query": "bread",
-      "results": [{"id", "name", "price", "image_url", "product_url", "store",
-                   "brand", "category", "on_promotion", "in_stock", "last_updated"}],
+      "results": [{"id", "name", "price", "last_known_price", "last_priced_at",
+                   "image_url", "product_url", "store", "brand", "category",
+                   "on_promotion", "in_stock", "last_updated"}],
       "count": 40,
       "stores": [{"store": "checkers", "name": "Checkers", "source": "cache",
                   "fetched_at": "...", "count": 40}],
       "message": null       # set when a store couldn't be reached or nothing matched
     }
+price is null — never 0 — when the store has no price right now (out of
+stock); last_known_price is then the last real price seen, if any. Buyable
+items (in stock, priced) come first.
+
 source: "cache" (from the DB, fresh), "live" (just fetched), "stale" (the
 store couldn't be reached, so an older saved answer), "unavailable" (no
 answer at all).
