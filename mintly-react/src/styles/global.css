@@ -91,12 +91,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   padding: var(--s-3) var(--gutter);
   display: flex;
   align-items: center;
-  gap: var(--s-5);
+  gap: var(--s-4);
   min-height: var(--nav-h);
 }
 .nav__links { display: flex; gap: var(--s-2); margin-inline: auto; position: relative; }
 .nav__link {
   position: relative; /* keeps the sr-only count label inside the scrolling row */
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  flex: none; white-space: nowrap; /* never squash or wrap a link into a circle */
   padding: var(--s-2) var(--s-4);
   border-radius: var(--r-pill);
   font-size: var(--t-sm);
@@ -110,7 +112,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .nav__toggle { display: none; }
 
-@media (max-width: 1100px) {
+@media (max-width: 1280px) {
   /* Links drop to their own full-width, swipeable row under the logo.
      (860px was too narrow: at 1024px seven links + name + Sign out overflowed.) */
   .nav__in { flex-wrap: wrap; row-gap: var(--s-2); }
@@ -574,7 +576,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* Shopping list — nav counter, list vs budget, live list lines, card add button */
 .nav__list {
-  display: inline-block; margin-left: var(--s-2); padding: 1px 8px; border-radius: 999px;
+  display: inline-block; white-space: nowrap; padding: 1px 8px; border-radius: 999px;
   font-size: var(--t-xs); font-weight: var(--fw-extra);
   background: var(--c-butter); color: var(--c-on-butter);
 }
