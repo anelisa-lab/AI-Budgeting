@@ -8,7 +8,7 @@
  *                             PUT /profile and PUT /profile/preferences)
  *   Budget                 -> saved to the account (Budget screen,
  *                             PUT /budgets/{id})
- *   Reduce motion          -> this device only (lib/localSettings.js)
+ *   Theme, reduce motion          -> this device only (lib/localSettings.js)
  *
  * The backend has no generic settings endpoint, so nothing here pretends to
  * sync a device-only choice to the account.
@@ -23,9 +23,11 @@ import { api } from '../api/client.js';
 import { fullDate, longDate, money } from '../lib/format.js';
 import {
   getContrastMode,
+  getTheme,
   getReducedMotion,
   getTextSize,
   setContrastMode,
+  setTheme,
   setReducedMotion,
   setTextSize,
 } from '../lib/localSettings.js';
@@ -37,6 +39,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const [reducedMotion, setReducedMotionState] = useState(getReducedMotion);
   const [textSize, setTextSizeState] = useState(getTextSize);
+  const [theme, setThemeState] = useState(getTheme);
   const [contrastMode, setContrastModeState] = useState(getContrastMode);
   const [connection, setConnection] = useState('checking'); // checking | up | down
 
@@ -47,6 +50,13 @@ export default function Settings() {
       .catch(() => setConnection('down'));
   }
   useEffect(checkConnection, []);
+
+  function changeTheme(value) {
+    setThemeState(value);
+    setTheme(value);
+    const label = value === 'dark' ? 'Dark' : value === 'light' ? 'Light' : 'System';
+    toast.info(`${label} theme set on this device.`);
+  }
 
   function toggleMotion(on) {
     setReducedMotionState(on);
@@ -119,6 +129,26 @@ export default function Settings() {
           <Button variant="ghost" size="sm" onClick={() => navigate('/budget')}>
             {budget ? 'Edit my budget →' : 'Set my budget →'}
           </Button>
+        </div>
+      </Card>
+
+      <Card className="stack">
+        <div className="card__head">
+          <h2 className="card__title">Appearance</h2>
+          <Badge tone="neutral">This device only</Badge>
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="theme">Theme</label>
+          <Select
+            id="theme"
+            value={theme}
+            onChange={(e) => changeTheme(e.target.value)}
+            options={[
+              { value: 'system', label: 'Match my device' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+          />
         </div>
       </Card>
 

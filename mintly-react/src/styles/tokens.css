@@ -52,6 +52,8 @@
   --c-line:         rgba(55, 106, 102, 0.14);
   --c-line-strong:  rgba(55, 106, 102, 0.32);
   --c-focus:        #376a66;
+  --c-nav-bg:       rgba(244, 249, 248, 0.93);
+  color-scheme: light;
 
   /* ---- Type -----------------------------------------------------------
      Two families only. Playfair carries personality on headings;
@@ -125,3 +127,49 @@
    oversight. Every colour is painted explicitly so the page holds up on any
    host background. If the team later wants dark mode, redefine the tokens
    above inside these two blocks and nothing else has to change. */
+
+/* Dark theme — Settings -> Appearance. Same token names, darker values; the
+   brand teal is lightened so headings, buttons and the active nav pill keep
+   AA contrast on the dark surfaces. 'system' resolves to this block through
+   the data-theme attribute set in lib/localSettings.js. */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --c-cream:        #0e1a19;
+  --c-cream-2:      #1d302e;
+  --c-paper:        #142523;
+
+  --c-forest:       #7db8af;
+  --c-forest-dark:  #a3d0c9;
+  --c-forest-light: #61a098;
+
+  --c-coral:        #61a098;
+  --c-coral-deep:   #7db8af;
+  --c-coral-soft:   #234240;
+
+  --c-butter:       #234240;
+  --c-butter-dark:  #376a66;
+  --c-on-butter:    #cfe8e3;
+  --c-on-coral:     #0e1a19;
+
+  --c-ink:          #e8f3f1;
+  --c-muted:        #b6d9d2;
+  --c-muted-light:  #93c2ba;
+
+  --c-success:      #7db8af;
+  --c-success-bg:   #1d302e;
+  --c-warning:      #d8e9e5;
+  --c-warning-bg:   #1d302e;
+  --c-danger:       #f0b4a8;
+  --c-danger-bg:    #3a2320;
+  --c-info:         #7db8af;
+  --c-info-bg:      #1d302e;
+
+  --c-line:         rgba(125, 184, 175, 0.18);
+  --c-line-strong:  rgba(125, 184, 175, 0.4);
+  --c-focus:        #a3d0c9;
+  --c-nav-bg:       rgba(14, 26, 25, 0.93);
+
+  --e-1: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --e-2: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --e-3: 0 26px 60px rgba(0, 0, 0, 0.5);
+}

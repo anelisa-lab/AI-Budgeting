@@ -81,7 +81,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   position: sticky;
   top: env(safe-area-inset-top, 0px);
   z-index: 50;
-  background: rgba(244, 249, 248, 0.93);
+  background: var(--c-nav-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--c-line);
 }
@@ -796,7 +796,7 @@ html[data-text-size='extra-large'] .nav__link {
    ALREADY in the palette, so small grey text (muted-light is ~3:1 on cream)
    reaches WCAG AA, and card, input and button edges are clearly visible. */
 html[data-contrast='high'] {
-  --c-muted: #112222;        /* = --c-ink */
+  --c-muted: var(--c-ink);   /* = --c-ink */
   --c-muted-light: #376a66;  /* = default --c-muted, 4.9:1 on cream */
   --c-warning: #253c3b;      /* = --c-on-butter */
   --c-line: rgba(55, 106, 102, 0.32);        /* = default --c-line-strong */
