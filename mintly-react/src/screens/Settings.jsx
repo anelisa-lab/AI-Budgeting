@@ -9,7 +9,6 @@
  *   Budget                 -> saved to the account (Budget screen,
  *                             PUT /budgets/{id})
  *   Reduce motion          -> this device only (lib/localSettings.js)
- *   Shopping list          -> saved to the account (GET/POST /shopping-list)
  *
  * The backend has no generic settings endpoint, so nothing here pretends to
  * sync a device-only choice to the account.
@@ -19,10 +18,9 @@ import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, Eyebrow, Select } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
-import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
-import { fullDate, longDate, money, plural } from '../lib/format.js';
+import { fullDate, longDate, money } from '../lib/format.js';
 import {
   getContrastMode,
   getReducedMotion,
@@ -35,7 +33,6 @@ import {
 export default function Settings() {
   const { user, logout } = useAuth();
   const { budget, remaining } = useBudget();
-  const { clearList, listCount, ready: shoppingReady, error: shoppingError } = useShopping();
   const toast = useToast();
   const navigate = useNavigate();
   const [reducedMotion, setReducedMotionState] = useState(getReducedMotion);
@@ -69,17 +66,6 @@ export default function Settings() {
     setContrastModeState(mode);
     setContrastMode(mode);
     toast.info(on ? 'Stronger contrast enabled on this device.' : 'Stronger contrast disabled.');
-  }
-
-  async function clearShoppingList() {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm('Clear your shopping list?')) return;
-    try {
-      await clearList();
-      toast.info('Shopping list cleared.');
-    } catch (err) {
-      toast.error(err.message || 'Could not clear your shopping list.');
-    }
   }
 
   async function signOut() {
@@ -196,28 +182,6 @@ export default function Settings() {
           Reduced motion also respects your browser or operating system&apos;s{' '}
           <code>prefers-reduced-motion</code> preference.
         </p>
-      </Card>
-
-      <Card className="stack">
-        <div className="card__head">
-          <h2 className="card__title">Shopping list</h2>
-          <Badge tone="success">Saved to your account</Badge>
-        </div>
-        <p style={sectionText}>
-          {shoppingError
-            ? shoppingError
-            : shoppingReady
-              ? `${plural(listCount, 'item')} on your list. It follows your account across devices.`
-              : 'Loading your shopping list…'}
-        </p>
-        <div className="row">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/compare')} disabled={!shoppingReady || !listCount}>
-            Open my list
-          </Button>
-          <Button variant="danger" size="sm" onClick={clearShoppingList} disabled={!shoppingReady || !listCount}>
-            Clear shopping list
-          </Button>
-        </div>
       </Card>
 
       <Card>
