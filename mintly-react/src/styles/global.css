@@ -17,7 +17,7 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--c-cream) url('/bg.svg') center / cover fixed no-repeat;
+  background: var(--c-page);
   color: var(--c-ink);
   font-family: var(--font-sans);
   font-size: var(--t-base);
@@ -25,9 +25,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-html[data-theme='dark'] body {
-  background: var(--c-cream) url('/bg-dark.svg') center / cover fixed no-repeat;
-}
 
 h1, h2, h3, h4 {
   font-family: var(--font-display);

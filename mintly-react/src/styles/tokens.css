@@ -52,7 +52,8 @@
   --c-line:         rgba(55, 106, 102, 0.14);
   --c-line-strong:  rgba(55, 106, 102, 0.32);
   --c-focus:        #376a66;
-  --c-nav-bg:       rgba(244, 249, 248, 0.93);
+  --c-nav-bg:       rgba(255, 255, 255, 0.93);
+  --c-page:         #ffffff;  /* page background: plain white */
   color-scheme: light;
 
   /* ---- Type -----------------------------------------------------------
@@ -168,6 +169,7 @@ html[data-theme='dark'] {
   --c-line-strong:  rgba(125, 184, 175, 0.4);
   --c-focus:        #a3d0c9;
   --c-nav-bg:       rgba(14, 26, 25, 0.93);
+  --c-page:         #0e1a19;
 
   --e-1: 0 2px 8px rgba(0, 0, 0, 0.35);
   --e-2: 0 10px 30px rgba(0, 0, 0, 0.4);
