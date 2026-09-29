@@ -54,9 +54,9 @@ export default function Search() {
         <Button type="submit">Search</Button>
       </form>
 
-      <NearbyStores token={token} />
-
       <LivePrices token={token} query={q} />
+
+      <NearbyStores token={token} />
     </div>
   );
 }
