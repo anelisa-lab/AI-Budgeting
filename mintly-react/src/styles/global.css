@@ -466,9 +466,9 @@ html[data-theme='dark'] .auth__float { text-shadow: 0 0 6px rgba(10, 21, 20, 0.9
 .dash-hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--s-4); }
 .dash-amount { font-family: var(--font-display); font-size: var(--t-3xl); letter-spacing: -0.02em; line-height: 1.05; }
 .dash-label { font-size: var(--t-sm); font-weight: var(--fw-extra); }
-.dash-sub { font-size: var(--t-xs); margin-top: var(--s-1); }
-.dash-sub--on-dark { color: rgba(244, 249, 248, 0.7); }
-.dash-sub--on-butter { color: rgba(17,34,34, 0.62); }
+.dash-sub { font-size: var(--t-sm); margin-top: var(--s-1); }
+.dash-sub--on-dark { color: color-mix(in srgb, var(--c-paper) 92%, transparent); font-weight: var(--fw-semibold); }
+.dash-sub--on-butter { color: color-mix(in srgb, var(--c-ink) 92%, transparent); font-weight: var(--fw-semibold); }
 
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-3); }
 .stat { padding: var(--s-4) var(--s-5); background: var(--c-paper); border: 1px solid var(--c-line); border-radius: var(--r-lg); }
