@@ -1,39 +1,31 @@
 """
-Notifications — the in-app log every SMS exchange (and a handful of
-app-triggered alerts) writes to, so "what UniWallet told you" is the same
-list whether you read it as a text message or under the Notifications tab.
+Notifications — the one place every system event is reported to the user.
 
-Two functions, both deliberately small:
+Any action, event, status change or important activity in any module calls
+one of these two functions, and the Notifications tab (GET /notifications)
+shows it, with what happened (title/body), where (module) and when
+(created_at).
 
-    create_notification(cur, ...)  inserts one row and returns it. Takes an
-                                    open cursor, like app/geo.py's
-                                    fetch_user_location, so it joins whatever
-                                    transaction the caller is already in.
+    create_notification(cur, ...)  inserts one row on an open cursor, so it
+                                    joins the caller's transaction.
 
-    dispatch_sms(...)              best-effort delivery to a real phone.
-                                    Pure — no DB access, no exceptions escape
-                                    it — so a broken gateway can never take a
-                                    request down with it. With no
-                                    SMS_GATEWAY_URL configured (the normal
-                                    case in this environment: no Twilio/
-                                    Africa's Talking account exists to hold
-                                    credentials for), it logs the message and
-                                    reports 'simulated' rather than pretending
-                                    to have sent something. Point
-                                    SMS_GATEWAY_URL at a real provider's
-                                    webhook and the same call starts actually
-                                    texting, with no other code to change.
+    notify(user_id, ...)           best-effort variant that opens its own
+                                    connection. It never raises: a failure
+                                    to log an event must not fail the
+                                    request that caused it.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from typing import Optional
 
-logger = logging.getLogger("app.sms")
+from app.database import get_connection
 
-NotificationCategory = str  # 'sms_in' | 'sms_out' | 'survival' | 'balance' | 'system'
+logger = logging.getLogger("app.notifications")
+
+# success | info | warning | alert | survival | balance | system
+NotificationCategory = str
 
 
 def create_notification(
@@ -42,50 +34,34 @@ def create_notification(
     category: NotificationCategory,
     title: str,
     body: str,
+    module: str = "system",
     channel: str = "app",
     sms_status: Optional[str] = None,
 ) -> dict:
     """Insert one notification row and return it (RETURNING *)."""
     cur.execute(
-        """INSERT INTO notifications (user_id, category, channel, title, body, sms_status)
-           VALUES (%s, %s, %s, %s, %s, %s)
+        """INSERT INTO notifications (user_id, category, channel, title, body, sms_status, module)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
            RETURNING *""",
-        (user_id, category, channel, title[:150], body, sms_status),
+        (user_id, category, channel, title[:150], body, sms_status, module[:30]),
     )
     return cur.fetchone()
 
 
-def dispatch_sms(phone_number: Optional[str], sms_enabled: bool, body: str) -> str:
-    """
-    Best-effort delivery of `body` to `phone_number`.
-
-    Returns one of: 'no_phone', 'disabled', 'simulated', 'sent', 'failed'.
-    Never raises — a caller should always be able to log the result and move
-    on, the way a real gateway's outcome would arrive out-of-band anyway.
-    """
-    if not phone_number:
-        return "no_phone"
-    if not sms_enabled:
-        return "disabled"
-
-    gateway_url = os.getenv("SMS_GATEWAY_URL")
-    if not gateway_url:
-        # No Twilio/Africa's Talking account is configured in this sandbox.
-        # This is the honest "would have sent" path: the same call, once
-        # SMS_GATEWAY_URL and any auth env vars are set, actually texts.
-        logger.info("SMS (simulated — no SMS_GATEWAY_URL set) to %s: %s", phone_number, body)
-        return "simulated"
-
+def notify(
+    user_id: int,
+    module: str,
+    title: str,
+    body: str,
+    category: NotificationCategory = "info",
+) -> None:
+    """Record an event for `user_id` on its own connection. Never raises."""
     try:
-        import requests  # local import: only needed on the configured path
-
-        auth_token = os.getenv("SMS_GATEWAY_TOKEN")
-        headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
-        response = requests.post(
-            gateway_url, json={"to": phone_number, "body": body}, headers=headers, timeout=5
-        )
-        response.raise_for_status()
-        return "sent"
-    except Exception:  # noqa: BLE001 — a gateway failure must never break the caller
-        logger.exception("SMS gateway dispatch to %s failed", phone_number)
-        return "failed"
+        conn = get_connection()
+        try:
+            with conn, conn.cursor() as cur:
+                create_notification(cur, user_id, category, title, body, module=module)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — logging an event must never break the caller
+        logger.exception("Could not record notification %r for user %s", title, user_id)

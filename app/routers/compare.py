@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.basket import BasketLine, BasketOffer, StoreInfo, compare_basket
 from app.database import get_connection
 from app.dependencies import get_current_user_id
+from app.notifications import notify
 from app.geo import distance_between, fetch_user_location
 from app.schemas import CompareBasketRequest, CompareBasketResponse
 from app.true_cost import load_store_charges, money
@@ -58,6 +59,9 @@ def compare_basket_endpoint(
             location = fetch_user_location(cur, user_id) if payload.use_my_location else None
     finally:
         conn.close()
+
+    notify(user_id, "compare", "Basket compared",
+           f"Compared {len(product_ids)} item(s) across {len({r['store_id'] for r in rows})} store(s).")
 
     stores, offers_by_product = {}, {}
     for r in rows:

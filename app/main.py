@@ -20,7 +20,6 @@ from app.routers import (
     prices,
     shopping_list,
     live_search,
-    sms,
     notifications,
     chat,
 )
@@ -97,6 +96,5 @@ app.include_router(compare.router)
 app.include_router(prices.router)
 app.include_router(shopping_list.router)      # Phase 5 — /shopping-list
 app.include_router(live_search.router)        # live store prices — /api/search
-app.include_router(sms.router)                # Phase 6 — /sms (SMS mode)
 app.include_router(notifications.router)      # Phase 6 — /notifications
 app.include_router(chat.router)               # Phase 7 — /chat (budgeting chatbot)

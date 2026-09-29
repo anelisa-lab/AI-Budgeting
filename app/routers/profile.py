@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Response
 
 from app.database import get_connection
 from app.dependencies import get_current_user_id
+from app.notifications import create_notification
 from app.schemas import (
     LocationIn, LocationOut, PreferencesOut, UpdatePreferencesRequest, UpdateProfileRequest, UserOut,
 )
@@ -61,6 +62,9 @@ def update_profile(payload: UpdateProfileRequest, user_id: int = Depends(get_cur
                 (*params, user_id),
             )
             user = cur.fetchone()
+            if user:
+                create_notification(cur, user_id, category="info", module="profile",
+                                    title="Profile updated", body="Your profile details were saved.")
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         return UserOut(**user)
@@ -106,6 +110,9 @@ def set_location(payload: LocationIn, user_id: int = Depends(get_current_user_id
                 (user_id, payload.label, round(payload.latitude, 6), round(payload.longitude, 6)),
             )
             row = cur.fetchone()
+            create_notification(cur, user_id, category="info", module="profile",
+                                title="Location updated",
+                                body=f"Your location is now {payload.label or 'set'}; distances and travel costs use it.")
         return LocationOut(**row)
     finally:
         conn.close()
@@ -118,6 +125,8 @@ def clear_location(user_id: int = Depends(get_current_user_id)):
     try:
         with conn, conn.cursor() as cur:
             cur.execute("DELETE FROM user_locations WHERE user_id = %s", (user_id,))
+            create_notification(cur, user_id, category="info", module="profile",
+                                title="Location cleared", body="Your saved location was removed.")
     finally:
         conn.close()
     return Response(status_code=204)
@@ -161,6 +170,8 @@ def update_preferences(payload: UpdatePreferencesRequest, user_id: int = Depends
                 ),
             )
             prefs = cur.fetchone()
+            create_notification(cur, user_id, category="info", module="profile",
+                                title="Preferences updated", body="Your shopping preferences were saved.")
         return PreferencesOut(**prefs)
     finally:
         conn.close()

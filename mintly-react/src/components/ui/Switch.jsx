@@ -3,7 +3,7 @@
  *
  * A plain checkbox reads to screen readers as "checked/unchecked", which is
  * right for a form field but wrong for a setting that takes effect the
- * moment it's flipped (like "SMS is on"). `role="switch"` + `aria-checked`
+ * moment it's flipped (like "Dark mode is on"). `role="switch"` + `aria-checked`
  * is the pattern browsers and screen readers expect for that instead.
  *
  * Clicking the paired <label htmlFor> also activates this, because a

@@ -8,7 +8,7 @@
  * prior turn (as plain text only; Gemini's tool calls never leave the
  * server) on each new message.
  *
- * The thread lives in memory only, like SMS Mode's simulator: it resets on
+ * The thread lives in memory only: it resets on
  * reload rather than being saved to the account, since the backend itself
  * keeps nothing between calls.
  */

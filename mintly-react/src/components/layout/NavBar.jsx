@@ -22,7 +22,6 @@ const LINKS = [
   { to: '/compare', label: 'Compare' },
   { to: '/chat', label: 'Chat' },
   { to: '/budget', label: 'Budget' },
-  { to: '/sms', label: 'SMS Mode' },
   { to: '/notifications', label: 'Notifications' },
   { to: '/profile', label: 'Profile' },
   { to: '/settings', label: 'Settings' },
