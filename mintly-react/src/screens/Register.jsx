@@ -38,6 +38,7 @@ const RULES = {
   terms: (value) => v.accepted(value),
   studentNumber: (value) => (value ? v.studentNumber(value) : null),
   residence: () => null,
+  savingsPercentage: (value) => v.percentage(value, 'Savings'),
 };
 
 export default function Register() {
@@ -48,7 +49,7 @@ export default function Register() {
 
   const [values, setValues] = useState({
     name: '', studentNumber: '', email: '', residence: '',
-    password: '', confirm: '', terms: false,
+    password: '', confirm: '', terms: false, savingsPercentage: '0',
   });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -97,6 +98,17 @@ export default function Register() {
         residence: values.residence || undefined,
         student_number: values.studentNumber.trim() || undefined,
       });
+      // RegisterRequest has nowhere to store this yet, so it rides along in
+      // localStorage to the first budget screen — see BudgetEntry.jsx.
+      try {
+        localStorage.setItem(
+          'uniwallet-savings-percentage',
+          String(Number(values.savingsPercentage) || 0),
+        );
+      } catch {
+        // Private browsing / storage disabled — the budget screen just
+        // falls back to a 0% default, same as any pre-existing account.
+      }
       toast.success(`Account created. Welcome to UniWallet, ${user.name.split(' ')[0]}.`);
       // Straight to budget setup — an empty dashboard would teach them nothing.
       navigate('/budget', { replace: true });
@@ -253,6 +265,27 @@ export default function Register() {
                 )}
               </Field>
             </fieldset>
+
+            <Field
+              id="savingsPercentage"
+              label="Save automatically"
+              hint="Choose a percentage to put aside before UniWallet works out what you can spend. You can change it on your budget page."
+              error={errors.savingsPercentage}
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  inputMode="numeric"
+                  suffix="%"
+                  placeholder="0"
+                  value={values.savingsPercentage}
+                  invalid={invalid}
+                  describedBy={describedBy}
+                  onChange={(e) => change('savingsPercentage', e.target.value.replace(/[^\d.]/g, ''))}
+                  onBlur={() => blur('savingsPercentage')}
+                />
+              )}
+            </Field>
 
             <div>
               <label className="checkbox" htmlFor="terms">

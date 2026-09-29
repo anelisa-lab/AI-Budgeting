@@ -32,9 +32,21 @@ import { useBudget, NSFAS } from '../context/BudgetContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import ListBudgetSummary from '../components/list/ListBudgetSummary.jsx';
+import BudgetPlanSheet from '../components/budget/BudgetPlanSheet.jsx';
 import { addDays, budgetToFormValues } from '../api/normalise.js';
 import { daysUntil, longDate, money, todayIso } from '../lib/format.js';
 import * as v from '../lib/validation.js';
+
+/** Registration asks for a savings percentage but has nowhere on the backend
+ * to store it yet, so it hands it off here via localStorage — see
+ * Register.jsx. Defaults to 0 for anyone who signed up before this existed. */
+function savedSignupSavings() {
+  try {
+    return localStorage.getItem('uniwallet-savings-percentage') || '0';
+  } catch {
+    return '0';
+  }
+}
 
 const PERIODS = [
   { value: '30', label: 'One month (30 days)' },
@@ -104,7 +116,7 @@ export default function BudgetEntry() {
   }
 
   const [values, setValues] = useState({
-    amount: '', payoutDate: todayIso(), periodDays: '30', savingsPercentage: '0',
+    amount: '', payoutDate: todayIso(), periodDays: '30', savingsPercentage: savedSignupSavings(),
     survivalThreshold: '',
   });
   const [errors, setErrors] = useState({});
@@ -409,6 +421,13 @@ export default function BudgetEntry() {
               </Card>
             )}
 
+            {!isEditing && preview && (
+              <div className="budget-entry__spendable">
+                <span>Left to spend after savings</span>
+                <strong className="num">{money(preview.spendable)}</strong>
+              </div>
+            )}
+
             <div className="row" style={{ gap: 'var(--s-3)' }}>
               <Button type="submit" size="lg" loading={submitting} className="grow">
                 {submitting ? 'Saving…' : isEditing ? 'Save changes' : 'Set my budget'}
@@ -427,6 +446,16 @@ export default function BudgetEntry() {
             )}
           </form>
         </Card>
+
+        {/* Editable category plan for the money left after savings — purely
+            client-side (src/lib/budgetHistory.js) until the backend has
+            somewhere to store it. Does not affect the saved budget above. */}
+        <BudgetPlanSheet
+          spendable={preview?.editing ? preview.remaining : (preview?.spendable || 0)}
+          savings={preview?.editing ? (budget?.savings_amount || 0) : (preview?.savings || 0)}
+          payoutDate={values.payoutDate}
+          periodDays={Number(values.periodDays) || 30}
+        />
 
         {/* Your shopping list against what's left (live Checkers + catalogue items) */}
         {isEditing && <ListBudgetSummary />}
