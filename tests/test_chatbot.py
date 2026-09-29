@@ -13,13 +13,32 @@ rest of this suite's "no database, no API key" approach (see README's
 Tests section).
 """
 
+import os
 from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from google.genai import _api_client as genai_api_client
 from google.genai import types
 
 from app import chatbot
+
+
+def test_get_gemini_client_enables_retries_on_transient_errors():
+    """
+    The SDK does ZERO automatic retries unless retry_options is explicitly
+    set — an unconfigured client gives up on the very first 503 "model is
+    experiencing high demand" response, which is exactly the free tier's
+    normal, expected, and supposed-to-be-transient behaviour under load.
+    """
+    chatbot._gemini_client = None
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake-key-for-testing"}):
+        client = chatbot._get_gemini_client()
+    opts = client._api_client._http_options.retry_options
+    assert opts is not None
+    resolved = genai_api_client.retry_args(opts)
+    assert resolved["stop"].max_attempt_number > 1
+    chatbot._gemini_client = None
 
 
 def test_every_tool_has_a_matching_dispatch_entry():
