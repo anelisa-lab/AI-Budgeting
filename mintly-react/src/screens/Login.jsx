@@ -92,14 +92,13 @@ export default function Login() {
     // The auth screens have no AppShell, so they carry their own <main>
     // landmark (and the id RouteFocus moves focus to).
     <main className="auth" id="main" tabIndex={-1}>
-      <div className="auth__card auth__card--wide">
+      <div className="auth__card">
         <BackendStatus compact />
         <div className="stack" style={{ justifyItems: 'center', marginBottom: 'var(--s-6)' }}>
           <Logo size={44} />
         </div>
 
-        <Card className="auth__split">
-          <div className="auth__photo" aria-hidden="true" />
+        <Card className="auth__float">
           <div className="auth__form">
           <form ref={formRef} onSubmit={submit} noValidate className="stack">
             <div>
