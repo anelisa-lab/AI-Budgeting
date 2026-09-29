@@ -419,7 +419,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* ==========================================================================
    AUTH SCREENS
    ========================================================================== */
-.auth { min-height: 100%; display: grid; place-items: center; padding: var(--s-8) var(--gutter) var(--s-16); }
+.auth {
+  min-height: 100%; display: grid; place-items: center; padding: var(--s-8) var(--gutter) var(--s-16);
+  /* Sign in / Create account: photo behind the card, darkened so the card and logo stand out. */
+  background:
+    linear-gradient(rgba(10, 21, 20, 0.35), rgba(10, 21, 20, 0.55)),
+    url('/login-bg.jpg') center / cover no-repeat fixed;
+}
+.auth .logo { background: var(--c-paper); padding: var(--s-2) var(--s-4); border-radius: var(--r-pill); box-shadow: var(--e-2); }
+.auth__card { box-shadow: var(--e-3); }
 .auth__card { width: min(100%, 480px); }
 .auth__title { font-size: var(--t-2xl); color: var(--c-forest); }
 .auth__sub { color: var(--c-muted); font-size: var(--t-sm); margin-top: var(--s-2); }
