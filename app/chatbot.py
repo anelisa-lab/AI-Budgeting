@@ -1,6 +1,6 @@
 """
-UniWallet's budgeting chatbot — a Claude-powered assistant that turns
-"I have R500 for the week" into a real, priced shopping list.
+UniWallet's budgeting chatbot — an assistant that turns "I have R500 for the
+week" into a real, priced shopping list.
 
 Every price or store name the assistant states has to come from a tool call
 made THIS turn (search_products / recommend_items / list_stores /
@@ -18,6 +18,12 @@ tool-use loop for the new turn and returns only the final assistant text.
 Tool calls are never persisted or replayed across turns — prices and the
 student's budget can change between messages, so every turn re-grounds
 itself rather than trusting what an earlier turn found.
+
+Runs on Google's Gemini API (the free-tier Flash models — see
+https://aistudio.google.com/apikey for a free GEMINI_API_KEY). Everything
+above the "provider loop" section (the system prompt, the eight tool
+functions, TOOL_DISPATCH, _run_tool) is otherwise ordinary Python calling
+into this app's own routers — only run_chat() itself talks to Gemini.
 """
 
 from __future__ import annotations
@@ -27,7 +33,6 @@ import os
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Dict, List, Optional
 
-import anthropic
 from fastapi import HTTPException
 
 from app.clock import local_today
@@ -46,33 +51,35 @@ from app.schemas import (
     ShoppingListItemIn,
 )
 
-# Cheaper models (e.g. "claude-sonnet-5-5" or "claude-haiku-4-5") work fine
-# here — the tool set is small and the task isn't deep reasoning — set
-# ANTHROPIC_CHAT_MODEL to trade quality for cost.
-MODEL = os.getenv("ANTHROPIC_CHAT_MODEL", "claude-opus-5-5")
+# gemini-flash-latest always points at Google's current free-tier Flash
+# model, so this never needs updating by hand as Gemini versions move on.
+GEMINI_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-flash-latest")
 # A full itemised weekly plan (several categories, running total, a store
 # comparison) can genuinely run long — 4096 truncated real plans mid-list.
 MAX_TOKENS = 8192
-# A model that keeps calling tools forever must not turn into an unbounded —
-# and unboundedly billed — loop. Parallel tool use means several tool calls
-# in one assistant turn only cost one iteration here, so this is generous
-# for a real multi-item shopping plan (budget check, a few category
-# searches, a store comparison, an affordability check).
+# A model that keeps calling tools forever must not turn into an unbounded
+# loop. Parallel tool use means several tool calls in one turn only cost one
+# iteration here, so this is generous for a real multi-item shopping plan
+# (budget check, a few category searches, a store comparison, an
+# affordability check).
 MAX_TOOL_ITERATIONS = 8
 
-_client: Optional[anthropic.Anthropic] = None
+_gemini_client = None
 
 
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+def _get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        from google import genai
+
+        api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set — the chatbot needs it to reach Claude."
+                "GEMINI_API_KEY is not set — the chatbot needs it to reach Gemini. "
+                "Get a free key at https://aistudio.google.com/apikey."
             )
-        _client = anthropic.Anthropic(api_key=api_key)
-    return _client
+        _gemini_client = genai.Client(api_key=api_key)
+    return _gemini_client
 
 
 def _system_prompt() -> str:
@@ -565,75 +572,93 @@ def _run_tool(user_id: int, name: str, tool_input: dict) -> dict:
         return {"error": True, "message": f"{name} failed: {exc}"}
 
 
+_TOO_MANY_STEPS = (
+    "That took more steps than I could finish in one go — could you narrow the "
+    "request (e.g. one store or one category at a time)?"
+)
+
+
+def _gemini_tools():
+    """TOOLS translated once into Gemini's function-declaration shape.
+
+    Gemini's FunctionDeclaration accepts a plain JSON Schema dict via
+    parameters_json_schema — the exact shape TOOLS already uses as
+    input_schema — so this is a rename, not a rewrite of each schema.
+    """
+    from google.genai import types
+
+    return [
+        types.Tool(
+            function_declarations=[
+                types.FunctionDeclaration(
+                    name=tool["name"],
+                    description=tool["description"],
+                    parameters_json_schema=tool["input_schema"],
+                )
+                for tool in TOOLS
+            ]
+        )
+    ]
+
+
 def run_chat(user_id: int, message: str, history: Optional[List[dict]] = None) -> dict:
     """
     Run one chat turn to completion: send `message` (plus the prior plain-text
-    `history`) to Claude, execute every tool call it makes against this
+    `history`) to Gemini, execute every tool call it makes against this
     student's real data, and return the final reply.
 
     `history` is a list of {"role": "user"|"assistant", "content": str} —
-    exactly what the client sent back last time. Claude's tool_use/tool_result
-    content blocks are never returned to the client or stored, so they are
-    never part of `history` either.
+    exactly what the client sent back last time. Gemini's own tool-call
+    content is never returned to the client or stored, so it is never part
+    of `history` either — each turn re-sends only plain text.
     """
-    client = _get_client()
-    messages: List[dict] = [{"role": h["role"], "content": h["content"]} for h in (history or [])]
-    messages.append({"role": "user", "content": message})
+    from google.genai import types
 
-    # Rendered once per turn, not once per loop iteration: the date inside it
-    # must not drift mid-turn, and rendering it once lets the ephemeral cache
-    # breakpoint below actually hit on iteration 2+ of a multi-tool-call turn
-    # (render order is tools -> system -> messages, so caching the system
-    # block's tail caches the static tool schemas ahead of it too).
-    system = [
-        {
-            "type": "text",
-            "text": _system_prompt(),
-            "cache_control": {"type": "ephemeral"},
-        }
+    history = history or []
+
+    client = _get_gemini_client()
+    # Gemini's roles are "user"/"model", not "user"/"assistant" — translated
+    # here only; the wire contract with the frontend stays "assistant".
+    contents: List[Any] = [
+        types.Content(
+            role="model" if h["role"] == "assistant" else "user",
+            parts=[types.Part.from_text(text=h["content"])],
+        )
+        for h in history
     ]
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
+
+    config = types.GenerateContentConfig(
+        system_instruction=_system_prompt(),
+        tools=_gemini_tools(),
+        max_output_tokens=MAX_TOKENS,
+    )
 
     tools_used: List[str] = []
     for _ in range(MAX_TOOL_ITERATIONS):
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=system,
-            tools=TOOLS,
-            messages=messages,
+        response = client.models.generate_content(
+            model=GEMINI_MODEL, contents=contents, config=config
         )
 
-        if response.stop_reason != "tool_use":
-            reply = "".join(b.text for b in response.content if b.type == "text").strip()
-            if response.stop_reason == "refusal":
-                reply = reply or "I can't help with that request."
-            elif not reply:
+        calls = response.function_calls or []
+        if not calls:
+            reply = (response.text or "").strip()
+            finish_reason = getattr(response.candidates[0], "finish_reason", None) if response.candidates else None
+            if not reply:
                 reply = "I couldn't put together an answer that time — could you rephrase?"
-            elif response.stop_reason == "max_tokens":
+            elif finish_reason == "MAX_TOKENS":
                 reply += "\n\n(That answer got cut off — ask me to continue for the rest.)"
             return {"reply": reply, "tools_used": tools_used}
 
-        messages.append({"role": "assistant", "content": response.content})
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            tools_used.append(block.name)
-            result = _run_tool(user_id, block.name, block.input)
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": json.dumps(result, default=str),
-                    "is_error": bool(result.get("error")),
-                }
+        # The turn that made the calls has to go back in before the results do.
+        contents.append(response.candidates[0].content)
+        result_parts = []
+        for call in calls:
+            tools_used.append(call.name)
+            result = _run_tool(user_id, call.name, dict(call.args or {}))
+            result_parts.append(
+                types.Part.from_function_response(name=call.name, response=_dump(result))
             )
-        messages.append({"role": "user", "content": tool_results})
+        contents.append(types.Content(role="tool", parts=result_parts))
 
-    return {
-        "reply": (
-            "That took more steps than I could finish in one go — could you narrow the "
-            "request (e.g. one store or one category at a time)?"
-        ),
-        "tools_used": tools_used,
-    }
+    return {"reply": _TOO_MANY_STEPS, "tools_used": tools_used}

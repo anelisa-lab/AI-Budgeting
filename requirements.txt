@@ -23,5 +23,5 @@ pytest==8.3.3
 tzdata>=2024.1
 requests>=2.31
 
-# Budgeting chatbot (app/chatbot.py, POST /chat) — Claude tool use
-anthropic>=0.40.0
+# Budgeting chatbot (app/chatbot.py, POST /chat) — Gemini tool use, free tier
+google-genai>=1.0.0

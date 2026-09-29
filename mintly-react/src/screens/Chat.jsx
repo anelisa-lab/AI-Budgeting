@@ -5,7 +5,7 @@
  * R400 for the week" in, an itemised plan grounded in the app's own live
  * and catalogue prices out. The backend is stateless per call, so this
  * screen is the one place that keeps the conversation — it resends every
- * prior turn (as plain text only; Claude's tool calls never leave the
+ * prior turn (as plain text only; Gemini's tool calls never leave the
  * server) on each new message.
  *
  * The thread lives in memory only, like SMS Mode's simulator: it resets on
