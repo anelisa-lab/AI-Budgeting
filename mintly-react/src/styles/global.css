@@ -805,3 +805,59 @@ html[data-contrast='high'] .nav {
 }
 
 body { overflow-x: hidden; }
+
+/* Live map (components/map/LocationMap.jsx) — Profile's location picker and
+   Search's "Stores near you". Leaflet needs an element with a real height
+   before it initialises, which the component sets inline; this is everything
+   around that box. */
+.location-map {
+  width: 100%;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid var(--c-line);
+  background: var(--c-cream-2);
+}
+/* Leaflet's own CSS sets a lower z-index baseline that this app's cards and
+   header don't expect; keeping it inside its own stacking context stops its
+   attribution control and zoom buttons drifting above a modal or the nav. */
+.location-map .leaflet-pane,
+.location-map .leaflet-control { z-index: 0; }
+.location-map .leaflet-top,
+.location-map .leaflet-bottom { z-index: 1; }
+
+.map-pin--store {
+  display: grid; place-items: center;
+  font-size: 18px; line-height: 1;
+  background: var(--c-paper);
+  border: 2px solid var(--c-forest);
+  border-radius: var(--r-pill) var(--r-pill) var(--r-pill) 2px;
+  box-shadow: var(--e-1);
+  transform: rotate(45deg);
+}
+.map-pin--store span { transform: rotate(-45deg); }
+
+.address-search { display: flex; gap: var(--s-2); flex-wrap: wrap; align-items: flex-end; }
+.address-search .field { flex: 1 1 220px; margin: 0; }
+.address-results {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: var(--s-1);
+  max-height: 220px; overflow-y: auto;
+  border: 1px solid var(--c-line); border-radius: var(--r-md);
+}
+.address-results button {
+  width: 100%; text-align: left; padding: var(--s-2) var(--s-3);
+  background: none; border: 0; border-bottom: 1px solid var(--c-line);
+  font-size: var(--t-sm); color: var(--c-ink); cursor: pointer;
+}
+.address-results li:last-child button { border-bottom: 0; }
+.address-results button:hover, .address-results button:focus-visible { background: var(--c-cream-2); }
+
+.nearby-stores__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
+.nearby-store {
+  display: flex; justify-content: space-between; align-items: center; gap: var(--s-3);
+  padding: var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md);
+}
+.nearby-store__distance {
+  font-family: var(--font-display); font-weight: var(--fw-extra);
+  color: var(--c-forest); white-space: nowrap;
+}

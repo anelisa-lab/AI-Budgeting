@@ -716,6 +716,31 @@ export function shoppingListFromApi(payload) {
 
 /* --------------------------------------------------------------- location */
 
+/** StoreNearbyOut — one physical store from GET /search/stores/nearby. */
+export function nearbyStoreFromApi(s) {
+  return {
+    store_id: s.store_id,
+    store_name: s.store_name,
+    store_type: s.store_type,
+    address: s.address || null,
+    latitude: num(s.latitude),
+    longitude: num(s.longitude),
+    distance_km: num(s.distance_km),
+    delivery_available: s.delivery_available ?? null,
+    collection_available: s.collection_available ?? null,
+  };
+}
+
+/** NearbyStoresResponse { results, count, max_distance_km, origin }. */
+export function nearbyStoresFromApi(payload) {
+  return {
+    results: Array.isArray(payload?.results) ? payload.results.map(nearbyStoreFromApi) : [],
+    count: num(payload?.count, 0),
+    max_distance_km: num(payload?.max_distance_km),
+    origin: locationFromApi(payload?.origin),
+  };
+}
+
 /** LocationOut, or null when the student hasn't set one. */
 export function locationFromApi(l) {
   if (!l || l.latitude == null || l.longitude == null) return null;

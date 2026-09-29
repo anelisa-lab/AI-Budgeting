@@ -19,17 +19,19 @@
  * free text a student could misspell.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert, Button, Card, Eyebrow, Field, Input, Select,
 } from '../components/ui/index.js';
+import LocationMap from '../components/map/LocationMap.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import * as v from '../lib/validation.js';
 import { CATALOGUE_CATEGORIES, canonicalCategory } from '../lib/categories.js';
 import { fullDate } from '../lib/format.js';
+import { geocodeAddress, reverseGeocode } from '../lib/geocode.js';
 import { RESIDENCES } from '../lib/residences.js';
 
 /**
@@ -56,6 +58,13 @@ const toggle = (list, value) => (list.includes(value)
   ? list.filter((x) => x !== value)
   : [...list, value]);
 
+/** A Nominatim result's full "123 Smith St, Suburb, City, Province, Country,
+ *  Postcode, Country" down to a name short enough to fit the label field. */
+function shortLabel(displayName) {
+  const parts = String(displayName || '').split(',').map((p) => p.trim()).filter(Boolean);
+  return parts.slice(0, 2).join(', ').slice(0, 100);
+}
+
 export default function Profile() {
   const {
     token, user, preferences, updateProfile, updatePreferences, reloadPreferences,
@@ -73,11 +82,25 @@ export default function Profile() {
   // Where the student is — distance search, "near me", proximity, taxi fares.
   const [location, setLocationState] = useState(undefined); // undefined = loading
   const [locationError, setLocationError] = useState(null);
-  const [showManual, setShowManual] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [savingLocation, setSavingLocation] = useState(false);
+
+  // "Insert your location" — a live map: search an address, then fine-tune
+  // the dropped pin by dragging it (or tapping the map) before saving.
+  const [addressQuery, setAddressQuery] = useState('');
+  const [addressResults, setAddressResults] = useState([]);
+  const [addressSearching, setAddressSearching] = useState(false);
+  const [addressError, setAddressError] = useState(null);
+  const [pickedLocation, setPickedLocation] = useState(null); // { lat, lng } | null
+  const [pickedLabel, setPickedLabel] = useState('');
+  const addressAbortRef = useRef(null);
+
+  // Fallback for when the address search can't find the spot — the same
+  // "paste lat/lng from Google Maps" flow this screen always had.
+  const [showCoordsFallback, setShowCoordsFallback] = useState(false);
   const [coordsText, setCoordsText] = useState('');
   const [coordsError, setCoordsError] = useState(null);
   const [locationLabel, setLocationLabel] = useState('');
-  const [savingLocation, setSavingLocation] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,9 +115,15 @@ export default function Profile() {
     setLocationError(null);
     try {
       setLocationState(await api.profile.setLocation(token, coords));
-      setShowManual(false);
+      setShowPicker(false);
       setCoordsText('');
       setLocationLabel('');
+      setShowCoordsFallback(false);
+      setPickedLocation(null);
+      setPickedLabel('');
+      setAddressQuery('');
+      setAddressResults([]);
+      setAddressError(null);
       toast.success('Location saved — distances and taxi fares now use it.');
     } catch (err) {
       setLocationError(err.message || 'Could not save your location.');
@@ -117,16 +146,79 @@ export default function Profile() {
     });
   }
 
+  /** Opens the picker, seeded with the location already saved (if any). */
+  function openPicker() {
+    setShowPicker((open) => {
+      const next = !open;
+      if (next) {
+        setPickedLocation(location ? { lat: location.latitude, lng: location.longitude } : null);
+        setPickedLabel(location?.label || '');
+        setAddressQuery('');
+        setAddressResults([]);
+        setAddressError(null);
+        setCoordsError(null);
+        setLocationError(null);
+      }
+      return next;
+    });
+  }
+
+  /**
+   * Address -> map, via OpenStreetMap's free Nominatim geocoder
+   * (lib/geocode.js). A single match drops the pin straight away; more than
+   * one shows a pick list, since "Steve Biko Road" alone matches several
+   * towns. Rate-limited to one lookup per submit — never as-you-type.
+   */
+  async function searchAddress(event) {
+    event.preventDefault();
+    addressAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    addressAbortRef.current = ctrl;
+    setAddressSearching(true);
+    setAddressError(null);
+    setAddressResults([]);
+    try {
+      const results = await geocodeAddress(addressQuery, { signal: ctrl.signal });
+      if (ctrl.signal.aborted) return;
+      if (results.length === 1) choosePlace(results[0]);
+      else setAddressResults(results);
+    } catch (err) {
+      if (err?.name === 'AbortError' || ctrl.signal.aborted) return;
+      setAddressError(err.message || 'Could not search for that address.');
+    } finally {
+      if (!ctrl.signal.aborted) setAddressSearching(false);
+    }
+  }
+
+  function choosePlace(place) {
+    setPickedLocation({ lat: place.latitude, lng: place.longitude });
+    setPickedLabel(shortLabel(place.label) || 'My location');
+    setAddressResults([]);
+  }
+
+  function savePickedLocation(event) {
+    event.preventDefault();
+    if (!pickedLocation) return;
+    const label = pickedLabel.trim().replace(/\s+/g, ' ');
+    if (label.length > 100) { setAddressError('Keep the name under 100 characters.'); return; }
+    saveLocation({ latitude: pickedLocation.lat, longitude: pickedLocation.lng, label: label || 'My location' });
+  }
+
   function shareDeviceLocation() {
     if (!navigator.geolocation) {
       setLocationError('This browser cannot share its location. Use "Insert your location" instead.');
       return;
     }
     setSavingLocation(true);
+    setLocationError(null);
     navigator.geolocation.getCurrentPosition(
-      (pos) => saveLocation({
-        latitude: pos.coords.latitude, longitude: pos.coords.longitude, label: 'My current location',
-      }),
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        // Best-effort only: a failed/slow reverse lookup still saves the
+        // device's real coordinates, just under a generic label.
+        const place = await reverseGeocode(latitude, longitude).catch(() => null);
+        saveLocation({ latitude, longitude, label: (place && shortLabel(place)) || 'My current location' });
+      },
       () => {
         setSavingLocation(false);
         setLocationError('Location permission was not given. Use "Insert your location" instead.');
@@ -389,9 +481,16 @@ export default function Profile() {
             {location === undefined ? (
               <p style={{ fontSize: 'var(--t-sm)', color: 'var(--c-muted)' }}>Loading…</p>
             ) : location ? (
-              <Alert tone="success" title={`Saved: ${location.label}`}>
-                Search can now filter by distance and Compare adds taxi fares for far stores.
-              </Alert>
+              <>
+                <Alert tone="success" title={`Saved: ${location.label}`}>
+                  Search can now filter by distance and Compare adds taxi fares for far stores.
+                </Alert>
+                <LocationMap
+                  center={[location.latitude, location.longitude]}
+                  marker={{ lat: location.latitude, lng: location.longitude }}
+                  height={180}
+                />
+              </>
             ) : (
               <Alert tone="info" title="No location saved yet">
                 Distance filters and taxi fares stay off until you add one.
@@ -401,11 +500,11 @@ export default function Profile() {
             <div className="row" style={{ gap: 'var(--s-3)', flexWrap: 'wrap' }}>
               <Button
                 type="button"
-                variant={showManual ? 'ghost' : undefined}
-                onClick={() => { setShowManual((open) => !open); setCoordsError(null); setLocationError(null); }}
+                variant={showPicker ? 'ghost' : undefined}
+                onClick={openPicker}
                 disabled={savingLocation}
-                aria-expanded={showManual}
-                aria-controls="profile-manual-location"
+                aria-expanded={showPicker}
+                aria-controls="profile-location-picker"
               >
                 Insert your location
               </Button>
@@ -418,50 +517,127 @@ export default function Profile() {
                 </Button>
               )}
             </div>
-            {showManual && (
-              <form
-                id="profile-manual-location"
-                onSubmit={saveManualLocation}
-                className="stack"
-                noValidate
-              >
-                <Field
-                  id="profile-coords"
-                  label="Latitude and longitude"
-                  hint="In Google Maps, right-click your spot and tap the numbers to copy them, then paste here."
-                  error={coordsError}
-                  required
-                >
-                  {({ id, describedBy, invalid }) => (
-                    <Input
-                      id={id}
-                      inputMode="text"
-                      placeholder="-29.8547, 31.0084"
-                      value={coordsText}
-                      invalid={invalid}
-                      describedBy={describedBy}
-                      onChange={(e) => { setCoordsText(e.target.value); setCoordsError(null); }}
-                    />
-                  )}
-                </Field>
-                <Field id="profile-location-label" label="Name this place" hint="Optional, e.g. “My digs”.">
-                  {({ id, describedBy }) => (
-                    <Input
-                      id={id}
-                      maxLength={100}
-                      placeholder="My location"
-                      value={locationLabel}
-                      describedBy={describedBy}
-                      onChange={(e) => setLocationLabel(e.target.value)}
-                    />
-                  )}
-                </Field>
-                <div>
-                  <Button type="submit" loading={savingLocation} disabled={!coordsText.trim()}>
-                    Save location
+
+            {showPicker && (
+              <div id="profile-location-picker" className="stack stack--tight">
+                <form className="address-search" onSubmit={searchAddress} noValidate>
+                  <Field
+                    id="profile-address"
+                    label="Search for your address"
+                    hint="A street, residence or landmark — then fine-tune the pin on the map."
+                    error={addressError}
+                  >
+                    {({ id, describedBy, invalid }) => (
+                      <Input
+                        id={id}
+                        placeholder="e.g. 41 Steve Biko Rd, Durban"
+                        value={addressQuery}
+                        invalid={invalid}
+                        describedBy={describedBy}
+                        onChange={(e) => { setAddressQuery(e.target.value); setAddressError(null); }}
+                      />
+                    )}
+                  </Field>
+                  <Button type="submit" loading={addressSearching} disabled={!addressQuery.trim()}>
+                    Find on map
                   </Button>
-                </div>
-              </form>
+                </form>
+
+                {addressResults.length > 0 && (
+                  <ul className="address-results" aria-label="Matching addresses">
+                    {addressResults.map((place, i) => (
+                      // eslint-disable-next-line react/no-array-index-key
+                      <li key={i}>
+                        <button type="button" onClick={() => choosePlace(place)}>{place.label}</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <LocationMap
+                  center={pickedLocation
+                    ? [pickedLocation.lat, pickedLocation.lng]
+                    : (location ? [location.latitude, location.longitude] : undefined)}
+                  marker={pickedLocation}
+                  onMarkerChange={setPickedLocation}
+                  height={260}
+                />
+                <p className="field__hint">Drag the pin, or tap anywhere on the map, to fine-tune the spot.</p>
+
+                {pickedLocation && (
+                  <form onSubmit={savePickedLocation} className="stack stack--tight" noValidate>
+                    <Field id="profile-picked-label" label="Name this place" hint="Optional, e.g. “My digs”.">
+                      {({ id, describedBy }) => (
+                        <Input
+                          id={id}
+                          maxLength={100}
+                          placeholder="My location"
+                          value={pickedLabel}
+                          describedBy={describedBy}
+                          onChange={(e) => setPickedLabel(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                    <div>
+                      <Button type="submit" loading={savingLocation}>Save this location</Button>
+                    </div>
+                  </form>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowCoordsFallback((v) => !v)}
+                  aria-expanded={showCoordsFallback}
+                  aria-controls="profile-manual-location"
+                  style={{
+                    justifySelf: 'start', background: 'none', border: 0, padding: 0,
+                    color: 'var(--c-forest)', textDecoration: 'underline', cursor: 'pointer', fontSize: 'var(--t-sm)',
+                  }}
+                >
+                  {showCoordsFallback ? 'Hide coordinate entry' : "Can't find it on the map? Enter coordinates instead"}
+                </button>
+
+                {showCoordsFallback && (
+                  <form id="profile-manual-location" onSubmit={saveManualLocation} className="stack stack--tight" noValidate>
+                    <Field
+                      id="profile-coords"
+                      label="Latitude and longitude"
+                      hint="In Google Maps, right-click your spot and tap the numbers to copy them, then paste here."
+                      error={coordsError}
+                      required
+                    >
+                      {({ id, describedBy, invalid }) => (
+                        <Input
+                          id={id}
+                          inputMode="text"
+                          placeholder="-29.8547, 31.0084"
+                          value={coordsText}
+                          invalid={invalid}
+                          describedBy={describedBy}
+                          onChange={(e) => { setCoordsText(e.target.value); setCoordsError(null); }}
+                        />
+                      )}
+                    </Field>
+                    <Field id="profile-location-label" label="Name this place" hint="Optional, e.g. “My digs”.">
+                      {({ id, describedBy }) => (
+                        <Input
+                          id={id}
+                          maxLength={100}
+                          placeholder="My location"
+                          value={locationLabel}
+                          describedBy={describedBy}
+                          onChange={(e) => setLocationLabel(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                    <div>
+                      <Button type="submit" loading={savingLocation} disabled={!coordsText.trim()}>
+                        Save location
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </div>
             )}
           </div>
         </Card>

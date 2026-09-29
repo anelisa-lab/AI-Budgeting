@@ -298,6 +298,21 @@ export function search(token, params = {}, opts = {}) {
   return request('/search', { token, query: params, ...opts });
 }
 
+/**
+ * GET /search/stores/nearby  ->  NearbyStoresResponse
+ *   { results: StoreNearbyOut[], count, max_distance_km, origin: LocationOut }
+ * REQUIRES a Bearer token and a saved location (PUT /profile/location) — 400
+ * with a "set your location" detail when there isn't one (Phase 5).
+ *
+ * Query parameters: max_distance_km (defaults to the student's own
+ * preferences.max_distance_km, then 15 km), limit 1..100 (default 20).
+ */
+export function nearbyStores(token, { max_distance_km, limit } = {}, opts = {}) {
+  // buildQuery (http.js) drops null/undefined entries, so an omitted param
+  // reaches the backend as "not sent" and the server picks its own default.
+  return request('/search/stores/nearby', { token, query: { max_distance_km, limit }, ...opts });
+}
+
 /* =======================================================================
  * LIVE STORE SEARCH  —  app/routers/live_search.py   ("/live-search")
  * =====================================================================*/

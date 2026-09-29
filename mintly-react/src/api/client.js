@@ -37,6 +37,7 @@ import {
   recommendationsFromApi,
   searchResponseFromApi,
   liveSearchFromApi,
+  nearbyStoresFromApi,
   shoppingListFromApi,
   notificationPreferencesFromApi,
   EMPTY_LIST,
@@ -363,6 +364,22 @@ export const search = {
    */
   async live(token, query, opts = {}) {
     return liveSearchFromApi(await endpoints.liveSearch(token, query, opts));
+  },
+
+  /**
+   * GET /search/stores/nearby — physical stores near the student's saved
+   * location, nearest first. The backend 400s when there is no saved
+   * location yet; that is not an error here, it is the "add your location"
+   * empty state, so it becomes null — same 404-means-null pattern as
+   * budgets.getCurrent. Any OTHER failure is rethrown.
+   */
+  async nearby(token, params = {}, opts = {}) {
+    try {
+      return nearbyStoresFromApi(await endpoints.nearbyStores(token, params, opts));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) return null;
+      throw err;
+    }
   },
 
   /**
