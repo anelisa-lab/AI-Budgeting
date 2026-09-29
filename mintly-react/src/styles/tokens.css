@@ -44,7 +44,7 @@
   --c-warning:      #2f5653;
   --c-warning-bg:   #dbece8;
   --c-danger-block: #f6b1a8;  /* light red surface for warnings (badges, alerts) */
-  --c-on-danger:    #5c1410;  /* dark text on that red — about 8:1 */
+  --c-on-danger:    #000000;  /* black text on that red — about 12:1 */
   --c-danger:       #294644;
   --c-danger-bg:    #dbece8;
   --c-info:         #376a66;
@@ -162,7 +162,7 @@ html[data-theme='dark'] {
   --c-warning:      #d8e9e5;
   --c-warning-bg:   #1d302e;
   --c-danger-block: #f6b1a8;
-  --c-on-danger:    #5c1410;
+  --c-on-danger:    #000000;
   --c-danger:       #cfe8e3;
   --c-danger-bg:    #1d302e;
   --c-info:         #7db8af;
