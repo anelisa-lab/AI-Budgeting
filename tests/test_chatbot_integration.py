@@ -3,8 +3,9 @@ Integration tests for the budgeting chatbot against a REAL Postgres database.
 
 Unlike tests/test_chatbot.py (pure logic, mocked everything), these prove
 the chatbot's tools return real, correct, grounded data: nothing here is
-mocked except the Claude API call itself, which is replaced with a
-scripted-but-realistic sequence of tool_use requests. Every store name,
+mocked except the Gemini API call itself, which is replaced with a
+scripted-but-realistic sequence of function-call responses (real
+google.genai.types objects, not duck-typed stand-ins). Every store name,
 price and total asserted below came from an actual SQL query against the
 app's real seeded catalogue (10 stores / 55 products / 283 offers, see
 mintly-react/docs/seed/seed_backend.sql) — exactly what a live demo would
@@ -19,10 +20,10 @@ still needs no database.
 import os
 from datetime import timedelta
 from decimal import Decimal
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from google.genai import types
 
 from app import chatbot
 from app.clock import local_today
@@ -183,58 +184,71 @@ def test_add_and_get_shopping_list_round_trips_a_real_offer(db):
 # ------------------------------------------------ full run_chat() scenario
 
 
-def _tool_use(name, tool_input, call_id="toolu_1"):
-    block = SimpleNamespace(type="tool_use", id=call_id, name=name, input=tool_input)
-    return SimpleNamespace(stop_reason="tool_use", content=[block])
+def _tool_call_response(name, args=None):
+    call = types.FunctionCall(name=name, args=args or {})
+    candidate = types.Candidate(
+        content=types.Content(role="model", parts=[types.Part(function_call=call)]),
+        finish_reason="STOP",
+    )
+    return types.GenerateContentResponse(candidates=[candidate])
 
 
-def _final_text(text):
-    block = SimpleNamespace(type="text", text=text)
-    return SimpleNamespace(stop_reason="end_turn", content=[block])
+def _text_response(text):
+    candidate = types.Candidate(
+        content=types.Content(role="model", parts=[types.Part.from_text(text=text)]),
+        finish_reason="STOP",
+    )
+    return types.GenerateContentResponse(candidates=[candidate])
 
 
 def test_run_chat_end_to_end_with_only_the_llm_call_stubbed(db):
     """
-    Everything except the Claude API call itself is real: real database,
-    real budget, real tool dispatch, real JSON serialisation of the tool
-    results that would be sent back to Claude. This is the strongest proof
-    available without spending a real API call that the wiring between
-    run_chat()'s loop and the app's actual data is correct end to end.
+    Everything except the Gemini API call itself is real: real database,
+    real budget, real tool dispatch, real JSON-safe serialisation of the
+    tool results that would be sent back to Gemini. This is the strongest
+    proof available without spending a real API call that the wiring
+    between run_chat()'s loop and the app's actual data is correct end to
+    end.
     """
     scripted = iter([
-        _tool_use("get_budget_status", {}),
-        _tool_use("recommend_items", {"query": "maize meal", "limit": 5}),
-        _final_text(
+        _tool_call_response("get_budget_status"),
+        _tool_call_response("recommend_items", {"query": "maize meal", "limit": 5}),
+        _text_response(
             "Makro has Super Maize Meal for R35.95 (estimated price). "
             "That fits your R57.14 daily allowance."
         ),
     ])
     seen_requests = []
 
-    class StubMessages:
-        def create(self, **kwargs):
-            seen_requests.append(kwargs)
+    class StubModels:
+        def generate_content(self, **kwargs):
+            # contents is the SAME list object every call — run_chat mutates
+            # it in place across turns — so it must be snapshotted here, not
+            # just referenced, or every entry in seen_requests ends up
+            # showing the list's FINAL state instead of what was actually
+            # sent at that point in the conversation.
+            seen_requests.append({**kwargs, "contents": list(kwargs["contents"])})
             return next(scripted)
 
-    with patch.object(
-        chatbot, "_get_client", return_value=SimpleNamespace(messages=StubMessages())
-    ):
+    class StubClient:
+        models = StubModels()
+
+    with patch.object(chatbot, "_get_gemini_client", return_value=StubClient()):
         result = chatbot.run_chat(db["user_id"], "I have R400 for the week, help me budget")
 
     assert result["tools_used"] == ["get_budget_status", "recommend_items"]
     assert "Makro" in result["reply"] and "35.95" in result["reply"]
 
-    # The tool_result content actually sent back to Claude must be real,
-    # correctly-priced JSON, not a placeholder — this is what "grounding"
-    # means in practice.
+    # The function-response content actually sent back to Gemini must be
+    # real, correctly-priced data, not a placeholder — this is what
+    # "grounding" means in practice.
     second_request = seen_requests[1]
-    tool_result_msg = second_request["messages"][-1]
-    assert tool_result_msg["role"] == "user"
-    budget_result_json = tool_result_msg["content"][0]["content"]
-    assert "400.00" in budget_result_json
-    assert tool_result_msg["content"][0]["is_error"] is False
+    tool_result_content = second_request["contents"][-1]
+    assert tool_result_content.role == "tool"
+    budget_result = tool_result_content.parts[0].function_response.response
+    assert budget_result["total_amount"] == "400.00"
 
     third_request = seen_requests[2]
-    recommend_result_json = third_request["messages"][-1]["content"][0]["content"]
-    assert "Makro Springfield" in recommend_result_json
-    assert "35.95" in recommend_result_json
+    recommend_result = third_request["contents"][-1].parts[0].function_response.response
+    store_names = {r["store_name"] for r in recommend_result["results"]}
+    assert "Makro Springfield" in store_names

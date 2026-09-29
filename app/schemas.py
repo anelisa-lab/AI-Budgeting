@@ -717,7 +717,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     # Prior plain-text turns from this conversation, oldest first. The
-    # backend never stores or replays Claude's tool calls — each turn
+    # backend never stores or replays Gemini's tool calls — each turn
     # re-grounds itself against live prices and the student's current budget.
     history: List[ChatMessage] = Field(default_factory=list, max_length=40)
 
