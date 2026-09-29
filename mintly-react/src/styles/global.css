@@ -17,7 +17,11 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--c-page);
+  /* Tech photo behind everything, washed with the page colour so the headings
+     and text that sit directly on it stay readable. */
+  background:
+    linear-gradient(color-mix(in srgb, var(--c-page) 68%, transparent), color-mix(in srgb, var(--c-page) 68%, transparent)),
+    var(--c-page) url('/app-bg.jpg') center / cover fixed no-repeat;
   color: var(--c-ink);
   font-family: var(--font-sans);
   font-size: var(--t-base);
