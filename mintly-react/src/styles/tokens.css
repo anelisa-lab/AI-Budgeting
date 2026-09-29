@@ -43,8 +43,8 @@
   --c-success-bg:   #dbece8;
   --c-warning:      #2f5653;
   --c-warning-bg:   #dbece8;
-  --c-danger:       #294644;
-  --c-danger-bg:    #dbece8;
+  --c-danger:       #b3261e;  /* warnings: badges, alerts, over-budget bars */
+  --c-danger-bg:    #fde8e6;
   --c-info:         #376a66;
   --c-info-bg:      #dbece8;
 
@@ -160,8 +160,8 @@ html[data-theme='dark'] {
   --c-success-bg:   #1d302e;
   --c-warning:      #d8e9e5;
   --c-warning-bg:   #1d302e;
-  --c-danger:       #ffe08a;  /* warm gold, not red, in the dark theme */
-  --c-danger-bg:    #3d3516;
+  --c-danger:       #ffb4a8;
+  --c-danger-bg:    #4a1f1c;
   --c-info:         #7db8af;
   --c-info-bg:      #1d302e;
 
