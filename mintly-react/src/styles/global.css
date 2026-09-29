@@ -35,10 +35,15 @@ body {
    wash because their form floats straight on it. */
 body { --bg-wash: 22%; }
 body:has(.auth) { --bg-wash: 68%; }
-/* Page headings sit directly on the photo: a soft halo keeps them readable. */
-.app-body h1, .app-body .eyebrow {
-  text-shadow: 0 0 10px color-mix(in srgb, var(--c-page) 95%, transparent), 0 0 22px color-mix(in srgb, var(--c-page) 80%, transparent);
+/* Page headings sit directly on the photo, so they are white with a tight
+   shadow (no glow) for contrast. The inline colours are overridden on purpose. */
+.app-body h1,
+.app-body h1 + p,
+.app-body .eyebrow:not(.eyebrow--on-dark) {
+  color: #ffffff !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
 }
+.app-body .eyebrow:not(.eyebrow--on-dark)::before { background: #ffffff; }
 
 h1, h2, h3, h4 {
   font-family: var(--font-display);
