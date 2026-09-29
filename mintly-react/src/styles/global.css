@@ -20,7 +20,7 @@ body {
   /* Tech photo behind everything, washed with the page colour so the headings
      and text that sit directly on it stay readable. */
   background:
-    linear-gradient(color-mix(in srgb, var(--c-page) 68%, transparent), color-mix(in srgb, var(--c-page) 68%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--c-page) var(--bg-wash), transparent), color-mix(in srgb, var(--c-page) var(--bg-wash), transparent)),
     var(--c-page) url('/app-bg.jpg') center / cover fixed no-repeat;
   color: var(--c-ink);
   font-family: var(--font-sans);
@@ -29,6 +29,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+
+/* How much of the page colour is washed over the background photo. The app
+   screens show the photo almost as-is; Sign in / Create account keep a heavier
+   wash because their form floats straight on it. */
+body { --bg-wash: 22%; }
+body:has(.auth) { --bg-wash: 68%; }
+/* Page headings sit directly on the photo: a soft halo keeps them readable. */
+.app-body h1, .app-body .eyebrow {
+  text-shadow: 0 0 10px color-mix(in srgb, var(--c-page) 95%, transparent), 0 0 22px color-mix(in srgb, var(--c-page) 80%, transparent);
+}
 
 h1, h2, h3, h4 {
   font-family: var(--font-display);
