@@ -14,6 +14,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, Eyebrow, Input } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import LivePrices from '../components/search/LivePrices.jsx';
+import NearbyStores from '../components/search/NearbyStores.jsx';
 
 export default function Search() {
   const { token } = useAuth();
@@ -52,6 +53,8 @@ export default function Search() {
         />
         <Button type="submit">Search</Button>
       </form>
+
+      <NearbyStores token={token} />
 
       <LivePrices token={token} query={q} />
     </div>

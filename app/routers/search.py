@@ -7,7 +7,9 @@ from app.database import get_connection
 from app.dependencies import get_current_user_id
 from app.geo import DEFAULT_MAX_DISTANCE_KM, EARTH_RADIUS_KM, fetch_user_location
 from app.query_parser import parse_query, word_pattern
-from app.schemas import ParsedQueryOut, SearchResponse, SearchResultItem
+from app.schemas import (
+    LocationOut, NearbyStoresResponse, ParsedQueryOut, SearchResponse, SearchResultItem, StoreNearbyOut,
+)
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -369,4 +371,74 @@ def search_offers(
         next_offset=offset + limit if has_more else None,
         message=message,
         parsed=ParsedQueryOut(**parsed.to_constraints()) if parsed else None,
+    )
+
+
+# Phase 5 addition — "stores near you" on the Search screen.
+# GET /search/stores/nearby
+#   max_distance_km   defaults to the student's own preferences.max_distance_km,
+#                      then geo.DEFAULT_MAX_DISTANCE_KM, same fallback order as
+#                      "near me" in q above
+#   limit              1..100 (default 20)
+# Needs a saved location (PUT /profile/location) — 400 with a message telling
+# the student how to fix that, same as the distance filter/sort above, rather
+# than an empty list that reads as "there are no stores nearby".
+# Online-only stores are never "near" anyone, so they are left out even
+# though they always fail the coordinate check anyway.
+@router.get("/stores/nearby", response_model=NearbyStoresResponse)
+def stores_nearby(
+    max_distance_km: Optional[float] = Query(default=None, gt=0, le=500),
+    limit: int = Query(default=20, ge=1, le=100),
+    user_id: int = Depends(get_current_user_id),
+):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT latitude, longitude, label, updated_at FROM user_locations
+                   WHERE user_id = %s ORDER BY is_default DESC, id ASC LIMIT 1""",
+                (user_id,),
+            )
+            loc_row = cur.fetchone()
+            if not loc_row:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Set your location in Profile to see stores near you.",
+                )
+            location = (float(loc_row["latitude"]), float(loc_row["longitude"]))
+
+            if max_distance_km is None:
+                cur.execute("SELECT max_distance_km FROM preferences WHERE user_id = %s", (user_id,))
+                pref = cur.fetchone()
+                max_distance_km = (
+                    float(pref["max_distance_km"])
+                    if pref and pref["max_distance_km"] else DEFAULT_MAX_DISTANCE_KM
+                )
+
+            # _distance_sql() hardcodes the "s." alias (it is shared with the
+            # product search above, whose FROM joins stores AS s) — so this
+            # query must alias stores the same way, not select from it bare.
+            distance = _distance_sql(location)
+            cur.execute(
+                f"""SELECT s.id AS store_id, s.name AS store_name, s.store_type, s.address,
+                           s.latitude, s.longitude,
+                           ROUND(({distance})::numeric, 2)::float AS distance_km,
+                           s.delivery_available, s.collection_available
+                    FROM stores s
+                    WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                      AND s.store_type <> 'online'
+                      AND {distance} <= %s
+                    ORDER BY distance_km ASC, s.name ASC
+                    LIMIT %s""",
+                [max_distance_km, limit],
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return NearbyStoresResponse(
+        results=[StoreNearbyOut(**row) for row in rows],
+        count=len(rows),
+        max_distance_km=max_distance_km,
+        origin=LocationOut(**loc_row),
     )

@@ -227,6 +227,26 @@ class SearchResponse(BaseModel):
     parsed: Optional["ParsedQueryOut"] = None
 
 
+class StoreNearbyOut(BaseModel):
+    """One physical/mixed store, with its distance from the student's saved location."""
+    store_id: int
+    store_name: str
+    store_type: str
+    address: Optional[str] = None
+    latitude: Decimal
+    longitude: Decimal
+    distance_km: float
+    delivery_available: Optional[bool] = None
+    collection_available: Optional[bool] = None
+
+
+class NearbyStoresResponse(BaseModel):
+    results: List[StoreNearbyOut]
+    count: int
+    max_distance_km: float
+    origin: LocationOut
+
+
 # -------------------------
 # True cost (Member 6)
 # -------------------------
