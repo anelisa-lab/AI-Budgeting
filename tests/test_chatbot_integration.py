@@ -244,7 +244,11 @@ def test_run_chat_end_to_end_with_only_the_llm_call_stubbed(db):
     # "grounding" means in practice.
     second_request = seen_requests[1]
     tool_result_content = second_request["contents"][-1]
-    assert tool_result_content.role == "tool"
+    # "tool" is rejected by the live API (confirmed against a real 400) even
+    # though it's accepted client-side by the SDK's own type constructor —
+    # function results go back as role="user", same as every other role
+    # Gemini actually validates.
+    assert tool_result_content.role == "user"
     budget_result = tool_result_content.parts[0].function_response.response
     assert budget_result["total_amount"] == "400.00"
 
