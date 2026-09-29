@@ -659,6 +659,9 @@ def run_chat(user_id: int, message: str, history: Optional[List[dict]] = None) -
             result_parts.append(
                 types.Part.from_function_response(name=call.name, response=_dump(result))
             )
-        contents.append(types.Content(role="tool", parts=result_parts))
+        # "tool" is accepted by the SDK's own type constructor (some official
+        # examples use it) but the live API rejects it — confirmed against a
+        # real 400 whose own error names the accepted set, "user" included.
+        contents.append(types.Content(role="user", parts=result_parts))
 
     return {"reply": _TOO_MANY_STEPS, "tools_used": tools_used}
