@@ -43,6 +43,8 @@
   --c-success-bg:   #dbece8;
   --c-warning:      #2f5653;
   --c-warning-bg:   #dbece8;
+  --c-danger-block: #b3261e;  /* solid red surface for warnings (badges, alerts) */
+  --c-on-danger:    #ffffff;  /* text on that red — 6.5:1 */
   --c-danger:       #294644;
   --c-danger-bg:    #dbece8;
   --c-info:         #376a66;
@@ -159,6 +161,8 @@ html[data-theme='dark'] {
   --c-success-bg:   #1d302e;
   --c-warning:      #d8e9e5;
   --c-warning-bg:   #1d302e;
+  --c-danger-block: #b3261e;
+  --c-on-danger:    #ffffff;
   --c-danger:       #cfe8e3;
   --c-danger-bg:    #1d302e;
   --c-info:         #7db8af;

@@ -325,7 +325,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .badge--accent  { background: var(--c-butter);  color: var(--c-on-butter); }
 .badge--success { background: var(--c-success-bg); color: var(--c-success); }
 .badge--warning { background: var(--c-warning-bg); color: var(--c-warning); }
-.badge--danger  { background: var(--c-danger-bg);  color: var(--c-danger); }
+.badge--danger  { background: var(--c-danger-block); color: var(--c-on-danger); }
 
 /* ==========================================================================
    PROGRESS
@@ -339,7 +339,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: width 0.45s var(--ease), background var(--dur-base) var(--ease);
 }
 .progress__fill--warning { background: var(--c-warning); }
-.progress__fill--danger  { background: var(--c-danger); }
+.progress__fill--danger  { background: var(--c-danger-block); }
 .progress__fill--accent  { background: var(--c-coral); }
 
 /* ==========================================================================
@@ -357,7 +357,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .alert--info    { background: var(--c-info-bg);    color: var(--c-info); }
 .alert--success { background: var(--c-success-bg); color: var(--c-success); }
 .alert--warning { background: var(--c-warning-bg); color: var(--c-warning); }
-.alert--danger  { background: var(--c-danger-bg);  color: var(--c-danger); }
+.alert--danger  { background: var(--c-danger-block); color: var(--c-on-danger); }
 
 /* ==========================================================================
    TOAST
@@ -383,7 +383,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   animation: toast-in var(--dur-base) var(--ease);
 }
 .toast--success { background: var(--c-forest); color: var(--c-paper); }
-.toast--danger  { background: var(--c-danger); color: var(--c-paper); }
+.toast--danger  { background: var(--c-danger-block); color: var(--c-on-danger); }
 .toast--info    { background: var(--c-ink);    color: var(--c-paper); }
 .toast__close { margin-left: auto; opacity: 0.7; color: inherit; font-size: var(--t-md); line-height: 1; }
 .toast__close:hover { opacity: 1; }
@@ -588,7 +588,7 @@ html[data-theme='dark'] .dash-sub--on-butter { color: color-mix(in srgb, var(--c
   font-size: var(--t-xs); font-weight: var(--fw-extra);
   background: var(--c-butter); color: var(--c-on-butter);
 }
-.nav__list--over { background: var(--c-danger-bg); color: var(--c-danger); }
+.nav__list--over { background: var(--c-danger-block); color: var(--c-on-danger); }
 .list-budget__total { font-family: var(--font-display); font-size: var(--t-xl); color: var(--c-forest); }
 .live-line__img {
   width: 48px; height: 48px; flex: none; border-radius: var(--r-md); background: #fff;
