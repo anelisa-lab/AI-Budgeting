@@ -871,3 +871,115 @@ body { overflow-x: hidden; }
   font-family: var(--font-display); font-weight: var(--fw-extra);
   color: var(--c-forest); white-space: nowrap;
 }
+
+/* Budget planner — the editable category sheet that sits below the active
+   backend-backed budget form. */
+.budget-entry__spendable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid color-mix(in srgb, var(--c-paper) 45%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--c-paper) 12%, transparent);
+}
+.budget-entry__spendable span { color: var(--c-ink); font-size: var(--t-sm); }
+.budget-entry__spendable strong {
+  color: var(--c-forest);
+  font-family: var(--font-display);
+  font-size: var(--t-lg);
+}
+.budget-plan-sheet { display: grid; gap: var(--s-5); }
+.budget-plan-sheet__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-5);
+}
+.budget-plan-sheet__title { margin-top: var(--s-2); color: var(--c-forest); font-size: var(--t-xl); }
+.budget-plan-sheet__controls { flex: 0 1 190px; }
+.budget-plan-sheet__controls .field__label { display: block; margin-bottom: var(--s-2); }
+.budget-plan-sheet__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+.budget-plan-sheet__summary > div {
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  background: var(--c-cream-2);
+}
+.budget-plan-sheet__summary strong { color: var(--c-forest); font-family: var(--font-display); font-size: var(--t-lg); }
+.budget-plan-sheet__summary .budget-plan-sheet__over strong { color: var(--c-danger); }
+.budget-plan-sheet__toolbar,
+.budget-plan-sheet__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+.budget-plan-sheet__table {
+  overflow-x: auto;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+}
+.budget-plan-sheet__row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(130px, .8fr) minmax(110px, .65fr) 36px;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 500px;
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--c-line);
+}
+.budget-plan-sheet__row:last-child { border-bottom: 0; }
+.budget-plan-sheet__row--head {
+  color: var(--c-muted);
+  background: var(--c-cream-2);
+  font-size: var(--t-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.budget-plan-sheet__row .input,
+.budget-plan-sheet__row .select { min-width: 0; }
+.budget-plan-sheet__amount { text-align: right; }
+.budget-plan-sheet__remove {
+  width: 30px;
+  height: 30px;
+  color: var(--c-muted);
+  font-size: var(--t-lg);
+  line-height: 1;
+  border-radius: var(--r-sm);
+}
+.budget-plan-sheet__remove:hover { color: var(--c-danger); background: var(--c-danger-bg); }
+.budget-plan-sheet__history {
+  display: grid;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--c-line);
+}
+.budget-plan-sheet__history-list { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.budget-plan-sheet__history-list button {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-pill);
+  color: var(--c-forest);
+  background: var(--c-paper);
+  font-size: var(--t-sm);
+}
+.budget-plan-sheet__history-list button:hover { border-color: var(--c-forest); }
+
+@media (max-width: 640px) {
+  .budget-plan-sheet__header { display: grid; }
+  .budget-plan-sheet__controls { width: 100%; }
+  .budget-plan-sheet__summary { grid-template-columns: 1fr; }
+}
