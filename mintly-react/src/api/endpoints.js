@@ -526,34 +526,17 @@ export function clearShoppingList(token, opts = {}) {
 }
 
 /* =======================================================================
- * SMS MODE  —  app/routers/sms.py   (prefix "/sms")   Phase 6
+ * NOTIFICATION PREFERENCES  —  GET/PUT /notifications/preferences
  * =====================================================================*/
 
-/**
- * POST /sms/reply  ->  SmsReplyOut { command, reply, notification: NotificationOut }
- * Body: SmsRequest { body: str (1..160) }
- *
- * Works exactly like texting UniWallet's shortcode would: send the raw text
- * a student typed ("BAL", "CMP bread", ...), get back the plain-text reply.
- * The exchange is also logged under /notifications and, if the student has a
- * phone number saved and SMS turned on, actually dispatched to it.
- */
-export function smsReply(token, body, opts = {}) {
-  return request('/sms/reply', { method: 'POST', body: { body }, token, ...opts });
+/** GET /notifications/preferences  ->  { low_balance_threshold } */
+export function getNotificationPreferences(token, opts = {}) {
+  return request('/notifications/preferences', { token, ...opts });
 }
 
-/** GET /sms/preferences  ->  SmsPreferencesOut { phone_number, sms_enabled, low_balance_threshold } */
-export function getSmsPreferences(token, opts = {}) {
-  return request('/sms/preferences', { token, ...opts });
-}
-
-/**
- * PUT /sms/preferences  ->  SmsPreferencesOut
- * Body: SmsPreferencesUpdate — any subset of { phone_number, sms_enabled, low_balance_threshold }.
- * Omitted = unchanged, like PUT /profile/.
- */
-export function updateSmsPreferences(token, patch, opts = {}) {
-  return request('/sms/preferences', { method: 'PUT', body: patch, token, ...opts });
+/** PUT /notifications/preferences  ->  { low_balance_threshold }. Omitted = unchanged. */
+export function updateNotificationPreferences(token, patch, opts = {}) {
+  return request('/notifications/preferences', { method: 'PUT', body: patch, token, ...opts });
 }
 
 /* =======================================================================
@@ -562,8 +545,7 @@ export function updateSmsPreferences(token, patch, opts = {}) {
 
 /**
  * GET /notifications?limit=N  ->  NotificationListOut { items: NotificationOut[], unread_count }
- * Every SMS exchange, plus app-triggered alerts like entering survival mode —
- * the same thing a real phone would have received, kept here too.
+ * Every system event, from every module: { category, module (where), title, body, created_at (when) }.
  */
 export function getNotifications(token, { limit } = {}, opts = {}) {
   const query = limit === undefined ? undefined : { limit };

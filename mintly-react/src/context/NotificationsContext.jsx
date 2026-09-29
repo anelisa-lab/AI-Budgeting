@@ -1,26 +1,25 @@
 /**
- * NotificationsContext — the Notifications tab's data (Phase 6).
+ * NotificationsContext — the Notifications tab's data.
  *
- * Every SMS exchange (POST /sms/reply) and every app-triggered alert (like
- * crossing into survival mode) is logged server-side as a notification —
- * see app/notifications.py. This context holds that list plus the unread
- * count the nav bar's badge reads, and is the one place that talks to
- * GET/PUT /notifications, the same role ShoppingContext plays for the
- * shopping list.
+ * Every system event, from every module, is logged server-side as a
+ * notification — see app/notifications.py. This context holds that list plus
+ * the unread count the nav bar's badge reads, and is the one place that talks
+ * to GET/PUT /notifications.
  *
- * Polled every 30s while signed in, and refreshed immediately after sending
- * an SMS (see SmsMode.jsx), so a new message shows up without a manual
- * reload either way.
+ * Kept close to real time: refetched right after any successful write the app
+ * makes (api/http.js fires NOTIFICATIONS_STALE_EVENT), whenever the tab
+ * regains focus, and polled every 10s while the page is visible.
  */
 
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from 'react';
 import { api } from '../api/client.js';
+import { NOTIFICATIONS_STALE_EVENT } from '../api/http.js';
 import { useAuth } from './AuthContext.jsx';
 
 const NotificationsContext = createContext(null);
-const POLL_MS = 30000;
+const POLL_MS = 10000;
 
 export function NotificationsProvider({ children }) {
   const { isAuthenticated, token } = useAuth();
@@ -54,8 +53,26 @@ export function NotificationsProvider({ children }) {
     }
     let cancelled = false;
     refresh();
-    const interval = setInterval(() => { if (!cancelled) refresh(); }, POLL_MS);
-    return () => { cancelled = true; clearInterval(interval); };
+    const tick = () => { if (!cancelled && document.visibilityState !== 'hidden') refresh(); };
+    const interval = setInterval(tick, POLL_MS);
+    // Events are written in the request's own transaction or just after it,
+    // so a short delay lets the write land before we ask for the list.
+    let staleTimer = null;
+    const onStale = () => {
+      clearTimeout(staleTimer);
+      staleTimer = setTimeout(tick, 300);
+    };
+    window.addEventListener(NOTIFICATIONS_STALE_EVENT, onStale);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      clearTimeout(staleTimer);
+      window.removeEventListener(NOTIFICATIONS_STALE_EVENT, onStale);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
   }, [isAuthenticated, token, refresh]);
 
   const markRead = useCallback(async (id) => {

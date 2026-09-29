@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from app.database import get_connection
 from app.security import hash_password, verify_password, create_access_token
 from app.dependencies import get_current_user_id
+from app.notifications import notify
 from app.schemas import RegisterRequest, LoginRequest, AuthResponse, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -39,6 +40,8 @@ def register(payload: RegisterRequest):
             raise HTTPException(status_code=409, detail="An account with that email already exists")
 
         token = create_access_token(user["id"])
+        notify(user["id"], "account", "Welcome to UniWallet",
+               "Your account was created. Set up a budget to get started.", category="success")
         return AuthResponse(user=UserOut(**user), token=token)
     finally:
         conn.close()
@@ -62,6 +65,7 @@ def login(payload: LoginRequest):
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         token = create_access_token(user["id"])
+        notify(user["id"], "account", "Signed in", "You signed in to your account.")
         return AuthResponse(
             user=UserOut(
                 id=user["id"],
@@ -82,4 +86,5 @@ def logout(user_id: int = Depends(get_current_user_id)):
     # JWTs are stateless, so "logout" just tells the client to discard the token.
     # This endpoint exists for a consistent API contract and a spot to add a
     # token-blacklist later if the team decides it's needed.
+    notify(user_id, "account", "Signed out", "You signed out of your account.")
     return {"message": "Logged out. Discard the token on the client."}

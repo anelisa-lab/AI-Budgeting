@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import get_connection
 from app.dependencies import get_current_user_id
+from app.notifications import create_notification
 from app.schemas import ShoppingListItemIn, ShoppingListOut, ShoppingListQtyIn
 from app.scrapers import active_stores, store_name
 
@@ -163,6 +164,9 @@ def add_item(payload: ShoppingListItemIn, user_id: int = Depends(get_current_use
                 (list_id, product_id, _clamp(payload.qty), price, MAX_QTY),
             )
             _touch(cur, list_id)
+            create_notification(cur, user_id, category="success", module="shopping_list",
+                                title="Added to shopping list",
+                                body=f"An item (x{_clamp(payload.qty)}) was added at R{price:.2f} each.")
             return _read(cur, list_id)
     finally:
         conn.close()
@@ -211,6 +215,11 @@ def _set_qty(user_id: int, column: str, product_id: int, qty: int) -> ShoppingLi
                 )
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="That item is not on your list.")
+            create_notification(
+                cur, user_id, category="info", module="shopping_list",
+                title="Shopping list item removed" if qty <= 0 else "Shopping list quantity changed",
+                body="An item was removed from your list." if qty <= 0
+                     else f"An item's quantity is now {_clamp(qty)}.")
             _touch(cur, list_id)
             return _read(cur, list_id)
     finally:
@@ -226,6 +235,8 @@ def _remove(user_id: int, column: str, product_id: int) -> ShoppingListOut:
                 f"DELETE FROM comparison_items WHERE comparison_list_id = %s AND {column} = %s",
                 (list_id, product_id),
             )
+            create_notification(cur, user_id, category="info", module="shopping_list",
+                                title="Removed from shopping list", body="An item was removed from your list.")
             _touch(cur, list_id)
             return _read(cur, list_id)
     finally:
@@ -266,6 +277,8 @@ def clear_list(user_id: int = Depends(get_current_user_id)):
         with conn, conn.cursor() as cur:
             list_id = _list_id(cur, user_id)
             cur.execute("DELETE FROM comparison_items WHERE comparison_list_id = %s", (list_id,))
+            create_notification(cur, user_id, category="info", module="shopping_list",
+                                title="Shopping list cleared", body="All items were removed from your list.")
             _touch(cur, list_id)
             return _read(cur, list_id)
     finally:

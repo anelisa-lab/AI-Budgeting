@@ -1,27 +1,31 @@
 """
 Notifications — GET /notifications, PUT /notifications/{id}/read,
-PUT /notifications/read-all, DELETE /notifications/{id}.
+PUT /notifications/read-all, DELETE /notifications/{id},
+GET/PUT /notifications/preferences.
 
-The list a student sees under the "Notifications" tab. Every row here was
-written by app/notifications.create_notification — either from an SMS
-exchange (app/routers/sms.py) or from an app-triggered alert such as
-crossing into survival mode (app/routers/budgets.py) — so this router only
-reads and marks rows read; it never composes a message itself.
+The central feed of every system event. Rows are written by
+app/notifications (create_notification / notify) from every module; this
+router only reads and marks them read.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import get_connection
 from app.dependencies import get_current_user_id
-from app.schemas import NotificationListOut, NotificationOut
+from app.schemas import (
+    NotificationListOut,
+    NotificationOut,
+    NotificationPreferencesOut,
+    NotificationPreferencesUpdate,
+)
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 def _to_out(row: dict) -> NotificationOut:
     return NotificationOut(
-        id=row["id"], category=row["category"], channel=row["channel"],
-        title=row["title"], body=row["body"], sms_status=row["sms_status"],
+        id=row["id"], category=row["category"], module=row["module"],
+        title=row["title"], body=row["body"],
         is_read=row["read_at"] is not None, created_at=row["created_at"],
     )
 
@@ -44,6 +48,36 @@ def list_notifications(limit: int = 50, user_id: int = Depends(get_current_user_
             )
             unread = cur.fetchone()["n"]
         return NotificationListOut(items=[_to_out(r) for r in rows], unread_count=unread)
+    finally:
+        conn.close()
+
+
+@router.get("/preferences", response_model=NotificationPreferencesOut)
+def get_preferences(user_id: int = Depends(get_current_user_id)):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT sms_low_balance_threshold FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+        return NotificationPreferencesOut(low_balance_threshold=row["sms_low_balance_threshold"])
+    finally:
+        conn.close()
+
+
+@router.put("/preferences", response_model=NotificationPreferencesOut)
+def update_preferences(payload: NotificationPreferencesUpdate, user_id: int = Depends(get_current_user_id)):
+    """Only sent fields change; an explicit null clears the low-balance line."""
+    conn = get_connection()
+    try:
+        with conn, conn.cursor() as cur:
+            if "low_balance_threshold" in payload.model_fields_set:
+                cur.execute(
+                    "UPDATE users SET sms_low_balance_threshold = %s WHERE id = %s",
+                    (payload.low_balance_threshold, user_id),
+                )
+            cur.execute("SELECT sms_low_balance_threshold FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+        return NotificationPreferencesOut(low_balance_threshold=row["sms_low_balance_threshold"])
     finally:
         conn.close()
 

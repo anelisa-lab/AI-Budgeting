@@ -18,7 +18,6 @@
  *                             every store already surfaces the same picks),
  *                             and this keeps bookmarks and old links from
  *                             landing on a 404
- *   /sms             private  SMS Mode short codes      (Phase 6)
  *   /notifications   private  Notifications tab         (Phase 6)
  *   *                         not found
  *
@@ -43,7 +42,6 @@ import Compare from './screens/Compare.jsx';
 import Chat from './screens/Chat.jsx';
 import Profile from './screens/Profile.jsx';
 import Settings from './screens/Settings.jsx';
-import SmsMode from './screens/SmsMode.jsx';
 import Notifications from './screens/Notifications.jsx';
 import NotFound from './screens/NotFound.jsx';
 
@@ -106,10 +104,7 @@ export default function App() {
           path="/settings"
           element={<ProtectedRoute><AppShell><Settings /></AppShell></ProtectedRoute>}
         />
-        <Route
-          path="/sms"
-          element={<ProtectedRoute><AppShell><SmsMode /></AppShell></ProtectedRoute>}
-        />
+        <Route path="/sms" element={<Navigate to="/notifications" replace />} />
         <Route
           path="/notifications"
           element={<ProtectedRoute><AppShell><Notifications /></AppShell></ProtectedRoute>}

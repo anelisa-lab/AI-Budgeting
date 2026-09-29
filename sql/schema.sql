@@ -676,7 +676,7 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 -- -------------------------
--- Notifications (Phase 6) — see sql/012_phase6_sms_notifications.sql
+-- Notifications (Phase 6) — see sql/012_..., sql/013_notifications_central.sql
 -- -------------------------
 -- One row per message the student would see, whether it started as an
 -- inbound SMS command (POST /sms/reply), the reply to one, or an
@@ -686,9 +686,11 @@ CREATE TABLE IF NOT EXISTS notifications (
   id           SERIAL PRIMARY KEY,
   user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   category     VARCHAR(30) NOT NULL DEFAULT 'system'
-               CHECK (category IN ('sms_in', 'sms_out', 'survival', 'balance', 'system')),
+               CHECK (category IN ('sms_in', 'sms_out', 'survival', 'balance', 'system',
+                      'success', 'info', 'warning', 'alert')),
   channel      VARCHAR(10) NOT NULL DEFAULT 'app'
                CHECK (channel IN ('app', 'sms')),
+  module       VARCHAR(30) NOT NULL DEFAULT 'system',  -- where it happened
   title        VARCHAR(150) NOT NULL,
   body         TEXT NOT NULL,
   sms_status   VARCHAR(20),

@@ -605,15 +605,9 @@ export function userFromApi(u) {
   };
 }
 
-/* -------------------------------------------------------------- SMS mode */
-
-/** SmsPreferencesOut. */
-export function smsPreferencesFromApi(p) {
-  return {
-    phone_number: p?.phone_number || null,
-    sms_enabled: Boolean(p?.sms_enabled),
-    low_balance_threshold: numOrNull(p?.low_balance_threshold),
-  };
+/** NotificationPreferencesOut. */
+export function notificationPreferencesFromApi(p) {
+  return { low_balance_threshold: numOrNull(p?.low_balance_threshold) };
 }
 
 /* ----------------------------------------------------------- notifications */
@@ -623,10 +617,9 @@ export function notificationFromApi(n) {
   return {
     id: n.id,
     category: n.category,
-    channel: n.channel,
+    module: n.module || 'system',
     title: n.title,
     body: n.body,
-    sms_status: n.sms_status || null,
     is_read: Boolean(n.is_read),
     created_at: n.created_at,
   };

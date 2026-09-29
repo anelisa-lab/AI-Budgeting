@@ -212,6 +212,9 @@ function fallbackMessage(status) {
  * @param {object} options.fieldHints  status -> form field id
  * @param {Function} options.fetchImpl Injected for tests
  */
+/** Fired after every successful non-GET call; NotificationsContext refetches on it. */
+export const NOTIFICATIONS_STALE_EVENT = 'uniwallet:notifications-stale';
+
 export async function request(path, {
   method = 'GET',
   body,
@@ -256,6 +259,12 @@ export async function request(path, {
   if (!response.ok) {
     if (response.status === 401 && onUnauthorized) onUnauthorized();
     throw toApiError(response.status, payload, fieldHints || {});
+  }
+
+  // Any successful write may have produced a notification server-side; tell
+  // the Notifications context so the badge and list update right away.
+  if (method !== 'GET' && !path.startsWith('/notifications') && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(NOTIFICATIONS_STALE_EVENT));
   }
 
   return payload;

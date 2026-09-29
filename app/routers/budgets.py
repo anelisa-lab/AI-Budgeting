@@ -12,7 +12,7 @@ from app.budget_calc import (
 from app.budget_split import build_split
 from app.database import get_connection
 from app.dependencies import get_current_user_id
-from app.notifications import create_notification, dispatch_sms
+from app.notifications import create_notification, notify
 from app.routers.budget_split import persist_split, spent_by_date, split_to_out
 from app.schemas import (
     BudgetCreateRequest,
@@ -129,6 +129,10 @@ def create_budget(payload: BudgetCreateRequest, user_id: int = Depends(get_curre
                 _fresh_split(cur, budget)
         except psycopg2.errors.UniqueViolation:
             raise HTTPException(status_code=409, detail="You already have an active budget for this cycle")
+        notify(user_id, "budget", "Budget created",
+               f"New budget of R{budget['total_amount']:.2f} for {budget['cycle_start_date']} to "
+               f"{budget['cycle_end_date']} (R{budget['remaining_amount']:.2f} spendable after savings).",
+               category="success")
         return BudgetOut(**budget)
     finally:
         conn.close()
@@ -258,6 +262,9 @@ def update_budget(budget_id: int, payload: BudgetUpdateRequest, user_id: int = D
             )
             updated = cur.fetchone()
             _fresh_split(cur, updated)
+        notify(user_id, "budget", "Budget updated",
+               f"Budget total is now R{updated['total_amount']:.2f}, R{updated['remaining_amount']:.2f} remaining, "
+               f"cycle ends {updated['cycle_end_date']}.")
         return BudgetOut(**updated)
     finally:
         conn.close()
@@ -288,6 +295,11 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
                 (user_id, budget_id, payload.item_name, payload.amount, payload.category, payload.is_essential),
             )
             transaction = cur.fetchone()
+            create_notification(
+                cur, user_id, category="success", module="transactions",
+                title="Spend recorded",
+                body=f"R{payload.amount:.2f} on {payload.item_name} ({payload.category}).",
+            )
 
             cur.execute(
                 "UPDATE budgets SET remaining_amount = %s, updated_at = NOW() WHERE id = %s RETURNING *",
@@ -301,12 +313,10 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
             # `users` covers both rather than querying it twice.
             became_survival = split_before.mode != "survival" and split_after.mode == "survival"
             cur.execute(
-                "SELECT phone_number, sms_enabled, sms_low_balance_threshold FROM users WHERE id = %s",
+                "SELECT sms_low_balance_threshold FROM users WHERE id = %s",
                 (user_id,),
             )
             notify_user = cur.fetchone()
-            phone_number = notify_user["phone_number"] if notify_user else None
-            sms_enabled = bool(notify_user["sms_enabled"]) if notify_user else False
             threshold = notify_user["sms_low_balance_threshold"] if notify_user else None
             threshold_check_needed = (
                 threshold is not None
@@ -315,7 +325,7 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
             )
 
             # This purchase is what tipped the budget into survival mode —
-            # tell the student the same way SMS mode would, and log it under
+            # tell the student under
             # Notifications, not just leave it for the dashboard to notice
             # next time it's opened.
             if became_survival:
@@ -323,15 +333,13 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
                     f"You've hit survival mode: R{split_after.remaining_amount:.2f} left for "
                     f"{split_after.days_remaining} more days. UniWallet will suggest essentials only."
                 )
-                sms_status = dispatch_sms(phone_number, sms_enabled, survival_body)
                 create_notification(
-                    cur, user_id, category="survival",
-                    channel="sms" if sms_status in ("sent", "simulated") else "app",
-                    title="You're in survival mode", body=survival_body, sms_status=sms_status,
+                    cur, user_id, category="survival", module="budget",
+                    title="You're in survival mode", body=survival_body,
                 )
 
             # The student's own "tell me when it's getting low" line — set in
-            # Profile under Notifications & SMS, separate from (and usually
+            # Profile under Notifications, separate from (and usually
             # higher than) the survival threshold. Only fires the moment the
             # balance crosses it, not on every purchase after.
             if threshold_check_needed:
@@ -339,11 +347,9 @@ def create_transaction(budget_id: int, payload: TransactionCreateRequest, user_i
                     f"Low balance alert: only R{impact.new_remaining:.2f} left — "
                     f"you asked to hear about it below R{threshold:.2f}."
                 )
-                sms_status = dispatch_sms(phone_number, sms_enabled, balance_body)
                 create_notification(
-                    cur, user_id, category="balance",
-                    channel="sms" if sms_status in ("sent", "simulated") else "app",
-                    title="Low balance alert", body=balance_body, sms_status=sms_status,
+                    cur, user_id, category="balance", module="budget",
+                    title="Low balance alert", body=balance_body,
                 )
 
         warning_message = None
@@ -437,6 +443,12 @@ def delete_transaction(budget_id: int, transaction_id: int, user_id: int = Depen
             )
             updated = cur.fetchone()
             split = _fresh_split(cur, updated) if updated["status"] == "active" else None
+            create_notification(
+                cur, user_id, category="info", module="transactions",
+                title="Spend removed",
+                body=f"R{deleted['amount']:.2f} was returned to your budget "
+                     f"(R{updated['remaining_amount']:.2f} remaining).",
+            )
         return TransactionDeleteResult(
             budget=BudgetOut(**updated),
             daily_split=split_to_out(split) if split else None,
@@ -457,6 +469,9 @@ def delete_budget(budget_id: int, user_id: int = Depends(get_current_user_id)):
             cur.execute("DELETE FROM budgets WHERE id = %s AND user_id = %s RETURNING id", (budget_id, user_id))
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="Budget not found")
+            create_notification(cur, user_id, category="info", module="budget",
+                                title="Budget deleted",
+                                body="A budget and all its recorded spends were deleted.")
     finally:
         conn.close()
     return Response(status_code=204)

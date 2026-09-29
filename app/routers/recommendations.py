@@ -32,6 +32,7 @@ from psycopg2.extras import Json
 from app.budget_split import build_split
 from app.database import get_connection
 from app.dependencies import get_current_user_id
+from app.notifications import create_notification
 from app.geo import distance_between, fetch_user_location
 from app.query_parser import ParsedQuery, parse_query, word_pattern
 from app.recommender import Candidate, ScoredOffer, UserContext, recommend, relevance_score
@@ -502,6 +503,9 @@ def clear_recommendation_history(user_id: int = Depends(get_current_user_id)):
         with conn, conn.cursor() as cur:
             cur.execute("DELETE FROM recommendation_runs WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM shopping_searches WHERE user_id = %s", (user_id,))
+            create_notification(cur, user_id, category="info", module="recommendations",
+                                title="Search history cleared",
+                                body="Your past searches and recommendations were deleted.")
     finally:
         conn.close()
     return Response(status_code=204)
