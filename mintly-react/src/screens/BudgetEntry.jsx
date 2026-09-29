@@ -43,6 +43,7 @@ const PERIODS = [
 
 const PRESETS = [
   { label: 'NSFAS living allowance', amount: NSFAS.livingAllowanceMonthly, days: 30 },
+  { label: 'NSFAS living + travelling allowance', amount: 2535, days: 30 },
 ];
 
 const RULES = {

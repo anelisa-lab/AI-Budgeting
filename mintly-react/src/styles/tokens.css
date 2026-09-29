@@ -34,7 +34,7 @@
   /* ---- Ink ------------------------------------------------------------ */
   --c-ink:          #112222;
   --c-muted:        #2f5653;
-  --c-muted-light:  #376a66;
+  --c-muted-light:  #2f5653;
 
   /* ---- Semantic state -------------------------------------------------
      Separate from the brand accent on purpose. Coral is decoration;
@@ -152,8 +152,8 @@ html[data-theme='dark'] {
   --c-on-coral:     #0e1a19;
 
   --c-ink:          #e8f3f1;
-  --c-muted:        #b6d9d2;
-  --c-muted-light:  #93c2ba;
+  --c-muted:        #cfe8e3;
+  --c-muted-light:  #b6d9d2;
 
   --c-success:      #7db8af;
   --c-success-bg:   #1d302e;
