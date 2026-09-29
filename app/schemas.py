@@ -703,3 +703,28 @@ class SmsPreferencesUpdate(BaseModel):
     phone_number: Optional[str] = Field(default=None, max_length=30)
     sms_enabled: Optional[bool] = None
     low_balance_threshold: Optional[Decimal] = Field(default=None, ge=0)
+
+
+# -------------------------
+# Budgeting chatbot — POST /chat  (app/chatbot.py)
+# -------------------------
+
+class ChatMessage(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    # Prior plain-text turns from this conversation, oldest first. The
+    # backend never stores or replays Claude's tool calls — each turn
+    # re-grounds itself against live prices and the student's current budget.
+    history: List[ChatMessage] = Field(default_factory=list, max_length=40)
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    # Which tools were used this turn, e.g. ["get_budget_status",
+    # "recommend_items"] — the frontend can show "checked your budget and
+    # live prices" instead of a bare reply.
+    tools_used: List[str] = Field(default_factory=list)

@@ -590,6 +590,29 @@ export function deleteNotification(token, notificationId, opts = {}) {
 }
 
 /* =======================================================================
+ * CHAT  —  app/routers/chat.py   (prefix "/chat")
+ * =====================================================================*/
+
+/**
+ * POST /chat  ->  ChatResponse { reply: string, tools_used: string[] }
+ * Body: ChatRequest { message: str (1..2000), history?: { role, content }[] }
+ *
+ * Stateless per call — the backend never stores or replays a conversation,
+ * so `history` (the prior plain-text turns, oldest first) is sent back on
+ * every request. `tools_used` names what the assistant actually checked
+ * this turn (e.g. "get_budget_status", "recommend_items"), so the screen
+ * can show what was looked up instead of just the reply.
+ */
+export function sendChatMessage(token, { message, history = [] }, opts = {}) {
+  return request('/chat', {
+    method: 'POST',
+    body: { message, history },
+    token,
+    ...opts,
+  });
+}
+
+/* =======================================================================
  * HEALTH  —  app/main.py
  * =====================================================================*/
 
