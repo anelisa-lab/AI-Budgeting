@@ -122,8 +122,7 @@ export default function Register() {
           <Logo size={44} />
         </div>
 
-        <Card className="auth__float">
-          <div className="auth__form">
+        <Card>
           <form ref={formRef} onSubmit={submit} noValidate className="stack">
             <div>
               <Eyebrow>Get started</Eyebrow>
@@ -285,7 +284,6 @@ export default function Register() {
           <p className="auth__foot">
             Already have an account? <Link to="/login">Sign in</Link>
           </p>
-          </div>
         </Card>
       </div>
     </main>

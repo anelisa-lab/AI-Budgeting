@@ -98,8 +98,7 @@ export default function Login() {
           <Logo size={44} />
         </div>
 
-        <Card className="auth__float">
-          <div className="auth__form">
+        <Card>
           <form ref={formRef} onSubmit={submit} noValidate className="stack">
             <div>
               <Eyebrow>Welcome back</Eyebrow>
@@ -160,7 +159,6 @@ export default function Login() {
           <p className="auth__foot">
             New here? <Link to="/register">Create an account</Link>
           </p>
-          </div>
         </Card>
 
         {import.meta.env?.DEV && (

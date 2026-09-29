@@ -34,7 +34,7 @@
   /* ---- Ink ------------------------------------------------------------ */
   --c-ink:          #112222;
   --c-muted:        #2f5653;
-  --c-muted-light:  #2f5653;
+  --c-muted-light:  #376a66;
 
   /* ---- Semantic state -------------------------------------------------
      Separate from the brand accent on purpose. Coral is decoration;
@@ -43,8 +43,8 @@
   --c-success-bg:   #dbece8;
   --c-warning:      #2f5653;
   --c-warning-bg:   #dbece8;
-  --c-danger:       #b3261e;  /* warnings: badges, alerts, over-budget bars */
-  --c-danger-bg:    #fde8e6;
+  --c-danger:       #294644;
+  --c-danger-bg:    #dbece8;
   --c-info:         #376a66;
   --c-info-bg:      #dbece8;
 
@@ -52,8 +52,7 @@
   --c-line:         rgba(55, 106, 102, 0.14);
   --c-line-strong:  rgba(55, 106, 102, 0.32);
   --c-focus:        #376a66;
-  --c-nav-bg:       rgba(255, 255, 255, 0.93);
-  --c-page:         #ffffff;  /* page background: plain white */
+  --c-nav-bg:       rgba(244, 249, 248, 0.93);
   color-scheme: light;
 
   /* ---- Type -----------------------------------------------------------
@@ -160,8 +159,8 @@ html[data-theme='dark'] {
   --c-success-bg:   #1d302e;
   --c-warning:      #d8e9e5;
   --c-warning-bg:   #1d302e;
-  --c-danger:       #ffb4a8;
-  --c-danger-bg:    #4a1f1c;
+  --c-danger:       #cfe8e3;
+  --c-danger-bg:    #1d302e;
   --c-info:         #7db8af;
   --c-info-bg:      #1d302e;
 
@@ -169,7 +168,6 @@ html[data-theme='dark'] {
   --c-line-strong:  rgba(125, 184, 175, 0.4);
   --c-focus:        #a3d0c9;
   --c-nav-bg:       rgba(14, 26, 25, 0.93);
-  --c-page:         #0e1a19;
 
   --e-1: 0 2px 8px rgba(0, 0, 0, 0.35);
   --e-2: 0 10px 30px rgba(0, 0, 0, 0.4);
