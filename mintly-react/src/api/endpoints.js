@@ -195,11 +195,13 @@ export function getBudgetDashboard(token, { recent } = {}, opts = {}) {
 /**
  * PUT /budgets/{budget_id}  ->  BudgetOut
  * Body: BudgetUpdateRequest { total_amount?: Decimal > 0, cycle_end_date?: date,
- *                             survival_threshold?: Decimal >= 0 }
+ *                             survival_threshold?: Decimal >= 0 | null,
+ *                             savings_percentage?: Decimal 0..100 }
  *
- * Only those three fields are updatable. Changing total_amount shifts
- * remaining_amount by the same delta server-side, so spend already recorded is
- * preserved — the frontend must NOT try to recompute it.
+ * Only those four fields are updatable. Savings are recomputed server-side from
+ * the percentage and the total, and remaining_amount moves by the change in what
+ * is spendable, so spend already recorded is preserved — the frontend must NOT
+ * try to recompute it. survival_threshold: omitted keeps it, null (or 0) clears it.
  */
 export function updateBudget(token, budgetId, patch, opts = {}) {
   return request(`/budgets/${encodeURIComponent(budgetId)}`, {
@@ -207,6 +209,28 @@ export function updateBudget(token, budgetId, patch, opts = {}) {
     body: patch,
     token,
     fieldHints: { 400: 'periodDays' },
+    ...opts,
+  });
+}
+
+/**
+ * POST /budgets/{budget_id}/renew  ->  201 BudgetOut  (the NEW budget)
+ * Body: BudgetRenewRequest {
+ *   total_amount: Decimal >= 0   (the fresh allowance; 0 is fine when only carrying over),
+ *   cycle_start_date?: date, cycle_end_date?: date,     (default: today, same length)
+ *   savings_percentage?: Decimal 0..100, survival_threshold?: Decimal >= 0 | null,
+ *   carry_over_leftover: bool (default true), carry_over_savings: bool (default false),
+ *   keep_categories: bool (default true)
+ * }
+ * Closes the current budget (status "completed", its savings go to the savings
+ * ledger) and opens the next cycle in one step.
+ */
+export function renewBudget(token, budgetId, body, opts = {}) {
+  return request(`/budgets/${encodeURIComponent(budgetId)}/renew`, {
+    method: 'POST',
+    body,
+    token,
+    fieldHints: { 400: 'periodDays', 409: 'amount' },
     ...opts,
   });
 }
@@ -223,7 +247,9 @@ export function updateBudget(token, budgetId, patch, opts = {}) {
  * }
  * Body: TransactionCreateRequest {
  *   item_name: str, amount: Decimal > 0,
- *   category?: str | null, is_essential?: bool (default false)
+ *   category?: str | null, is_essential?: bool (default false),
+ *   transaction_date?: date   (omit for "now"; never in the future, never before
+ *                              the budget started)
  * }
  */
 export function createTransaction(token, budgetId, body, opts = {}) {
@@ -234,6 +260,20 @@ export function createTransaction(token, budgetId, body, opts = {}) {
     fieldHints: { 400: 'amount' },
     ...opts,
   });
+}
+
+/**
+ * PUT /budgets/{budget_id}/transactions/{transaction_id}  ->  TransactionUpdateResult {
+ *   transaction: TransactionOut, budget: BudgetOut, daily_split: BudgetSplitOut | null
+ * }
+ * Body: TransactionUpdateRequest { item_name?, amount?, category?, is_essential?,
+ *                                  transaction_date? } — only the fields sent change.
+ */
+export function updateTransaction(token, budgetId, transactionId, body, opts = {}) {
+  return request(
+    `/budgets/${encodeURIComponent(budgetId)}/transactions/${encodeURIComponent(transactionId)}`,
+    { method: 'PUT', body, token, fieldHints: { 400: 'amount' }, ...opts },
+  );
 }
 
 /**
@@ -254,9 +294,59 @@ export function deleteBudget(token, budgetId, opts = {}) {
   return request(`/budgets/${encodeURIComponent(budgetId)}`, { method: 'DELETE', token, ...opts });
 }
 
-/** GET /budgets/{budget_id}/transactions  ->  TransactionOut[]  (newest first) */
-export function listTransactions(token, budgetId, opts = {}) {
-  return request(`/budgets/${encodeURIComponent(budgetId)}/transactions`, { token, ...opts });
+/**
+ * GET /budgets/{budget_id}/transactions  ->  TransactionOut[]  (newest first)
+ * Optional ?limit= (1..1000) and ?offset= page through a long history.
+ */
+export function listTransactions(token, budgetId, { limit, offset } = {}, opts = {}) {
+  return request(`/budgets/${encodeURIComponent(budgetId)}/transactions`, {
+    token,
+    query: { limit, offset },
+    ...opts,
+  });
+}
+
+/**
+ * GET /budgets/{budget_id}/categories  ->  BudgetCategoryOut[]
+ *   { id, name, planned_amount: Decimal | null, position, spent_amount }
+ */
+export function listBudgetCategories(token, budgetId, opts = {}) {
+  return request(`/budgets/${encodeURIComponent(budgetId)}/categories`, { token, ...opts });
+}
+
+/**
+ * PUT /budgets/{budget_id}/categories  ->  BudgetCategoryOut[]
+ * Body: BudgetCategoriesRequest { categories: [{ name, planned_amount?: Decimal >= 0 }] }
+ * Replaces the whole list (duplicates in any case collapse). 400 when the
+ * planned amounts add up to more than the budget's spendable amount.
+ */
+export function replaceBudgetCategories(token, budgetId, body, opts = {}) {
+  return request(`/budgets/${encodeURIComponent(budgetId)}/categories`, {
+    method: 'PUT',
+    body,
+    token,
+    fieldHints: { 400: 'categories' },
+    ...opts,
+  });
+}
+
+/**
+ * POST /budgets/template  ->  the budget spreadsheet (.xlsx, binary)
+ * Body: BudgetTemplateRequest {
+ *   categories: [{ name, planned_amount?: Decimal }]   (1..25),
+ *   total_amount?, savings_percentage?, period_days?: int 1..92, start_date?: date
+ * }
+ * Money and period default to the active budget. Resolves to { blob, filename }.
+ */
+export function downloadBudgetTemplate(token, body, opts = {}) {
+  return request('/budgets/template', {
+    method: 'POST',
+    body,
+    token,
+    responseType: 'blob',
+    fieldHints: { 400: 'categories' },
+    ...opts,
+  });
 }
 
 /* =======================================================================

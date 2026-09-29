@@ -29,8 +29,11 @@ import {
   locationFromApi,
   budgetFromApi,
   budgetSplitFromApi,
+  budgetCategoryFromApi,
+  budgetRenewToApi,
   budgetToApi,
   budgetUpdateToApi,
+  categoriesToApi,
   dashboardFromApi,
   notificationListFromApi,
   preferencesFromApi,
@@ -43,7 +46,9 @@ import {
   EMPTY_LIST,
   transactionFromApi,
   transactionResultFromApi,
+  templateToApi,
   transactionToApi,
+  transactionUpdateToApi,
   trueCostResponseFromApi,
   userFromApi,
 } from './normalise.js';
@@ -180,6 +185,22 @@ export const budgets = {
   },
 
   /**
+   * POST /budgets/{id}/renew — close this cycle and start the next one. Returns
+   * the NEW budget (BudgetOut). Form values in, BudgetRenewRequest out.
+   */
+  async renew(token, budgetId, formValues) {
+    return budgetFromApi(await endpoints.renewBudget(token, budgetId, budgetRenewToApi(formValues)));
+  },
+
+  /**
+   * POST /budgets/template — the spreadsheet for the chosen categories.
+   * Resolves to { blob, filename }; the caller saves it (see lib/download.js).
+   */
+  async downloadTemplate(token, formValues) {
+    return endpoints.downloadBudgetTemplate(token, templateToApi(formValues));
+  },
+
+  /**
    * PUT /budgets/{id}. Only total_amount and cycle_end_date are updatable, and
    * the server re-derives remaining_amount from the delta — so nothing here
    * touches remaining_amount.
@@ -310,9 +331,24 @@ export const prices = {
 
 export const transactions = {
   /** Transactions belong to a budget, not to a user, so the id is required. */
-  async list(token, budgetId) {
-    const rows = await endpoints.listTransactions(token, budgetId);
+  async list(token, budgetId, paging = {}) {
+    const rows = await endpoints.listTransactions(token, budgetId, paging);
     return Array.isArray(rows) ? rows.map(transactionFromApi) : [];
+  },
+
+  /**
+   * PUT a recorded spend. Returns { transaction, budget, daily_split } — like
+   * create() and remove(), the budget in the response is authoritative.
+   */
+  async update(token, budgetId, transactionId, formValues) {
+    const payload = await endpoints.updateTransaction(
+      token, budgetId, transactionId, transactionUpdateToApi(formValues),
+    );
+    return {
+      transaction: transactionFromApi(payload?.transaction),
+      budget: budgetFromApi(payload?.budget),
+      daily_split: payload?.daily_split ? budgetSplitFromApi(payload.daily_split) : null,
+    };
   },
 
   /**
@@ -341,6 +377,21 @@ export const transactions = {
       budget: budgetFromApi(payload?.budget),
       daily_split: payload?.daily_split ? budgetSplitFromApi(payload.daily_split) : null,
     };
+  },
+};
+
+/* ------------------------------------------------------ priority categories */
+
+export const categories = {
+  async list(token, budgetId) {
+    const rows = await endpoints.listBudgetCategories(token, budgetId);
+    return Array.isArray(rows) ? rows.map(budgetCategoryFromApi) : [];
+  },
+
+  /** Replace the whole list. `rows` are the planner's { name, plannedAmount } rows. */
+  async replace(token, budgetId, rows) {
+    const saved = await endpoints.replaceBudgetCategories(token, budgetId, categoriesToApi(rows));
+    return Array.isArray(saved) ? saved.map(budgetCategoryFromApi) : [];
   },
 };
 
@@ -536,7 +587,7 @@ export const system = {
 /** Grouped default export, for `import { api } from '../api/client.js'`. */
 export const api = {
   auth, profile, budgets, budgetSplit, recommendations, trueCost, compare, prices,
-  transactions, search, shoppingList, system, notifications, chat,
+  transactions, categories, search, shoppingList, system, notifications, chat,
 };
 
 export default api;

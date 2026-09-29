@@ -49,6 +49,9 @@ export const NSFAS = {
 export const BACKEND_SUPPORTS = {
   deleteBudget: true,       // DELETE /budgets/{id} (Phase 5)
   deleteTransaction: true,  // DELETE /budgets/{id}/transactions/{tid} (Phase 5)
+  updateTransaction: true,  // PUT /budgets/{id}/transactions/{tid}
+  renewBudget: true,        // POST /budgets/{id}/renew — the next cycle
+  categories: true,         // GET/PUT /budgets/{id}/categories + POST /budgets/template
   serverDailyLimit: true, // GET /budgets/dashboard carries the split — see refresh
 };
 
@@ -62,6 +65,8 @@ export function BudgetProvider({ children }) {
   const [split, setSplit] = useState(null);
   /** BudgetHealthOut from GET /budgets/dashboard — the server's warnings. */
   const [serverHealth, setServerHealth] = useState(null);
+  /** The student's priority categories, each with its planned amount and spend. */
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -74,6 +79,7 @@ export function BudgetProvider({ children }) {
       setTransactions([]);
       setSplit(null);
       setServerHealth(null);
+      setCategories([]);
       setLoaded(false);
       return;
     }
@@ -89,6 +95,7 @@ export function BudgetProvider({ children }) {
       setBudget(dash?.budget ?? null);
       setSplit(dash?.split ?? null);
       setServerHealth(dash?.health ?? null);
+      setCategories(dash?.categories ?? []);
 
       if (dash?.budget) {
         setTransactions(await api.transactions.list(token, dash.budget.id));
@@ -110,6 +117,7 @@ export function BudgetProvider({ children }) {
       setTransactions([]);
       setSplit(null);
       setServerHealth(null);
+      setCategories([]);
       setLoaded(false);
     }
   }, [isAuthenticated, refresh]);
@@ -121,6 +129,8 @@ export function BudgetProvider({ children }) {
         if (!dash) return;
         setSplit(dash.split);
         setServerHealth(dash.health);
+        // Spent-per-category moves with every spend, so it comes back with the split.
+        setCategories(dash.categories ?? []);
       })
       .catch(() => setServerHealth(null));
   }, [token]);
@@ -179,6 +189,59 @@ export function BudgetProvider({ children }) {
     refreshHealth();
   }, [budget, token, refreshHealth]);
 
+  /**
+   * PUT a recorded spend. The response carries the authoritative budget and
+   * split (a bigger amount is spent, a smaller one refunded — server-side), so
+   * they replace ours; the edited row replaces its old self in the list.
+   */
+  const updateTransaction = useCallback(async (transactionId, formValues) => {
+    if (!budget) throw new Error('Set a budget before editing a spend.');
+    const result = await api.transactions.update(token, budget.id, transactionId, formValues);
+    setTransactions((list) => {
+      const next = list.map((t) => (t.id === transactionId ? result.transaction : t));
+      // A changed date can reorder the list; the server sorts newest first.
+      return next.sort((a, b) => (
+        String(b.transaction_date).localeCompare(String(a.transaction_date)) || b.id - a.id
+      ));
+    });
+    setBudget(result.budget);
+    if (result.daily_split) setSplit(result.daily_split);
+    refreshHealth();
+    return result;
+  }, [budget, token, refreshHealth]);
+
+  /**
+   * POST /budgets/{id}/renew — close this cycle and start the next one. The
+   * server returns the new budget; everything else (split, health, an empty
+   * spend list, the carried-over categories) is re-read in one go.
+   */
+  const renewBudget = useCallback(async (formValues) => {
+    if (!budget) throw new Error('There is no budget to renew.');
+    const next = await api.budgets.renew(token, budget.id, formValues);
+    setBudget(next);
+    setTransactions([]);
+    await refresh();
+    return next;
+  }, [budget, token, refresh]);
+
+  /**
+   * PUT /budgets/{id}/categories — the planner's rows replace the saved list.
+   * `budgetId` is for the moment right after a budget is created, when the
+   * context has not caught up with the new id yet.
+   */
+  const saveCategories = useCallback(async (rows, budgetId = budget?.id) => {
+    if (!budgetId) throw new Error('Set a budget before choosing categories.');
+    const saved = await api.categories.replace(token, budgetId, rows);
+    setCategories(saved);
+    return saved;
+  }, [budget, token]);
+
+  /** POST /budgets/template -> { blob, filename }. Does not touch any state. */
+  const downloadTemplate = useCallback(
+    (formValues) => api.budgets.downloadTemplate(token, formValues),
+    [token],
+  );
+
   /** DELETE the active budget and its spends; the student starts afresh. */
   const deleteBudget = useCallback(async () => {
     if (!budget) return;
@@ -187,6 +250,7 @@ export function BudgetProvider({ children }) {
     setTransactions([]);
     setSplit(null);
     setServerHealth(null);
+    setCategories([]);
   }, [budget, token]);
 
   /* -------------------------------------------------------------- derived */
@@ -241,13 +305,22 @@ export function BudgetProvider({ children }) {
     else if (ratio >= 0.9) health = 'tight';
     else if (split?.mode === 'survival') health = 'tight';
 
+    // Grouped case-insensitively (the server matches category names that way),
+    // and shown under the spelling used first.
     const byCategory = {};
+    const spelling = new Map();
     let recorded = 0;
     for (const t of transactions) {
       recorded += t.amount;
-      const key = t.category || 'Other';
+      const raw = t.category || 'Other';
+      const lower = raw.toLowerCase();
+      if (!spelling.has(lower)) spelling.set(lower, raw);
+      const key = spelling.get(lower);
       byCategory[key] = Number(((byCategory[key] || 0) + t.amount).toFixed(2));
     }
+    const plannedTotal = Number(
+      categories.reduce((sum, c) => sum + (c.planned_amount || 0), 0).toFixed(2),
+    );
 
     return {
       total,
@@ -271,26 +344,36 @@ export function BudgetProvider({ children }) {
       splitMessage: split?.message ?? null,
       survival: split?.mode === 'survival',
       overToday: split ? split.spent_today > split.daily_limit : false,
+      // The payout date has passed: the dashboard asks the student to start the next cycle.
+      cycleEnded: Boolean(split?.cycle_ended),
+      daysOverdue: split?.days_overdue ?? 0,
+      plannedTotal,
     };
-  }, [budget, transactions, split]);
+  }, [budget, transactions, split, categories]);
 
   const value = useMemo(() => ({
     budget,
     transactions,
     split,
     serverHealth,
+    categories,
     loading,
     loaded,
     error,
     refresh,
     saveBudget,
     addTransaction,
+    updateTransaction,
     deleteTransaction,
+    renewBudget,
+    saveCategories,
+    downloadTemplate,
     deleteBudget,
     supports: BACKEND_SUPPORTS,
     ...derived,
-  }), [budget, transactions, split, serverHealth, loading, loaded, error, refresh,
-       saveBudget, addTransaction, deleteTransaction, deleteBudget, derived]);
+  }), [budget, transactions, split, serverHealth, categories, loading, loaded, error, refresh,
+       saveBudget, addTransaction, updateTransaction, deleteTransaction, renewBudget,
+       saveCategories, downloadTemplate, deleteBudget, derived]);
 
   return <BudgetContext.Provider value={value}>{children}</BudgetContext.Provider>;
 }

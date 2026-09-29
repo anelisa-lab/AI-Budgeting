@@ -100,11 +100,35 @@ export function percentage(value, fieldName = 'Percentage') {
   return null;
 }
 
-export function futureOrTodayDate(value, fieldName = 'Date') {
+/**
+ * A required, real calendar date (YYYY-MM-DD from an <input type="date">).
+ *
+ * This only checks that the value IS a date. It used to be called
+ * `futureOrTodayDate`, which promised a rule it never applied — any date passed.
+ * Rules about WHICH dates are allowed (how far ahead, whether the period has
+ * already ended) belong to the screen that knows the context, e.g. BudgetEntry.
+ */
+export function validDate(value, fieldName = 'Date') {
   const base = required(value, fieldName);
   if (base) return base;
-  const d = new Date(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return `${fieldName} is not a valid date.`;
+  const d = new Date(`${value}T00:00:00`);
   if (Number.isNaN(d.getTime())) return `${fieldName} is not a valid date.`;
+  return null;
+}
+
+/**
+ * An optional date that must fall between `min` and `max` (both YYYY-MM-DD,
+ * inclusive). Blank is fine — the caller treats it as "today". Used by the
+ * spend form: a spend can be dated back to the start of the budget, never
+ * into the future.
+ */
+export function dateWithin(value, { min, max, fieldName = 'Date' } = {}) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const base = validDate(value, fieldName);
+  if (base) return base;
+  if (max && value > max) return `${fieldName} cannot be in the future.`;
+  if (min && value < min) return `${fieldName} cannot be before your budget started.`;
   return null;
 }
 

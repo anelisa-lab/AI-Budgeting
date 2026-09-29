@@ -18,9 +18,18 @@
  * round-trips exactly.
  *
  * Editing is narrower than creating on purpose: PUT /budgets/{id} accepts only
- * total_amount and cycle_end_date (BudgetUpdateRequest), so the start date is
- * read-only once a budget exists rather than being a control that silently
- * does nothing.
+ * total_amount, cycle_end_date, savings_percentage and survival_threshold
+ * (BudgetUpdateRequest), so the start date is read-only once a budget exists
+ * rather than being a control that silently does nothing.
+ *
+ * Three more things live on this screen:
+ *   - "Start next cycle" (RenewBudgetForm) — how a budget ends and the next
+ *     one begins;
+ *   - "Plan your priorities" (CategoryPlanner) — the student's categories, and
+ *     the spreadsheet template built from them;
+ *   - "Past budgets" — the finished cycles.
+ * The preview uses lib/budgetMath.js, which divides by the same day count as
+ * the backend's Daily Budget Split so the two numbers agree.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -31,63 +40,40 @@ import {
 import { useBudget, NSFAS } from '../context/BudgetContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import CategoryPlanner from '../components/budget/CategoryPlanner.jsx';
+import PastBudgets from '../components/budget/PastBudgets.jsx';
+import RenewBudgetForm from '../components/budget/RenewBudgetForm.jsx';
 import ListBudgetSummary from '../components/list/ListBudgetSummary.jsx';
-import { addDays, budgetToFormValues } from '../api/normalise.js';
-import { daysUntil, longDate, money, todayIso } from '../lib/format.js';
+import { budgetToFormValues } from '../api/normalise.js';
+import { longDate, money, todayIso } from '../lib/format.js';
+import { previewEdit, previewNewBudget } from '../lib/budgetMath.js';
+import { PERIODS, RULES, START_DATE_HINT } from '../lib/budgetRules.js';
+import { saveBlob } from '../lib/download.js';
 import * as v from '../lib/validation.js';
-
-const PERIODS = [
-  { value: '30', label: 'One month (30 days)' },
-  { value: '14', label: 'Two weeks (14 days)' },
-  { value: '7', label: 'One week (7 days)' },
-];
 
 const PRESETS = [
   { label: 'NSFAS living allowance', amount: NSFAS.livingAllowanceMonthly, days: 30 },
   { label: 'NSFAS living + travelling allowance', amount: 2535, days: 30 },
 ];
 
-const RULES = {
-  amount: (value) => v.amount(value, { min: 1, max: 50000, fieldName: 'Your allowance' }),
-  payoutDate: (value, all) => {
-    const base = v.futureOrTodayDate(value, 'Payout date');
-    if (base) return base;
-    // Editing: the start date is fixed server-side, so it is never the problem.
-    if (all.isEditing) return null;
-    if (daysUntil(value) > 31) {
-      return 'That date is more than a month away. Enter the date your allowance landed (or will land).';
-    }
-    const end = addDays(value, Number(all.periodDays) || 30);
-    if (end && daysUntil(end) < 0) {
-      return `A ${all.periodDays}-day budget from that date ended on ${longDate(end)}. `
-        + 'Enter the date your latest allowance landed.';
-    }
-    return null;
-  },
-  periodDays: (value, all) => {
-    const base = v.required(value, 'Budget period');
-    if (base) return base;
-    if (all.isEditing && all.payoutDate) {
-      const end = addDays(all.payoutDate, Number(value) || 30);
-      if (end && daysUntil(end) < 0) {
-        return `That would end the budget on ${longDate(end)}, which has already passed. Choose a longer period.`;
-      }
-    }
-    return null;
-  },
-  savingsPercentage: (value) => v.percentage(value, 'Savings'),
-  survivalThreshold: (value) => (String(value ?? '').trim() === ''
-    ? null
-    : v.amount(value, { min: 0, max: 50000, fieldName: 'Survival threshold' })),
-};
-
 export default function BudgetEntry() {
   const { t } = useLanguage();
-  const { budget, saveBudget, deleteBudget, supports } = useBudget();
+  const {
+    budget, saveBudget, deleteBudget, supports, cycleEnded, categories: savedCategories,
+    saveCategories, downloadTemplate, spendable: spendableNow,
+  } = useBudget();
   const toast = useToast();
   const navigate = useNavigate();
   const formRef = useRef(null);
   const [deleting, setDeleting] = useState(false);
+  /** "Start next cycle" opened early, before the payout date has passed. */
+  const [showRenew, setShowRenew] = useState(false);
+
+  /* The priority-category planner: { name, plannedAmount } rows. */
+  const [plannerRows, setPlannerRows] = useState([]);
+  const [plannerError, setPlannerError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const [savingCategories, setSavingCategories] = useState(false);
 
   async function handleDeleteBudget() {
     // eslint-disable-next-line no-alert
@@ -118,50 +104,53 @@ export default function BudgetEntry() {
     if (budget) setValues(budgetToFormValues(budget));
   }, [budget]);
 
+  // The saved priority categories fill the planner (again after each save).
+  useEffect(() => {
+    setPlannerRows(savedCategories.map((c) => ({
+      name: c.name,
+      plannedAmount: c.planned_amount == null ? '' : String(c.planned_amount),
+    })));
+  }, [savedCategories]);
+
+  const plannerDirty = useMemo(() => {
+    const saved = savedCategories.map((c) => `${c.name.toLowerCase()}|${c.planned_amount ?? ''}`);
+    const now = plannerRows.map((r) => `${r.name.toLowerCase()}|${Number(r.plannedAmount) || ''}`);
+    return saved.length !== now.length || saved.some((x, i) => x !== now[i]);
+  }, [plannerRows, savedCategories]);
+
   /**
-   * The live preview. On a NEW budget this is the honest arithmetic:
-   * (allowance − savings) ÷ days. On an existing one the backend already knows
-   * what has been spent, so the preview only previews the CHANGE — the
-   * dashboard shows the real remaining figure.
+   * The live preview. Every figure comes from lib/budgetMath.js, which uses the
+   * backend's own day count (today and payout day both included) and rounds the
+   * daily figure down to the cent — so what is shown here is what the dashboard
+   * says the moment the budget is saved. (The first version divided a new
+   * budget by the period length: R57.17 here, R55.32 there.)
+   *
+   * On an existing budget the backend already knows what has been spent, so the
+   * preview only previews the CHANGE, exactly as PUT /budgets/{id} applies it.
    */
   const preview = useMemo(() => {
     const amountNum = Number(String(values.amount).replace(/[^\d.]/g, ''));
-    const days = Number(values.periodDays) || 30;
-    const savingsPct = Math.min(100, Math.max(0, Number(values.savingsPercentage) || 0));
     if (!Number.isFinite(amountNum) || amountNum <= 0) return null;
+    const today = todayIso();
 
     if (budget) {
-      // Editing: mirror what PUT /budgets/{id} does server-side — the balance
-      // moves by the same amount as the total, and spending already recorded
-      // is kept — then spread it over the days left to the (new) payout date.
-      // Showing "new total ÷ period" here, as the first version did, disagreed
-      // with the dashboard as soon as anything had been spent.
-      const delta = amountNum - budget.total_amount;
-      const newRemaining = Math.max(0, budget.remaining_amount + delta);
-      const end = addDays(budget.cycle_start_date, days);
-      // Same day count as the backend's split: today and payout day included.
-      const daysLeft = Math.max(1, daysUntil(end) + 1);
       return {
         editing: true,
-        remaining: newRemaining,
-        daysLeft,
-        end,
-        daily: newRemaining / daysLeft,
-        weekly: (newRemaining / daysLeft) * 7,
+        ...previewEdit({
+          amount: amountNum,
+          savingsPercentage: values.savingsPercentage,
+          periodDays: values.periodDays,
+          budget,
+        }, today),
       };
     }
-
-    const savings = Number((amountNum * savingsPct / 100).toFixed(2));
-    const spendable = amountNum - savings;
-    return {
+    return previewNewBudget({
       amount: amountNum,
-      savings,
-      spendable,
-      days,
-      daily: spendable / days,
-      weekly: spendable / (days / 7),
-    };
-  }, [values.amount, values.periodDays, values.savingsPercentage, budget]);
+      savingsPercentage: values.savingsPercentage,
+      periodDays: values.periodDays,
+      startDate: values.payoutDate,
+    }, today);
+  }, [values.amount, values.periodDays, values.savingsPercentage, values.payoutDate, budget]);
 
   function change(name, value) {
     setValues((s) => ({ ...s, [name]: value }));
@@ -193,13 +182,21 @@ export default function BudgetEntry() {
 
     setSubmitting(true);
     try {
-      await saveBudget({
+      const saved = await saveBudget({
         amount: Number(String(values.amount).replace(/[^\d.]/g, '')),
         payoutDate: values.payoutDate,
         periodDays: Number(values.periodDays),
         savingsPercentage: Number(values.savingsPercentage) || 0,
         survivalThreshold: values.survivalThreshold,
       });
+      // Priorities picked before the budget existed belong to the new budget.
+      if (!isEditing && plannerRows.length > 0) {
+        try {
+          await saveCategories(plannerRows, saved.id);
+        } catch (err) {
+          toast.error(`Budget set, but your categories were not saved: ${err.message}`);
+        }
+      }
       toast.success(isEditing ? 'Budget updated.' : 'Budget set. Let’s go shopping.');
       navigate('/dashboard');
     } catch (err) {
@@ -217,6 +214,49 @@ export default function BudgetEntry() {
     }
   }
 
+  /** Build the spreadsheet for the chosen categories and hand it to the browser. */
+  async function handleDownload() {
+    setPlannerError(null);
+    const amountNum = Number(String(values.amount).replace(/[^\d.]/g, ''));
+    if (!isEditing && !(amountNum > 0)) {
+      setPlannerError('Enter how much you received above first, so the sheet is sized to your money.');
+      return;
+    }
+    setDownloading(true);
+    try {
+      const { blob, filename } = await downloadTemplate({
+        categories: plannerRows,
+        amount: amountNum > 0 ? amountNum : undefined,
+        savingsPercentage: values.savingsPercentage,
+        periodDays: values.periodDays,
+        startDate: values.payoutDate,
+      });
+      saveBlob(blob, filename || 'uniwallet-budget.xlsx');
+      toast.success('Your budget spreadsheet is ready. Check your downloads.');
+    } catch (err) {
+      setPlannerError(err.message || 'Could not build the spreadsheet. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function handleSaveCategories() {
+    setPlannerError(null);
+    setSavingCategories(true);
+    try {
+      await saveCategories(plannerRows);
+      toast.success('Categories saved. Your dashboard now shows planned vs spent.');
+    } catch (err) {
+      setPlannerError(err.message || 'Could not save your categories.');
+    } finally {
+      setSavingCategories(false);
+    }
+  }
+
+  const plannerSpendable = isEditing
+    ? (preview?.editing ? Math.max(0, preview.total - preview.savings) : spendableNow)
+    : (preview ? preview.spendable : null);
+
   return (
     <div className="page--narrow" style={{ margin: '0 auto' }}>
       <div className="stack stack--loose">
@@ -231,7 +271,27 @@ export default function BudgetEntry() {
           </p>
         </div>
 
+        {isEditing && supports.renewBudget && (cycleEnded || showRenew) && (
+          <RenewBudgetForm ended={cycleEnded} />
+        )}
+
+        {isEditing && supports.renewBudget && !cycleEnded && !showRenew && (
+          <div className="row row--between">
+            <p className="field__hint" style={{ margin: 0, maxWidth: '44ch' }}>
+              Your next allowance landed early? Start the next cycle now — this budget is kept in your history.
+            </p>
+            <Button variant="secondary" size="sm" onClick={() => setShowRenew(true)}>
+              Start next cycle
+            </Button>
+          </div>
+        )}
+
         <Card>
+          {cycleEnded && (
+            <p className="field__hint" style={{ marginBottom: 'var(--s-4)' }}>
+              Only need to stretch this cycle a little? Edit it below instead.
+            </p>
+          )}
           <form ref={formRef} onSubmit={submit} noValidate className="stack">
             {formError && <Alert tone="danger" title="Could not save">{formError}</Alert>}
 
@@ -286,7 +346,7 @@ export default function BudgetEntry() {
               label={t('budget.landed')}
               hint={isEditing
                 ? 'The start date of a budget cannot be changed once it is set.'
-                : 'The day your allowance was paid. The daily figure counts from here.'}
+                : START_DATE_HINT}
               error={errors.payoutDate}
               required
             >
@@ -327,30 +387,31 @@ export default function BudgetEntry() {
             </Field>
 
             {/* budgets.savings_percentage — carved out up front by the backend
-                so it is never spendable. Only settable at creation, because
-                BudgetUpdateRequest does not accept it. */}
-            {!isEditing && (
-              <Field
-                id="savingsPercentage"
-                label="Put some aside first?"
-                hint="A percentage of your allowance (0–100), taken off the top and kept out of your spendable balance. Leave at 0 to skip."
-                error={errors.savingsPercentage}
-              >
-                {({ id, describedBy, invalid }) => (
-                  <Input
-                    id={id}
-                    inputMode="numeric"
-                    suffix="%"
-                    placeholder="0"
-                    value={values.savingsPercentage}
-                    invalid={invalid}
-                    describedBy={describedBy}
-                    onChange={(e) => change('savingsPercentage', e.target.value.replace(/[^\d.]/g, ''))}
-                    onBlur={() => blur('savingsPercentage')}
-                  />
-                )}
-              </Field>
-            )}
+                so it is never spendable. Editable too: the server recomputes the
+                amount from the percentage and the total, so the two never drift
+                apart when the total changes. */}
+            <Field
+              id="savingsPercentage"
+              label="Put some aside first?"
+              hint={isEditing
+                ? 'A percentage of your allowance (0–100). Changing it, or your allowance, recalculates what is set aside.'
+                : 'A percentage of your allowance (0–100), taken off the top and kept out of your spendable balance. Leave at 0 to skip.'}
+              error={errors.savingsPercentage}
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  inputMode="numeric"
+                  suffix="%"
+                  placeholder="0"
+                  value={values.savingsPercentage}
+                  invalid={invalid}
+                  describedBy={describedBy}
+                  onChange={(e) => change('savingsPercentage', e.target.value.replace(/[^\d.]/g, ''))}
+                  onBlur={() => blur('savingsPercentage')}
+                />
+              )}
+            </Field>
 
             {/* budgets.survival_threshold — the deck's "Broke Week Mode". When
                 remaining_amount drops to this, the Daily Budget Split switches
@@ -358,9 +419,7 @@ export default function BudgetEntry() {
             <Field
               id="survivalThreshold"
               label="Switch to survival mode below"
-              hint={isEditing
-                ? 'When what is left drops to this, UniWallet recommends essentials only. Set 0 to turn it off.'
-                : 'Optional. When what is left drops to this, UniWallet recommends essentials only.'}
+              hint="Optional. When what is left drops to this, UniWallet recommends essentials only. Leave blank (or 0) to turn it off."
               error={errors.survivalThreshold}
             >
               {({ id, describedBy, invalid }) => (
@@ -403,8 +462,9 @@ export default function BudgetEntry() {
                       + 'The dashboard shows the exact figure once you save.'
                     : preview.savings > 0
                       ? `${money(preview.spendable)} spendable after putting ${money(preview.savings)} aside, `
-                        + `spread over ${preview.days} days.`
-                      : `${money(preview.amount)} spread evenly over ${preview.days} days.`}
+                        + `spread over ${preview.daysLeft} days (today and payout day both count).`
+                      : `${money(preview.amount)} spread evenly over ${preview.daysLeft} days `
+                        + '(today and payout day both count).'}
                 </p>
               </Card>
             )}
@@ -428,8 +488,26 @@ export default function BudgetEntry() {
           </form>
         </Card>
 
+        {/* Priorities -> the spreadsheet template, and (with a budget) the dashboard bars */}
+        {supports.categories && (
+          <CategoryPlanner
+            rows={plannerRows}
+            onChange={(rows) => { setPlannerRows(rows); setPlannerError(null); }}
+            spendable={plannerSpendable}
+            periodDays={Number(values.periodDays) || 30}
+            onDownload={handleDownload}
+            downloading={downloading}
+            onSave={isEditing ? handleSaveCategories : null}
+            saving={savingCategories}
+            dirty={plannerDirty}
+            error={plannerError}
+          />
+        )}
+
         {/* Your shopping list against what's left (live Checkers + catalogue items) */}
         {isEditing && <ListBudgetSummary />}
+
+        <PastBudgets refreshKey={budget?.id ?? 'none'} />
 
         {isEditing && (
           <div className="row">

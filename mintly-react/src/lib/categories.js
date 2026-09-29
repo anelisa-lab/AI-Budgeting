@@ -75,3 +75,75 @@ export function isWithoutListings(value) {
     (c) => c.toLowerCase() === String(value || '').trim().toLowerCase(),
   );
 }
+
+
+/* ------------------------------------------------------------------ planner */
+
+/**
+ * "Plan your priorities" (BudgetEntry): the categories a student can add with
+ * one tap. They are NOT limited to these — any name can be typed — and they are
+ * not the same list as the catalogue's product categories, because a student
+ * budgets for things a shop does not sell (transport, data, emergencies).
+ * Mirrors SUGGESTED_CATEGORIES in app/budget_categories.py.
+ */
+export const PLANNER_SUGGESTIONS = [
+  'Groceries', 'Toiletries', 'Transport', 'Airtime & data',
+  'Stationery', 'Cleaning supplies', 'Laundry', 'Emergencies',
+];
+
+export const MAX_PLANNER_CATEGORIES = 25;
+export const MAX_CATEGORY_NAME = 60;
+
+/**
+ * Tidy a typed category name the way the backend will (clean_category_name):
+ * collapse spaces, and drop a leading = + - @ so it can never run as a
+ * spreadsheet formula. Returns '' when nothing usable is left.
+ */
+export function cleanPlannerName(name) {
+  const text = String(name ?? '').split(/\s+/).filter(Boolean).join(' ');
+  return text.replace(/^[=+\-@\s]+/, '').trim();
+}
+
+/** A message when `name` cannot be added to `existing` (an array of names), else null. */
+export function plannerNameError(name, existing = []) {
+  const cleaned = cleanPlannerName(name);
+  if (!cleaned) return 'Type a category name first.';
+  if (cleaned.length > MAX_CATEGORY_NAME) return `Keep it under ${MAX_CATEGORY_NAME} characters.`;
+  if (/[*?~]/.test(cleaned)) return 'Category names cannot contain * ? or ~.';
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f]/.test(cleaned)) return 'Category names cannot contain control characters.';
+  if (existing.some((n) => String(n).toLowerCase() === cleaned.toLowerCase())) {
+    return `${cleaned} is already on your list.`;
+  }
+  if (existing.length >= MAX_PLANNER_CATEGORIES) {
+    return `Choose at most ${MAX_PLANNER_CATEGORIES} categories.`;
+  }
+  return null;
+}
+
+/**
+ * The "record a spend" category choices: the app's standard list plus the
+ * student's own priorities, without duplicates (compared ignoring case).
+ * Their priorities come first — they are what they said matters.
+ */
+export function spendCategoryOptions(plannedNames = []) {
+  const out = [];
+  const seen = new Set();
+  const add = (value, label) => {
+    const key = String(value).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ value, label });
+  };
+  plannedNames.forEach((n) => add(n, categoryLabel(n)));
+  SPENDING_CATEGORIES.forEach((c) => add(c.value, c.label));
+  return out;
+}
+
+/** "week", "two weeks" or "month" — what to call a budget of this length. */
+export function periodWord(days) {
+  const n = Number(days) || 30;
+  if (n <= 7) return 'week';
+  if (n <= 16) return 'two weeks';
+  return 'month';
+}

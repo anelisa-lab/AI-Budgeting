@@ -86,6 +86,12 @@ export function budgetFromApi(b) {
     created_at: b.created_at || null,
     updated_at: b.updated_at || null,
 
+    // Cycle history (sql/014): money rolled in from the last cycle, when this
+    // one was closed, and which cycle it replaced.
+    carried_over_amount: num(b.carried_over_amount),
+    completed_at: b.completed_at || null,
+    renewed_from_budget_id: b.renewed_from_budget_id ?? null,
+
     // Written back by the Daily Budget Split on every read (Member 6).
     daily_limit: numOrNull(b.daily_limit),
     budget_mode: b.budget_mode || 'normal',
@@ -113,8 +119,37 @@ export function budgetToApi({
     cycle_end_date: addDays(start, num(periodDays, 30)),
     budget_kind: budgetKind || 'monthly',
     savings_percentage: num(savingsPercentage, 0),
-    // Blank = no survival mode, which the backend expresses as null.
-    survival_threshold: numOrNull(survivalThreshold),
+    // Blank (or 0) = no survival mode, which the backend expresses as null.
+    survival_threshold: thresholdOrNull(survivalThreshold),
+  };
+}
+
+/** Survival threshold from a form box: blank and 0 both mean "off" (null). */
+export function thresholdOrNull(value) {
+  const n = numOrNull(value);
+  return n === null || n <= 0 ? null : n;
+}
+
+/**
+ * The "start next cycle" form -> BudgetRenewRequest (POST /budgets/{id}/renew).
+ * Same date mapping as a new budget (payoutDate -> start, periodDays -> end),
+ * plus what to carry over. survival_threshold is always sent so a cleared box
+ * clears it rather than silently keeping the old one.
+ */
+export function budgetRenewToApi({
+  amount, payoutDate, periodDays, savingsPercentage, survivalThreshold,
+  carryOverLeftover = true, carryOverSavings = false, keepCategories = true,
+} = {}) {
+  const start = toDateOnly(payoutDate);
+  return {
+    total_amount: num(amount),
+    cycle_start_date: start,
+    cycle_end_date: addDays(start, num(periodDays, 30)),
+    savings_percentage: num(savingsPercentage, 0),
+    survival_threshold: thresholdOrNull(survivalThreshold),
+    carry_over_leftover: Boolean(carryOverLeftover),
+    carry_over_savings: Boolean(carryOverSavings),
+    keep_categories: Boolean(keepCategories),
   };
 }
 
@@ -138,17 +173,27 @@ export function budgetToFormValues(budget) {
  * (BudgetUpdateRequest). cycle_start_date is immutable server-side, so the
  * period length is expressed by moving the end date.
  */
-export function budgetUpdateToApi({ amount, payoutDate, periodDays, survivalThreshold }, existing) {
+export function budgetUpdateToApi(
+  { amount, payoutDate, periodDays, survivalThreshold, savingsPercentage },
+  existing,
+) {
   const start = toDateOnly(payoutDate) || existing?.cycle_start_date;
   const patch = {};
   if (amount !== undefined && amount !== '') patch.total_amount = num(amount);
   if (periodDays !== undefined && periodDays !== '') {
     patch.cycle_end_date = addDays(start, num(periodDays, 30));
   }
-  // The backend keeps the old threshold when this is omitted, so a blank box
-  // cannot clear it — 0 does (remaining never drops below R0).
-  if (survivalThreshold !== undefined && survivalThreshold !== '') {
-    patch.survival_threshold = num(survivalThreshold);
+  // The backend keeps the old threshold when the field is left out and clears
+  // it when it is sent as null. The form shows the current value, so a blank or
+  // 0 box means "turn it off" — send null. (Before, a blank box was omitted and
+  // the threshold could only be "cleared" with 0, which left survival mode on
+  // for a completely used-up budget.)
+  if (survivalThreshold !== undefined) {
+    patch.survival_threshold = thresholdOrNull(survivalThreshold);
+  }
+  // The backend recomputes savings from this and the total.
+  if (savingsPercentage !== undefined && savingsPercentage !== '') {
+    patch.savings_percentage = num(savingsPercentage);
   }
   return patch;
 }
@@ -174,6 +219,9 @@ export function budgetSplitFromApi(s) {
     mode: s.mode || 'normal',
     survival_threshold: numOrNull(s.survival_threshold),
     message: s.message || null,
+    // True once the payout date has passed: the budget needs renewing.
+    cycle_ended: Boolean(s.cycle_ended),
+    days_overdue: num(s.days_overdue, 0),
     days: Array.isArray(s.days) ? s.days.map((d) => ({
       limit_date: toDateOnly(d.limit_date),
       planned_limit: num(d.planned_limit),
@@ -202,14 +250,35 @@ export function transactionFromApi(t) {
   };
 }
 
-/** Spend form -> TransactionCreateRequest. */
-export function transactionToApi({ description, amount, category, isEssential } = {}) {
-  return {
+/**
+ * Spend form -> TransactionCreateRequest. `transactionDate` (YYYY-MM-DD) is
+ * optional: left out, the spend is stamped "now"; a past date files it on the
+ * day it happened so it does not eat into today's allowance.
+ */
+export function transactionToApi({ description, amount, category, isEssential, transactionDate } = {}) {
+  const body = {
     item_name: String(description || '').trim(),
     amount: num(amount),
     category: category || null,
     is_essential: Boolean(isEssential),
   };
+  const date = toDateOnly(transactionDate);
+  if (date) body.transaction_date = date;
+  return body;
+}
+
+/** Edit form -> TransactionUpdateRequest. Only the fields given are sent. */
+export function transactionUpdateToApi({
+  description, amount, category, isEssential, transactionDate,
+} = {}) {
+  const body = {};
+  if (description !== undefined) body.item_name = String(description || '').trim();
+  if (amount !== undefined && amount !== '') body.amount = num(amount);
+  if (category !== undefined) body.category = category || null;
+  if (isEssential !== undefined) body.is_essential = Boolean(isEssential);
+  const date = toDateOnly(transactionDate);
+  if (date) body.transaction_date = date;
+  return body;
 }
 
 /** TransactionResult (transaction + budget + overspend flags + fresh split). */
@@ -239,6 +308,50 @@ export function budgetHealthFromApi(h) {
   };
 }
 
+/* ------------------------------------------------------- priority categories */
+
+/** BudgetCategoryOut — a priority category with what has been spent under it. */
+export function budgetCategoryFromApi(c) {
+  if (!c) return null;
+  return {
+    id: c.id,
+    name: c.name,
+    planned_amount: numOrNull(c.planned_amount),   // null = no amount planned yet
+    position: num(c.position, 0),
+    spent_amount: num(c.spent_amount),
+  };
+}
+
+/** The category planner's rows -> the body of PUT /budgets/{id}/categories. */
+export function categoriesToApi(rows = []) {
+  return {
+    categories: rows
+      .filter((r) => String(r?.name || '').trim() !== '')
+      .map((r) => ({
+        name: String(r.name).trim(),
+        planned_amount: numOrNull(String(r.plannedAmount ?? '').replace(/[^\d.]/g, '')),
+      })),
+  };
+}
+
+/**
+ * The planner + budget form -> the body of POST /budgets/template. The money
+ * and period are only sent when the form has them; otherwise the backend uses
+ * the active budget.
+ */
+export function templateToApi({ categories, amount, savingsPercentage, periodDays, startDate } = {}) {
+  const body = categoriesToApi(categories);
+  const total = numOrNull(String(amount ?? '').replace(/[^\d.]/g, ''));
+  if (total !== null && total > 0) body.total_amount = total;
+  const pct = numOrNull(savingsPercentage);
+  if (pct !== null) body.savings_percentage = Math.min(100, Math.max(0, pct));
+  const days = numOrNull(periodDays);
+  if (days !== null && days >= 1) body.period_days = Math.round(days);
+  const start = toDateOnly(startDate);
+  if (start) body.start_date = start;
+  return body;
+}
+
 /** BudgetDashboardOut — GET /budgets/dashboard. */
 export function dashboardFromApi(d) {
   if (!d) return null;
@@ -248,6 +361,8 @@ export function dashboardFromApi(d) {
     health: budgetHealthFromApi(d.health),
     recent_transactions: Array.isArray(d.recent_transactions)
       ? d.recent_transactions.map(transactionFromApi) : [],
+    categories: Array.isArray(d.categories)
+      ? d.categories.map(budgetCategoryFromApi) : [],
   };
 }
 

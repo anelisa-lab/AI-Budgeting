@@ -81,7 +81,12 @@ export const BACKEND_FIELD_TO_FORM_FIELD = {
   total_amount: 'amount',
   cycle_start_date: 'payoutDate',
   cycle_end_date: 'periodDays',
+  period_days: 'periodDays',
+  start_date: 'payoutDate',
   savings_percentage: 'savingsPercentage',
+  transaction_date: 'transactionDate',
+  planned_amount: 'plannedAmount',
+  categories: 'categories',
   budget_kind: 'budgetKind',
   item_name: 'description',
   amount: 'amount',
@@ -211,6 +216,9 @@ function fallbackMessage(status) {
  * @param {string} options.token   Bearer token for protected routes
  * @param {object} options.fieldHints  status -> form field id
  * @param {Function} options.fetchImpl Injected for tests
+ * @param {string} options.responseType 'json' (default) or 'blob' — for the
+ *                 spreadsheet download. A blob call resolves to
+ *                 { blob, filename } on success; errors are still JSON.
  */
 /** Fired after every successful non-GET call; NotificationsContext refetches on it. */
 export const NOTIFICATIONS_STALE_EVENT = 'uniwallet:notifications-stale';
@@ -223,6 +231,7 @@ export async function request(path, {
   fieldHints,
   fetchImpl,
   signal,
+  responseType = 'json',
 } = {}) {
   const doFetch = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   if (!doFetch) throw new ApiError('No fetch implementation available.', { status: 0 });
@@ -259,6 +268,15 @@ export async function request(path, {
   if (!response.ok) {
     if (response.status === 401 && onUnauthorized) onUnauthorized();
     throw toApiError(response.status, payload, fieldHints || {});
+  }
+
+  // A file download: hand back the bytes and the name the server suggested.
+  // (Nothing was written, so there is no notification to refresh.)
+  if (responseType === 'blob') {
+    const blob = await response.blob();
+    const disposition = response.headers?.get?.('content-disposition') || '';
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+    return { blob, filename: match ? decodeURIComponent(match[1]) : null };
   }
 
   // Any successful write may have produced a notification server-side; tell

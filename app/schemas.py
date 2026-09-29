@@ -3,6 +3,12 @@ from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
 
+from app.budget_categories import (
+    MAX_CATEGORIES,
+    MAX_NAME_LENGTH,
+    clean_category_name,
+)
+
 # DUT student numbers are 8-9 digits, no letters/spaces — matches
 # mintly-react/src/lib/validation.js's studentNumber() check, and the
 # users.student_number CHECK constraint in schema.sql.
@@ -113,9 +119,41 @@ class BudgetCreateRequest(BaseModel):
 
 
 class BudgetUpdateRequest(BaseModel):
+    """
+    PUT /budgets/{id}. Every field is optional; only the ones sent change.
+
+    survival_threshold is the one field where "not sent" and "sent as null" mean
+    different things: leaving it out keeps the current threshold, sending null
+    (or 0) clears it. The handler tells them apart with `model_fields_set`.
+    """
     total_amount: Optional[Decimal] = Field(default=None, gt=0)
     cycle_end_date: Optional[date] = None
     survival_threshold: Optional[Decimal] = Field(default=None, ge=0)
+    # Savings are recomputed from this whenever it or the total changes.
+    savings_percentage: Optional[Decimal] = Field(default=None, ge=0, le=100)
+
+
+class BudgetRenewRequest(BaseModel):
+    """
+    POST /budgets/{id}/renew — close this cycle and start the next one.
+
+    The dates default to "starts today, lasts as long as the last one" so the
+    common case is just an amount. `carry_over_leftover` rolls what was not
+    spent into the new total; `carry_over_savings` makes last cycle's savings
+    spendable again (otherwise they stay banked in the savings ledger).
+
+    total_amount is the FRESH allowance. It may be 0 when the whole new budget is
+    carried over; the total after carry-over must still be above zero.
+    """
+    total_amount: Decimal = Field(ge=0)
+    cycle_start_date: Optional[date] = None
+    cycle_end_date: Optional[date] = None
+    savings_percentage: Optional[Decimal] = Field(default=None, ge=0, le=100)
+    survival_threshold: Optional[Decimal] = Field(default=None, ge=0)
+    carry_over_leftover: bool = True
+    carry_over_savings: bool = False
+    # Copy the priority categories (with their planned amounts) to the new cycle.
+    keep_categories: bool = True
 
 
 class BudgetOut(BaseModel):
@@ -133,6 +171,11 @@ class BudgetOut(BaseModel):
     daily_limit: Optional[Decimal] = None
     survival_threshold: Optional[Decimal] = None
     budget_mode: str = "normal"
+    # Cycle history: what was rolled in, when this cycle was closed, and which
+    # cycle it replaced.
+    carried_over_amount: Decimal = Decimal("0")
+    completed_at: Optional[datetime] = None
+    renewed_from_budget_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -142,6 +185,19 @@ class TransactionCreateRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     category: Optional[str] = Field(default=None, max_length=100)
     is_essential: bool = False
+    # When it was bought. Omit for "now". A past date (never before the budget
+    # started, never in the future) lets a student log yesterday's groceries
+    # without it eating into today's allowance.
+    transaction_date: Optional[date] = None
+
+
+class TransactionUpdateRequest(BaseModel):
+    """PUT /budgets/{id}/transactions/{tid} — only the fields sent change."""
+    item_name: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    amount: Optional[Decimal] = Field(default=None, gt=0)
+    category: Optional[str] = Field(default=None, max_length=100)
+    is_essential: Optional[bool] = None
+    transaction_date: Optional[date] = None
 
 
 class TransactionOut(BaseModel):
@@ -165,6 +221,13 @@ class TransactionResult(BaseModel):
     daily_limit_warning: bool = False
     daily_limit_message: Optional[str] = None
     # The split recalculated after this transaction (None if it could not be built)
+    daily_split: Optional["BudgetSplitOut"] = None
+
+
+class TransactionUpdateResult(BaseModel):
+    """PUT /budgets/{id}/transactions/{tid} — the edited spend and the budget after it."""
+    transaction: TransactionOut
+    budget: "BudgetOut"
     daily_split: Optional["BudgetSplitOut"] = None
 
 
@@ -322,6 +385,9 @@ class BudgetSplitOut(BaseModel):
     survival_threshold: Optional[Decimal] = None
     message: str
     days: List[DaySplitOut] = []
+    # True once the payout date has passed — the budget needs renewing.
+    cycle_ended: bool = False
+    days_overdue: int = 0
 
 
 class BudgetHealthOut(BaseModel):
@@ -338,12 +404,53 @@ class BudgetWithSplitOut(BudgetOut):
     daily_split: BudgetSplitOut
 
 
+class BudgetCategoryIn(BaseModel):
+    """One priority category the student wants to budget for."""
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    planned_amount: Optional[Decimal] = Field(default=None, ge=0, le=Decimal("1000000"))
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str) -> str:
+        return clean_category_name(value)
+
+
+class BudgetCategoriesRequest(BaseModel):
+    """PUT /budgets/{id}/categories — replaces the whole list."""
+    categories: List[BudgetCategoryIn] = Field(default_factory=list, max_length=MAX_CATEGORIES)
+
+
+class BudgetCategoryOut(BaseModel):
+    id: int
+    name: str
+    planned_amount: Optional[Decimal] = None
+    position: int = 0
+    # Recorded spending under this name (case-insensitive), so the dashboard
+    # can show planned vs spent without a second request.
+    spent_amount: Decimal = Decimal("0")
+
+
+class BudgetTemplateRequest(BaseModel):
+    """
+    POST /budgets/template — build the downloadable budget spreadsheet.
+
+    The money and period default to the student's active budget, so the form
+    only has to send them when there is no budget yet (or to try "what if").
+    """
+    categories: List[BudgetCategoryIn] = Field(min_length=1, max_length=MAX_CATEGORIES)
+    total_amount: Optional[Decimal] = Field(default=None, gt=0)
+    savings_percentage: Optional[Decimal] = Field(default=None, ge=0, le=100)
+    period_days: Optional[int] = Field(default=None, ge=1, le=92)
+    start_date: Optional[date] = None
+
+
 class BudgetDashboardOut(BaseModel):
     """GET /budgets/dashboard — everything the dashboard screen renders."""
     budget: BudgetOut
     daily_split: BudgetSplitOut
     health: BudgetHealthOut
     recent_transactions: List[TransactionOut] = []
+    categories: List[BudgetCategoryOut] = []
 
 
 class AffordabilityRequest(BaseModel):
@@ -455,6 +562,7 @@ class RecommendationResponse(BaseModel):
 # These refer to models declared further down the file.
 TransactionResult.model_rebuild()
 TransactionDeleteResult.model_rebuild()
+TransactionUpdateResult.model_rebuild()
 SearchResponse.model_rebuild()
 
 

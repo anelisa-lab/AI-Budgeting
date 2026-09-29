@@ -250,3 +250,214 @@ def test_deleting_a_spend_never_lowers_remaining():
 def test_removal_rejects_negative_amounts():
     with pytest.raises(ValueError):
         calculate_transaction_removal(Decimal("10"), Decimal("-1"), Decimal("100"), Decimal("0"))
+
+
+# ---------------------------------------------------------------------------
+# Editing a budget — savings follow the total
+# ---------------------------------------------------------------------------
+
+from datetime import date, datetime, time  # noqa: E402
+
+from app.budget_calc import (  # noqa: E402
+    calculate_budget_edit,
+    calculate_renewal,
+    calculate_savings_amount,
+    calculate_transaction_edit,
+    normalise_survival_threshold,
+    resolve_edit_datetime,
+    resolve_transaction_datetime,
+)
+
+D = Decimal
+
+
+def test_savings_are_a_percentage_of_the_fresh_allowance_only():
+    assert calculate_savings_amount(D("1715"), D("10")) == D("171.50")
+    # R500 of the R1715 was carried over: only R1215 is fresh money.
+    assert calculate_savings_amount(D("1715"), D("10"), D("500")) == D("121.50")
+
+
+class TestCalculateBudgetEdit:
+    def test_raising_the_total_recomputes_savings_to_match_the_percentage(self):
+        # R1000 with 10% aside: R900 spendable. R100 spent -> R800 remaining.
+        total, remaining, savings, pct = calculate_budget_edit(
+            D("1000"), D("800"), D("100"), D("10"), D("0"), new_total=D("2000"),
+        )
+        assert (total, savings, pct) == (D("2000"), D("200.00"), D("10"))
+        # Spendable went 900 -> 1800, so remaining moves by 900 and the R100 spent stays spent.
+        assert remaining == D("1700.00")
+
+    def test_old_behaviour_would_have_left_savings_at_the_old_amount(self):
+        _, _, savings, _ = calculate_budget_edit(
+            D("1000"), D("900"), D("100"), D("10"), D("0"), new_total=D("2000"),
+        )
+        assert savings != D("100")
+
+    def test_lowering_the_total_floors_remaining_at_zero(self):
+        _, remaining, savings, _ = calculate_budget_edit(
+            D("1000"), D("50"), D("0"), D("0"), D("0"), new_total=D("500"),
+        )
+        assert savings == D("0.00")
+        assert remaining == D("0.00")
+
+    def test_changing_only_the_percentage_moves_money_between_savings_and_remaining(self):
+        total, remaining, savings, pct = calculate_budget_edit(
+            D("1000"), D("900"), D("100"), D("10"), D("0"), new_savings_percentage=D("20"),
+        )
+        assert (total, savings, pct) == (D("1000"), D("200.00"), D("20"))
+        assert remaining == D("800.00")
+
+    def test_no_change_is_a_no_op(self):
+        assert calculate_budget_edit(
+            D("1000"), D("640.25"), D("100"), D("10"), D("0"),
+        ) == (D("1000"), D("640.25"), D("100.00"), D("10"))
+
+    def test_remaining_never_exceeds_the_new_spendable_amount(self):
+        # Zero savings -> 50% savings would shrink spendable to R500.
+        _, remaining, _, _ = calculate_budget_edit(
+            D("1000"), D("1000"), D("0"), D("0"), D("0"), new_savings_percentage=D("50"),
+        )
+        assert remaining == D("500.00")
+
+    def test_carried_over_money_is_not_saved_again(self):
+        total, remaining, savings, _ = calculate_budget_edit(
+            D("1500"), D("1350"), D("150"), D("10"), D("500"), new_total=D("1600"),
+        )
+        # Fresh money is now R1100; 10% of that is R110, not 10% of R1600.
+        assert savings == D("110.00")
+        assert remaining == D("1350") + (D("1490") - D("1350"))
+
+
+class TestSurvivalThreshold:
+    def test_zero_and_none_mean_off(self):
+        assert normalise_survival_threshold(None) is None
+        assert normalise_survival_threshold(D("0")) is None
+        assert normalise_survival_threshold(D("0.00")) is None
+
+    def test_a_real_threshold_is_kept(self):
+        assert normalise_survival_threshold(D("200")) == D("200")
+
+
+# ---------------------------------------------------------------------------
+# Renewing a budget
+# ---------------------------------------------------------------------------
+
+class TestCalculateRenewal:
+    def test_fresh_start_with_no_carry_over(self):
+        r = calculate_renewal(D("300"), D("100"), D("1715"), D("10"),
+                              carry_over_leftover=False, carry_over_savings=False)
+        assert r.total_amount == D("1715.00")
+        assert r.savings_amount == D("171.50")
+        assert r.remaining_amount == D("1543.50")
+        assert r.carried_over_amount == D("0.00")
+
+    def test_leftover_is_carried_into_the_total_and_not_saved_again(self):
+        r = calculate_renewal(D("300"), D("100"), D("1715"), D("10"))
+        assert r.total_amount == D("2015.00")
+        assert r.carried_over_amount == D("300.00")
+        assert r.savings_amount == D("171.50")            # 10% of the R1715, not of R2015
+        assert r.remaining_amount == D("1843.50")
+
+    def test_last_cycles_savings_only_come_back_when_asked_for(self):
+        without = calculate_renewal(D("0"), D("100"), D("1000"), D("0"), carry_over_savings=False)
+        with_ = calculate_renewal(D("0"), D("100"), D("1000"), D("0"), carry_over_savings=True)
+        assert without.total_amount == D("1000.00")
+        assert with_.total_amount == D("1100.00")
+        assert with_.savings_carried == D("100.00")
+
+    def test_a_zero_leftover_and_zero_allowance_is_refused(self):
+        with pytest.raises(ValueError):
+            calculate_renewal(D("0"), D("0"), D("0"), D("0"))
+
+    def test_renewal_can_be_all_carry_over(self):
+        r = calculate_renewal(D("250"), D("0"), D("0"), D("0"))
+        assert r.total_amount == D("250.00")
+        assert r.remaining_amount == D("250.00")
+
+    def test_negative_allowance_is_refused(self):
+        with pytest.raises(ValueError):
+            calculate_renewal(D("0"), D("0"), D("-1"), D("0"))
+
+    def test_remaining_never_exceeds_total(self):
+        r = calculate_renewal(D("999.99"), D("50"), D("1715"), D("100"), carry_over_savings=True)
+        assert r.remaining_amount <= r.total_amount
+        assert r.savings_amount <= r.total_amount
+
+
+# ---------------------------------------------------------------------------
+# Spend dates
+# ---------------------------------------------------------------------------
+
+TODAY = date(2026, 9, 29)
+START = date(2026, 9, 1)
+
+
+class TestResolveTransactionDatetime:
+    def test_no_date_means_now(self):
+        assert resolve_transaction_datetime(None, TODAY, START) is None
+
+    def test_today_means_now(self):
+        assert resolve_transaction_datetime(TODAY, TODAY, START) is None
+
+    def test_a_past_day_is_recorded_at_midday(self):
+        assert resolve_transaction_datetime(date(2026, 9, 28), TODAY, START) == datetime(2026, 9, 28, 12, 0)
+
+    def test_the_first_day_of_the_budget_is_allowed(self):
+        assert resolve_transaction_datetime(START, TODAY, START) == datetime.combine(START, time(12, 0))
+
+    def test_future_dates_are_refused(self):
+        with pytest.raises(ValueError):
+            resolve_transaction_datetime(date(2026, 9, 30), TODAY, START)
+
+    def test_dates_before_the_budget_started_are_refused(self):
+        with pytest.raises(ValueError):
+            resolve_transaction_datetime(date(2026, 8, 31), TODAY, START)
+
+
+class TestResolveEditDatetime:
+    NOW = datetime(2026, 9, 29, 14, 30)
+
+    def test_unchanged_when_no_date_is_sent(self):
+        assert resolve_edit_datetime(None, date(2026, 9, 10), TODAY, START, self.NOW) is None
+
+    def test_unchanged_when_the_date_is_the_one_it_already_has(self):
+        assert resolve_edit_datetime(date(2026, 9, 10), date(2026, 9, 10), TODAY, START, self.NOW) is None
+
+    def test_moving_to_today_uses_now(self):
+        assert resolve_edit_datetime(TODAY, date(2026, 9, 10), TODAY, START, self.NOW) == self.NOW
+
+    def test_moving_to_a_past_day_uses_midday(self):
+        assert resolve_edit_datetime(date(2026, 9, 5), date(2026, 9, 10), TODAY, START, self.NOW) == datetime(2026, 9, 5, 12, 0)
+
+    def test_moving_into_the_future_is_refused(self):
+        with pytest.raises(ValueError):
+            resolve_edit_datetime(date(2026, 10, 1), date(2026, 9, 10), TODAY, START, self.NOW)
+
+
+# ---------------------------------------------------------------------------
+# Editing a recorded spend
+# ---------------------------------------------------------------------------
+
+class TestCalculateTransactionEdit:
+    def test_same_amount_changes_nothing(self):
+        assert calculate_transaction_edit(D("400"), D("50"), D("50"), D("1000"), D("600")) == D("400")
+
+    def test_a_bigger_amount_is_spent_like_a_new_purchase(self):
+        # R50 became R80: R30 more comes out.
+        assert calculate_transaction_edit(D("400"), D("50"), D("80"), D("1000"), D("630")) == D("370")
+
+    def test_a_bigger_amount_that_overspends_floors_at_zero(self):
+        assert calculate_transaction_edit(D("20"), D("50"), D("120"), D("1000"), D("1050")) == D("0")
+
+    def test_a_smaller_amount_refunds_the_difference(self):
+        # R80 -> R50 with R630 spent afterwards (so R660 before, R340 left): R30 comes back.
+        assert calculate_transaction_edit(D("340"), D("80"), D("50"), D("1000"), D("630")) == D("370")
+
+    def test_reducing_part_of_an_overspend_cannot_create_money(self):
+        # R1000 spendable, R1100 spent (remaining floored at 0). Trimming a spend by R50
+        # still leaves R1050 spent, so nothing comes back.
+        assert calculate_transaction_edit(D("0"), D("300"), D("250"), D("1000"), D("1050")) == D("0")
+
+    def test_negative_amounts_are_refused(self):
+        with pytest.raises(ValueError):
+            calculate_transaction_edit(D("10"), D("5"), D("-1"), D("100"), D("0"))

@@ -15,6 +15,9 @@ requests>=2.31
 beautifulsoup4>=4.12
 pydantic[email]==2.9.2
 
+# Budget spreadsheet template (app/budget_template.py, POST /budgets/template)
+openpyxl>=3.1
+
 # Testing. The recommender, true-cost and budget-split logic is pure Python
 # with no database, so `pytest` from the repo root runs the whole suite.
 pytest==8.3.3

@@ -325,3 +325,58 @@ def test_a_student_who_spends_exactly_the_limit_lands_on_zero_at_payout():
 
     assert seen_limits == {D("87.50")}     # 700 / 8 days, steady all week
     assert remaining == D("0.00")          # and nothing left over at payout
+
+
+# ---------------------------------------------------------------------------
+# A threshold of 0 is "off"; a lapsed cycle asks to be renewed
+# ---------------------------------------------------------------------------
+
+def test_a_zero_threshold_never_triggers_survival_mode():
+    """0 used to mean "survival mode when the budget is completely used up"."""
+    empty = build_split(
+        budget(remaining="0.00", survival_threshold=D("0.00")),
+        as_of=date(2026, 9, 25),
+    )
+    assert empty.mode == MODE_NORMAL
+    some = build_split(
+        budget(remaining="40.00", survival_threshold=D("0")),
+        as_of=date(2026, 9, 25),
+    )
+    assert some.mode == MODE_NORMAL
+
+
+def test_a_real_threshold_still_counts_an_empty_budget_as_survival():
+    empty = build_split(
+        budget(remaining="0.00", survival_threshold=D("100.00")),
+        as_of=date(2026, 9, 25),
+    )
+    assert empty.mode == MODE_SURVIVAL
+
+
+def test_an_active_cycle_is_not_flagged_as_ended():
+    split = build_split(budget(remaining="500.00"), as_of=date(2026, 9, 25))
+    assert split.cycle_ended is False
+    assert split.days_overdue == 0
+
+
+def test_a_lapsed_cycle_is_flagged_and_says_to_start_the_next_one():
+    # Payout was 2026-09-19; it is now 2026-09-29 with R300 left.
+    split = build_split(
+        budget(remaining="300.00", start="2026-08-20", end="2026-09-19"),
+        as_of=date(2026, 9, 29),
+    )
+    assert split.cycle_ended is True
+    assert split.days_overdue == 10
+    assert "payout date has passed" in split.message
+    assert "10 days ago" in split.message
+    assert "next cycle" in split.message
+    assert split.as_dict()["cycle_ended"] is True
+
+
+def test_yesterdays_payout_reads_naturally():
+    split = build_split(
+        budget(remaining="300.00", start="2026-08-20", end="2026-09-28"),
+        as_of=date(2026, 9, 29),
+    )
+    assert split.days_overdue == 1
+    assert "yesterday" in split.message

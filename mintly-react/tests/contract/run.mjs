@@ -46,7 +46,17 @@ const {
 } = await import('../../src/lib/categories.js');
 const {
   budgetToApi, budgetToFormValues, budgetUpdateToApi, daysBetween,
+  budgetRenewToApi, thresholdOrNull, categoriesToApi, templateToApi, transactionToApi,
+  transactionUpdateToApi, dashboardFromApi,
 } = await import('../../src/api/normalise.js');
+const { categories: budgetCategories } = await import('../../src/api/client.js');
+const {
+  previewNewBudget, previewRenewal, previewEdit, floorCents, daysToPayout,
+} = await import('../../src/lib/budgetMath.js');
+const {
+  PLANNER_SUGGESTIONS, cleanPlannerName, plannerNameError, spendCategoryOptions, periodWord,
+} = await import('../../src/lib/categories.js');
+const { validDate, dateWithin } = await import('../../src/lib/validation.js');
 
 const BASE = 'http://localhost:4000';
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.test.token';
@@ -138,12 +148,24 @@ function installFetch(responder) {
       );
     }
 
-    const { status = 200, body: payload = null } = responder(record, route) || {};
+    const { status = 200, body: payload = null, file = null } = responder(record, route) || {};
     return {
       ok: status >= 200 && status < 300,
       status,
-      headers: { get: (h) => (h.toLowerCase() === 'content-type' ? 'application/json' : null) },
+      headers: {
+        get: (h) => {
+          const key = h.toLowerCase();
+          // A file response (the spreadsheet download) is binary with a filename.
+          if (file) {
+            if (key === 'content-type') return file.type;
+            if (key === 'content-disposition') return `attachment; filename="${file.name}"`;
+            return null;
+          }
+          return key === 'content-type' ? 'application/json' : null;
+        },
+      },
       json: async () => payload,
+      blob: async () => new Blob([file ? file.bytes : '']),
     };
   };
 }
@@ -713,8 +735,11 @@ await test('survival threshold round-trips through create, edit and update', () 
   const form = budgetToFormValues({ total_amount: 1650, cycle_start_date: '2026-09-01',
     cycle_end_date: '2026-10-01', savings_percentage: 0, survival_threshold: 200 });
   assert.equal(form.survivalThreshold, '200');
-  assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '' }, {}), {});
-  assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '0' }, {}), { survival_threshold: 0 });
+  // Editing: the box shows the current value, so blank or 0 means "turn it off" and is
+  // sent as null (the server clears it). Leaving the field out entirely keeps the old one.
+  assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '' }, {}), { survival_threshold: null });
+  assert.deepEqual(budgetUpdateToApi({ survivalThreshold: '0' }, {}), { survival_threshold: null });
+  assert.deepEqual(budgetUpdateToApi({}, {}), {});
 });
 
 /* ========================================================= PHASE 4 ===== */
@@ -1091,6 +1116,288 @@ await test('recent searches skip blank runs, show each query once, and can be cl
 
 await test('Maintenance is a category with listings now', () => {
   assert.equal(CATEGORIES_WITHOUT_LISTINGS.length, 0);
+});
+
+/* ============================== CYCLES, SPEND DATES, CATEGORIES, TEMPLATE == */
+
+console.log('\nBudget cycles, spend dates and the category template');
+
+await test('the entry-form preview agrees with the backend daily split (the R57.17 vs R55.32 bug)', () => {
+  // R1 715 for 30 days, landed today. The backend divides by 31 (today and payout day
+  // both count) and rounds the daily limit DOWN: 1715 / 31 = 55.3225 -> 55.32.
+  const p = previewNewBudget({ amount: 1715, savingsPercentage: 0, periodDays: 30, startDate: '2026-09-29' }, '2026-09-29');
+  assert.equal(p.daysLeft, 31);
+  assert.equal(p.daily, 55.32, 'the old form said 57.17');
+  assert.equal(p.weekly, 387.24);
+  // 10% aside: 1715 - 171.50 = 1543.50; / 31 = 49.7903 -> 49.79 (matches the template's B12).
+  assert.equal(previewNewBudget({ amount: 1715, savingsPercentage: 10, periodDays: 30, startDate: '2026-09-29' }, '2026-09-29').daily, 49.79);
+});
+
+await test('the preview counts days from TODAY, like the split, when the allowance landed earlier', () => {
+  // Landed 5 days ago for 30 days: the payout is 25 days away, so 26 days are left.
+  const p = previewNewBudget({ amount: 1715, periodDays: 30, startDate: '2026-09-24' }, '2026-09-29');
+  assert.equal(p.daysLeft, 26);
+  assert.equal(p.daily, floorCents(1715 / 26));
+  assert.equal(daysToPayout('2026-09-29', '2026-09-29'), 1, 'payout day itself is one day');
+  assert.equal(daysToPayout('2026-09-20', '2026-09-29'), 1, 'never below one');
+});
+
+await test('the daily figure is rounded down, never up', () => {
+  assert.equal(floorCents(57.179), 57.17);
+  assert.equal(floorCents(10), 10);
+  assert.equal(floorCents(0.29), 0.29, 'no float drift: 0.29 * 100 is 28.999999999999996');
+});
+
+await test('editing preview mirrors the server: savings follow the total, spend is kept', () => {
+  // Same numbers as tests/test_budget_calc.py::test_raising_the_total_recomputes_savings...
+  const budget = {
+    total_amount: 1000, remaining_amount: 800, savings_amount: 100, savings_percentage: 10,
+    carried_over_amount: 0, cycle_start_date: '2026-09-29',
+  };
+  const p = previewEdit({ amount: 2000, savingsPercentage: '10', periodDays: 30, budget }, '2026-09-29');
+  assert.equal(p.savings, 200);
+  assert.equal(p.remaining, 1700);
+  // Changing only the percentage moves money between savings and remaining.
+  const q = previewEdit({ amount: 1000, savingsPercentage: '20', periodDays: 30, budget: { ...budget, remaining_amount: 900 } }, '2026-09-29');
+  assert.equal(q.savings, 200);
+  assert.equal(q.remaining, 800);
+  // Carried-over money is not saved again.
+  const c = previewEdit({
+    amount: 1600, savingsPercentage: '10', periodDays: 30,
+    budget: { ...budget, total_amount: 1500, savings_amount: 150, remaining_amount: 1350, carried_over_amount: 500 },
+  }, '2026-09-29');
+  assert.equal(c.savings, 110);
+});
+
+await test('renewal preview carries over the leftover and only saves from the fresh allowance', () => {
+  const p = previewRenewal({
+    amount: 1715, savingsPercentage: 10, periodDays: 30, startDate: '2026-09-29',
+    leftover: 300, previousSavings: 100, carryLeftover: true, carrySavings: false,
+  }, '2026-09-29');
+  assert.equal(p.total, 2015);
+  assert.equal(p.savings, 171.5, '10% of R1715, not of R2015');
+  assert.equal(p.spendable, 1843.5);
+  const withSavings = previewRenewal({
+    amount: 1000, savingsPercentage: 0, periodDays: 7, startDate: '2026-09-29',
+    leftover: 0, previousSavings: 100, carryLeftover: true, carrySavings: true,
+  }, '2026-09-29');
+  assert.equal(withSavings.total, 1100);
+});
+
+await test('POST /budgets/{id}/renew sends the carry-over choices and dates the backend accepts', async () => {
+  installFetch(() => ({ status: 201, body: budgetOut({ id: 8, total_amount: dec(2015), carried_over_amount: dec(300), renewed_from_budget_id: 7 }) }));
+  const next = await budgets.renew(TOKEN, 7, {
+    amount: 1715, payoutDate: '2026-09-29', periodDays: 30, savingsPercentage: 10,
+    survivalThreshold: '', carryOverLeftover: true, carryOverSavings: false, keepCategories: true,
+  });
+  const req = lastRequest();
+  assert.equal(req.path, '/budgets/7/renew');
+  assert.equal(req.method, 'POST');
+  assert.equal(req.body.total_amount, 1715);
+  assert.equal(req.body.cycle_start_date, '2026-09-29');
+  assert.equal(req.body.cycle_end_date, '2026-10-29');
+  assert.equal(req.body.carry_over_leftover, true);
+  assert.equal(req.body.carry_over_savings, false);
+  assert.equal(req.body.survival_threshold, null, 'a blank box means "off", sent as null');
+  assert.equal(next.id, 8);
+  assert.equal(next.carried_over_amount, 300);
+  assert.equal(typeof next.carried_over_amount, 'number');
+  assert.equal(next.renewed_from_budget_id, 7);
+});
+
+await test('a 409 or 400 on renew lands on a form field, not a bare banner', async () => {
+  installFetch(() => ({ status: 400, body: httpError('That cycle would already have ended.') }));
+  await assert.rejects(
+    () => budgets.renew(TOKEN, 7, { amount: 1000, payoutDate: '2026-01-01', periodDays: 30 }),
+    (err) => err.fieldErrors?.periodDays && /already have ended/.test(err.message),
+  );
+});
+
+await test('survival threshold: blank or 0 clears it (null), omitted keeps it', () => {
+  assert.equal(thresholdOrNull(''), null);
+  assert.equal(thresholdOrNull('0'), null);
+  assert.equal(thresholdOrNull(0), null);
+  assert.equal(thresholdOrNull('200'), 200);
+  assert.ok(!('survival_threshold' in budgetUpdateToApi({ amount: 1000 }, { cycle_start_date: '2026-09-21' })));
+  assert.equal(budgetUpdateToApi({ amount: 1000, survivalThreshold: '' }, {}).survival_threshold, null);
+  assert.equal(budgetUpdateToApi({ amount: 1000, survivalThreshold: '0' }, {}).survival_threshold, null);
+  assert.equal(budgetUpdateToApi({ amount: 1000, survivalThreshold: '150' }, {}).survival_threshold, 150);
+  assert.equal(budgetToApi({ amount: 1000, payoutDate: '2026-09-21', survivalThreshold: '0' }).survival_threshold, null);
+});
+
+await test('PUT /budgets/{id} can now change the savings percentage', async () => {
+  installFetch(() => ({ status: 200, body: budgetOut() }));
+  await budgets.update(TOKEN, { id: 7, cycle_start_date: '2026-09-21' }, {
+    amount: 1940, payoutDate: '2026-09-21', periodDays: 30, savingsPercentage: 15, survivalThreshold: '',
+  });
+  const req = lastRequest();
+  assert.deepEqual(Object.keys(req.body).sort(),
+    ['cycle_end_date', 'savings_percentage', 'survival_threshold', 'total_amount']);
+  assert.equal(req.body.savings_percentage, 15);
+});
+
+await test('a spend can carry a date, and leaves it out when there is none', async () => {
+  assert.equal(transactionToApi({ description: 'Bread', amount: 20 }).transaction_date, undefined);
+  assert.equal(transactionToApi({ description: 'Bread', amount: 20, transactionDate: '' }).transaction_date, undefined);
+  installFetch(() => ({
+    status: 201,
+    body: { transaction: transactionOut(), budget: budgetOut(), overspend_warning: false, warning_message: null },
+  }));
+  await transactions.create(TOKEN, 7, { description: 'Groceries', amount: 85.5, transactionDate: '2026-09-28' });
+  assert.equal(lastRequest().body.transaction_date, '2026-09-28');
+  assert.equal(lastRequest().body.item_name, 'Groceries');
+});
+
+await test('editing a spend sends only what changed and uses the server\'s budget', async () => {
+  assert.deepEqual(transactionUpdateToApi({ amount: '90' }), { amount: 90 });
+  assert.deepEqual(transactionUpdateToApi({ category: null }), { category: null }, 'null clears the category');
+  installFetch(() => ({
+    body: {
+      transaction: transactionOut({ amount: dec(9) }),
+      budget: budgetOut({ remaining_amount: dec(1641) }),
+      daily_split: budgetSplitOut(),
+    },
+  }));
+  const result = await transactions.update(TOKEN, 7, 31, { description: 'Bread', amount: 9, transactionDate: '2026-09-22' });
+  const req = lastRequest();
+  assert.equal(req.method, 'PUT');
+  assert.equal(req.path, '/budgets/7/transactions/31');
+  assert.deepEqual(Object.keys(req.body).sort(), ['amount', 'item_name', 'transaction_date']);
+  assert.equal(result.transaction.amount, 9);
+  assert.equal(result.budget.remaining_amount, 1641, 'taken from the response, never recomputed');
+  assert.ok(result.daily_split);
+});
+
+await test('the transaction list can be paged', async () => {
+  installFetch(() => ({ body: [transactionOut()] }));
+  await transactions.list(TOKEN, 7, { limit: 25, offset: 50 });
+  assert.equal(lastRequest().query.limit, '25');
+  assert.equal(lastRequest().query.offset, '50');
+  await transactions.list(TOKEN, 7);
+  assert.deepEqual(lastRequest().query, {}, 'no paging means no query string: the full list');
+});
+
+await test('the dashboard payload carries the split\'s cycle flag and the priority categories', () => {
+  const dash = dashboardFromApi({
+    budget: budgetOut(),
+    daily_split: budgetSplitOut({ cycle_ended: true, days_overdue: 10 }),
+    health: { warning_level: 'ok', spendable_amount: dec(1650), spent_amount: dec(0), spent_percentage: dec(0), over_daily_limit_by: dec(0), warnings: [] },
+    recent_transactions: [],
+    categories: [
+      { id: 1, name: 'Groceries', planned_amount: dec(600), position: 0, spent_amount: dec(85.5) },
+      { id: 2, name: 'Toiletries', planned_amount: null, position: 1, spent_amount: dec(0) },
+    ],
+  });
+  assert.equal(dash.split.cycle_ended, true);
+  assert.equal(dash.split.days_overdue, 10);
+  assert.equal(dash.categories.length, 2);
+  assert.equal(dash.categories[0].planned_amount, 600);
+  assert.equal(typeof dash.categories[0].spent_amount, 'number');
+  assert.equal(dash.categories[1].planned_amount, null, 'no plan stays null, not 0');
+  // An older backend without categories still works.
+  assert.deepEqual(dashboardFromApi({ budget: budgetOut(), daily_split: budgetSplitOut(), health: null }).categories, []);
+});
+
+await test('priority categories: blank names are dropped, blank amounts become null', async () => {
+  assert.deepEqual(
+    categoriesToApi([
+      { name: ' Groceries ', plannedAmount: '600' },
+      { name: '   ', plannedAmount: '50' },
+      { name: 'Toiletries', plannedAmount: '' },
+    ]),
+    { categories: [{ name: 'Groceries', planned_amount: 600 }, { name: 'Toiletries', planned_amount: null }] },
+  );
+  installFetch(() => ({
+    body: [{ id: 1, name: 'Groceries', planned_amount: dec(600), position: 0, spent_amount: dec(85.5) }],
+  }));
+  const saved = await budgetCategories.replace(TOKEN, 7, [{ name: 'Groceries', plannedAmount: '600' }]);
+  assert.equal(lastRequest().method, 'PUT');
+  assert.equal(lastRequest().path, '/budgets/7/categories');
+  assert.equal(saved[0].planned_amount, 600);
+  assert.equal(saved[0].spent_amount, 85.5);
+});
+
+await test('over-planning a budget is reported on the categories, with the server\'s wording', async () => {
+  installFetch(() => ({ status: 400, body: httpError('Your planned amounts add up to R1800.00, which is R150.00 more than the R1650.00 you can spend.') }));
+  await assert.rejects(
+    () => budgetCategories.replace(TOKEN, 7, [{ name: 'Groceries', plannedAmount: '1800' }]),
+    (err) => err.status === 400 && err.fieldErrors?.categories && /R150\.00 more/.test(err.message),
+  );
+});
+
+await test('the spreadsheet download posts the categories and hands back the file and its name', async () => {
+  const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+  installFetch(() => ({
+    file: { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name: 'uniwallet-monthly-budget-2026-09-29.xlsx', bytes },
+  }));
+  const { blob, filename } = await budgets.downloadTemplate(TOKEN, {
+    categories: [{ name: 'Groceries', plannedAmount: '600' }, { name: 'Transport', plannedAmount: '' }],
+    amount: '1715', savingsPercentage: '10', periodDays: '30', startDate: '2026-09-29',
+  });
+  const req = lastRequest();
+  assert.equal(req.path, '/budgets/template');
+  assert.equal(req.method, 'POST');
+  assert.deepEqual(req.body, {
+    categories: [{ name: 'Groceries', planned_amount: 600 }, { name: 'Transport', planned_amount: null }],
+    total_amount: 1715, savings_percentage: 10, period_days: 30, start_date: '2026-09-29',
+  });
+  assert.equal(filename, 'uniwallet-monthly-budget-2026-09-29.xlsx');
+  assert.equal(blob.size, bytes.length);
+});
+
+await test('with an active budget the template request needs only the categories', () => {
+  assert.deepEqual(
+    templateToApi({ categories: [{ name: 'Groceries', plannedAmount: '' }] }),
+    { categories: [{ name: 'Groceries', planned_amount: null }] },
+  );
+  // Nonsense money or period is left out rather than sent (the backend then falls back to the budget).
+  const body = templateToApi({ categories: [{ name: 'A', plannedAmount: '' }], amount: '', periodDays: 'abc' });
+  assert.ok(!('total_amount' in body) && !('period_days' in body));
+  assert.equal(templateToApi({ categories: [{ name: 'A' }], savingsPercentage: 250 }).savings_percentage, 100);
+});
+
+await test('a failed download is an ApiError with the server\'s message', async () => {
+  installFetch(() => ({ status: 400, body: httpError('Tell us how much you received and how many days it must last, or set up a budget first.') }));
+  await assert.rejects(
+    () => budgets.downloadTemplate(TOKEN, { categories: [{ name: 'Groceries', plannedAmount: '' }] }),
+    (err) => err instanceof ApiError && /how much you received/.test(err.message),
+  );
+});
+
+await test('planner names are tidied and checked the way the backend does', () => {
+  assert.equal(cleanPlannerName('  =Bread   & milk '), 'Bread & milk');
+  assert.equal(cleanPlannerName('=+-@'), '');
+  assert.match(plannerNameError('', []), /Type a category/);
+  assert.match(plannerNameError('Wild*card', []), /cannot contain/);
+  assert.match(plannerNameError('groceries', ['Groceries']), /already on your list/);
+  assert.match(plannerNameError('x'.repeat(61), []), /under 60/);
+  assert.equal(plannerNameError('Haircut', ['Groceries']), null);
+  assert.ok(PLANNER_SUGGESTIONS.every((n) => plannerNameError(n, []) === null));
+});
+
+await test('the spend form offers the student\'s own categories first, without duplicates', () => {
+  const opts = spendCategoryOptions(['Haircut', 'groceries']);
+  assert.equal(opts[0].value, 'Haircut');
+  assert.equal(opts.filter((o) => o.value.toLowerCase() === 'groceries').length, 1);
+  assert.ok(opts.some((o) => o.value === 'Transport'), 'the standard categories are still there');
+});
+
+await test('a week is budgeted weekly, a fortnight in two weeks, a month monthly', () => {
+  assert.equal(periodWord(7), 'week');
+  assert.equal(periodWord(14), 'two weeks');
+  assert.equal(periodWord(30), 'month');
+});
+
+await test('date validators say what they check', () => {
+  assert.equal(validDate('2026-09-29'), null);
+  assert.match(validDate('', 'Payout date'), /required/);
+  assert.match(validDate('2026-13-45', 'Payout date'), /not a valid date/);
+  assert.match(validDate('29/09/2026', 'Payout date'), /not a valid date/);
+  // The spend date: blank = today; never future; never before the budget started.
+  assert.equal(dateWithin('', { min: '2026-09-01', max: '2026-09-29' }), null);
+  assert.equal(dateWithin('2026-09-28', { min: '2026-09-01', max: '2026-09-29' }), null);
+  assert.match(dateWithin('2026-09-30', { min: '2026-09-01', max: '2026-09-29' }), /future/);
+  assert.match(dateWithin('2026-08-31', { min: '2026-09-01', max: '2026-09-29' }), /before your budget started/);
 });
 
 /* ==================================================== NETWORK FAULTS ===== */

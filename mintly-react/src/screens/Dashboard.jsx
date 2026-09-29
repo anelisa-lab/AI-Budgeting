@@ -15,6 +15,11 @@
  * Recording a spend POSTs to /budgets/{id}/transactions and the response
  * carries the recalculated budget AND the server's overspend decision, both of
  * which are used verbatim. See BudgetContext for the full reasoning.
+ *
+ * Also here: a spend can be dated (yesterday's groceries do not eat into
+ * today's allowance) and edited in place; the full history is one click away;
+ * "Where it went" shows planned vs spent for the student's priority categories;
+ * and when the payout date has passed a banner asks them to start the next cycle.
  */
 
 import { useMemo, useState } from 'react';
@@ -28,16 +33,13 @@ import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import DailyBudgetSplit from '../components/budget/DailyBudgetSplit.jsx';
-import { money, plural, shortDate } from '../lib/format.js';
+import TransactionRow from '../components/budget/TransactionRow.jsx';
+import { money, plural, shortDate, todayIso } from '../lib/format.js';
 import * as v from '../lib/validation.js';
-import { SPENDING_CATEGORIES, categoryIcon, categoryLabel } from '../lib/categories.js';
+import { categoryIcon, categoryLabel, spendCategoryOptions } from '../lib/categories.js';
 
-/**
- * `transactions.category` is free text on the backend; the options come from
- * the app's single category list (lib/categories.js), which Search and
- * Profile use too — so "Groceries" means the same thing everywhere.
- */
-const CATEGORIES = SPENDING_CATEGORIES.map(({ value, label }) => ({ value, label }));
+/** Recent spends shown before "Show all". */
+const RECENT_COUNT = 10;
 
 /** The one-line read on how the period is going. */
 function healthCopy(health, d) {
@@ -99,8 +101,16 @@ export default function Dashboard() {
     budget, transactions, loading, error, supports, split, serverHealth,
     savings, spendable, spent, remaining, ratio,
     daysLeft, dailyAllowance, health, byCategory, recorded,
-    addTransaction, deleteTransaction,
+    addTransaction, updateTransaction, deleteTransaction,
+    categories, cycleEnded, daysOverdue,
   } = budgetCtx;
+
+  /* Priorities first, then the app's standard categories (no duplicates). */
+  const categoryOptions = useMemo(
+    () => spendCategoryOptions(categories.map((c) => c.name)),
+    [categories],
+  );
+  const today = todayIso();
 
   async function handleDeleteTransaction(t) {
     // eslint-disable-next-line no-alert
@@ -116,7 +126,10 @@ export default function Dashboard() {
 
   const [form, setForm] = useState({
     description: '', amount: '', category: 'Groceries', isEssential: false,
+    transactionDate: todayIso(),
   });
+  const [showAll, setShowAll] = useState(false);
+  const [filterCategory, setFilterCategory] = useState('all');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   /** The server's own overspend verdict from the last POST. */
@@ -128,6 +141,48 @@ export default function Dashboard() {
     () => Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4),
     [byCategory],
   );
+  // Planned vs spent for the student's priority categories. Spend is matched
+  // ignoring case, the same way the server matches it.
+  const plannedRows = useMemo(() => {
+    const spentBy = new Map(Object.entries(byCategory).map(([n, amt]) => [n.toLowerCase(), amt]));
+    return categories.map((c) => ({
+      name: c.name,
+      planned: c.planned_amount,
+      spent: spentBy.get(c.name.toLowerCase()) || 0,
+    }));
+  }, [categories, byCategory]);
+  const otherRows = useMemo(() => {
+    const planned = new Set(categories.map((c) => c.name.toLowerCase()));
+    return Object.entries(byCategory)
+      .filter(([name]) => !planned.has(name.toLowerCase()))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4);
+  }, [categories, byCategory]);
+
+  // The full history, optionally narrowed to one category.
+  const categoryFilterOptions = useMemo(() => {
+    const seen = new Map();
+    transactions.forEach((t) => {
+      const name = t.category || 'Other';
+      if (!seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name);
+    });
+    return [{ value: 'all', label: 'All categories' },
+      ...[...seen.entries()].map(([value, name]) => ({ value, label: categoryLabel(name) }))];
+  }, [transactions]);
+  const filteredTransactions = useMemo(
+    () => (filterCategory === 'all'
+      ? transactions
+      : transactions.filter((t) => (t.category || 'Other').toLowerCase() === filterCategory)),
+    [transactions, filterCategory],
+  );
+  const shownTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, RECENT_COUNT);
+
+  async function handleSaveTransaction(t, values) {
+    await updateTransaction(t.id, values);
+    setOverspend(null);
+    setDailyWarning(null);
+    toast.success(`Updated ${values.description || t.item_name}.`);
+  }
   // Bars are a share of everything RECORDED. `spent` is budget-based and is
   // capped once the balance floors at R0, so using it here let a category's
   // bar run past 100% after an overspend.
@@ -144,6 +199,10 @@ export default function Dashboard() {
     const rules = {
       description: (value) => v.required(value, 'Description'),
       amount: (value) => v.amount(value, { min: 0.01, max: 20000, fieldName: 'Amount' }),
+      // Blank means "today"; a date can go back to the day the budget started.
+      transactionDate: (value) => v.dateWithin(value, {
+        min: budget?.cycle_start_date, max: todayIso(), fieldName: 'Date',
+      }),
     };
     const { errors: found, isValid } = v.validateAll(form, rules);
     setErrors(found);
@@ -160,9 +219,13 @@ export default function Dashboard() {
         amount: Number(String(form.amount).replace(/[^\d.]/g, '')),
         category: form.category,
         isEssential: form.isEssential,
+        transactionDate: form.transactionDate,
       });
 
-      setForm({ description: '', amount: '', category: form.category, isEssential: false });
+      setForm({
+        description: '', amount: '', category: form.category, isEssential: false,
+        transactionDate: todayIso(),
+      });
 
       if (result.overspend_warning) {
         setOverspend(result.warning_message || 'That purchase took you over your remaining budget.');
@@ -238,6 +301,17 @@ export default function Dashboard() {
       </div>
 
       {error && <Alert tone="danger" title="Something went wrong">{error}</Alert>}
+
+      {cycleEnded && supports.renewBudget && (
+        <Alert tone="warning" title="Your budget period has ended">
+          Your payout date was {shortDate(budget.cycle_end_date)}
+          {daysOverdue > 0 && ` (${plural(daysOverdue, 'day')} ago)`}. Start your next cycle so
+          the daily limit works again — your last budget stays in your history.
+          <div style={{ marginTop: 'var(--s-3)' }}>
+            <Button size="sm" onClick={() => navigate('/budget')}>Start next cycle</Button>
+          </div>
+        </Alert>
+      )}
 
       {overspend && (
         <Alert tone="danger" title="That took you over your budget">
@@ -315,7 +389,7 @@ export default function Dashboard() {
         </div>
         <div className="stat">
           <div className="stat__value num">{shortDate(budget.cycle_end_date)}</div>
-          <p className="stat__label">Next payout</p>
+          <p className="stat__label">{cycleEnded ? 'Payout date (passed)' : 'Next payout'}</p>
         </div>
       </div>
 
@@ -359,7 +433,7 @@ export default function Dashboard() {
                 <Field id="category" label="Category">
                   {({ id, describedBy }) => (
                     <Select
-                      id={id} options={CATEGORIES} value={form.category}
+                      id={id} options={categoryOptions} value={form.category}
                       describedBy={describedBy}
                       onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
                     />
@@ -367,6 +441,25 @@ export default function Dashboard() {
                 </Field>
               </div>
             </div>
+
+            <Field
+              id="transactionDate"
+              label="When did you buy it?"
+              hint="Today, unless you are catching up — a past date will not eat into today's allowance."
+              error={errors.transactionDate}
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id} type="date" value={form.transactionDate}
+                  min={budget.cycle_start_date} max={today}
+                  invalid={invalid} describedBy={describedBy}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, transactionDate: e.target.value }));
+                    if (errors.transactionDate) setErrors((x) => ({ ...x, transactionDate: undefined }));
+                  }}
+                />
+              )}
+            </Field>
 
             {/* transactions.is_essential — a real backend field, and the same
                 flag GET /search filters on with essential_only. */}
@@ -386,16 +479,50 @@ export default function Dashboard() {
           </form>
         </Card>
 
-        {/* Where it went */}
+        {/* Where it went — planned vs spent for the student's priorities */}
         <Card>
           <h2 className="card__title">Where it went</h2>
-          {topCategories.length === 0 ? (
+          {plannedRows.length === 0 && topCategories.length === 0 ? (
             <p style={{ color: 'var(--c-muted-light)', fontSize: 'var(--t-sm)', marginTop: 'var(--s-4)' }}>
               Nothing recorded yet. Add your first spend and this fills in.
             </p>
           ) : (
             <div className="stack stack--tight" style={{ marginTop: 'var(--s-5)' }}>
-              {topCategories.map(([cat, amt]) => (
+              {plannedRows.map((row) => {
+                const hasPlan = row.planned != null && row.planned > 0;
+                const ratioSpent = hasPlan ? row.spent / row.planned : (recordedTotal > 0 ? row.spent / recordedTotal : 0);
+                const over = hasPlan && row.spent > row.planned + 0.005;
+                const tone = over ? 'danger' : hasPlan && ratioSpent >= 0.9 ? 'warning' : 'accent';
+                return (
+                  <div key={row.name}>
+                    <div className="row row--between" style={{ marginBottom: 'var(--s-1)' }}>
+                      <span style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
+                        <span aria-hidden="true">{categoryIcon(row.name)}</span> {categoryLabel(row.name)}
+                      </span>
+                      <span className="num" style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-extra)' }}>
+                        {money(row.spent)}{hasPlan && <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--c-muted)' }}> of {money(row.planned)}</span>}
+                      </span>
+                    </div>
+                    <Progress
+                      value={ratioSpent}
+                      tone={tone}
+                      label={hasPlan
+                        ? `${categoryLabel(row.name)}: ${money(row.spent)} of ${money(row.planned)} planned`
+                        : `${categoryLabel(row.name)}: ${money(row.spent)} spent`}
+                    />
+                    {over && (
+                      <p className="field__hint" style={{ margin: 'var(--s-1) 0 0', color: 'var(--c-coral-deep)' }}>
+                        {money(row.spent - row.planned)} over what you planned
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+
+              {plannedRows.length > 0 && otherRows.length > 0 && (
+                <p className="field__hint" style={{ margin: 'var(--s-3) 0 0' }}>Not on your list</p>
+              )}
+              {(plannedRows.length > 0 ? otherRows : topCategories).map(([cat, amt]) => (
                 <div key={cat}>
                   <div className="row row--between" style={{ marginBottom: 'var(--s-1)' }}>
                     <span style={{ fontSize: 'var(--t-sm)', fontWeight: 'var(--fw-bold)' }}>
@@ -409,6 +536,12 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+          )}
+          {plannedRows.length === 0 && (
+            <p style={{ marginTop: 'var(--s-5)', fontSize: 'var(--t-sm)' }}>
+              <Link to="/budget" style={{ fontWeight: 'var(--fw-bold)' }}>Plan your priorities</Link>
+              {' '}to see each category against what you planned, and get a budget spreadsheet.
+            </p>
           )}
         </Card>
       </div>
@@ -428,34 +561,52 @@ export default function Dashboard() {
           </EmptyState>
         ) : (
           <div style={{ marginTop: 'var(--s-4)' }}>
-            {transactions.slice(0, 10).map((t) => (
-              <div className="txn" key={t.id}>
-                <span className="txn__icon" aria-hidden="true">{categoryIcon(t.category)}</span>
-                <div className="grow">
-                  <p className="txn__name">{t.item_name}</p>
-                  <p className="txn__meta">
-                    {categoryLabel(t.category)} · {shortDate(t.transaction_date)}
-                    {t.is_essential && ' · essential'}
-                  </p>
-                </div>
-                <span className="txn__amt num">{money(t.amount)}</span>
-                {supports.deleteTransaction && (
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    aria-label={`Delete ${t.item_name}, ${money(t.amount)}`}
-                    onClick={() => handleDeleteTransaction(t)}
-                  >✕</Button>
-                )}
+            {transactions.length > RECENT_COUNT && categoryFilterOptions.length > 2 && (
+              <div style={{ maxWidth: '16rem', marginBottom: 'var(--s-3)' }}>
+                <Select
+                  id="filterCategory"
+                  aria-label="Show spending from"
+                  options={categoryFilterOptions}
+                  value={filterCategory}
+                  onChange={(e) => { setFilterCategory(e.target.value); setShowAll(true); }}
+                />
               </div>
+            )}
+
+            {shownTransactions.map((t) => (
+              <TransactionRow
+                key={t.id}
+                t={t}
+                categoryOptions={categoryOptions}
+                minDate={budget.cycle_start_date}
+                maxDate={today}
+                canEdit={supports.updateTransaction}
+                canDelete={supports.deleteTransaction}
+                onSave={(values) => handleSaveTransaction(t, values)}
+                onDelete={() => handleDeleteTransaction(t)}
+              />
             ))}
-            {transactions.length > 10 && (
-              <p style={{ color: 'var(--c-muted-light)', fontSize: 'var(--t-xs)', marginTop: 'var(--s-4)' }}>
-                Showing the 10 most recent of {transactions.length}.
+
+            {filteredTransactions.length === 0 && (
+              <p style={{ color: 'var(--c-muted-light)', fontSize: 'var(--t-sm)' }}>
+                Nothing recorded in that category.
               </p>
             )}
 
-            {!supports.deleteTransaction && (
+            {filteredTransactions.length > RECENT_COUNT && (
+              <div className="row row--between" style={{ marginTop: 'var(--s-4)' }}>
+                <p style={{ color: 'var(--c-muted-light)', fontSize: 'var(--t-xs)', margin: 0 }}>
+                  {showAll
+                    ? `Showing all ${filteredTransactions.length}.`
+                    : `Showing the ${RECENT_COUNT} most recent of ${filteredTransactions.length}.`}
+                </p>
+                <Button variant="quiet" size="sm" onClick={() => setShowAll((x) => !x)}>
+                  {showAll ? 'Show fewer' : `Show all ${filteredTransactions.length}`}
+                </Button>
+              </div>
+            )}
+
+            {!supports.deleteTransaction && !supports.updateTransaction && (
               <p style={{ color: 'var(--c-muted-light)', fontSize: 'var(--t-xs)', marginTop: 'var(--s-4)' }}>
                 Recorded spending can&apos;t be edited or removed yet, so double-check the
                 amount before you add it.

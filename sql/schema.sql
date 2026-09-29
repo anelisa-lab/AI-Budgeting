@@ -114,6 +114,11 @@ CREATE TABLE IF NOT EXISTS budgets (
                         CHECK (budget_mode IN ('normal', 'survival')),
   cycle_start_date    DATE NOT NULL,
   cycle_end_date      DATE NOT NULL,
+  -- Money rolled in from the previous cycle (savings are a % of the FRESH
+  -- allowance only) and the cycle this one replaced. See 014_*.sql.
+  carried_over_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (carried_over_amount >= 0),
+  completed_at        TIMESTAMPTZ,
+  renewed_from_budget_id INTEGER REFERENCES budgets(id) ON DELETE SET NULL,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT budgets_valid_cycle CHECK (cycle_end_date >= cycle_start_date),
@@ -124,6 +129,22 @@ CREATE TABLE IF NOT EXISTS budgets (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_one_active_budget_per_user
   ON budgets (user_id)
   WHERE status = 'active';
+
+-- The student's priority categories for a budget, with an optional planned
+-- amount each. Feeds the dashboard's "planned vs spent" bars and the
+-- downloadable spreadsheet template.
+CREATE TABLE IF NOT EXISTS budget_categories (
+  id              SERIAL PRIMARY KEY,
+  budget_id       INTEGER NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+  name            VARCHAR(60) NOT NULL,
+  planned_amount  NUMERIC(12,2) CHECK (planned_amount IS NULL OR planned_amount >= 0),
+  position        INTEGER NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_budget_categories_name
+  ON budget_categories (budget_id, LOWER(name));
+CREATE INDEX IF NOT EXISTS idx_budget_categories_budget
+  ON budget_categories (budget_id, position);
 
 -- Stores both smart-savings contributions and withdrawals/adjustments.
 CREATE TABLE IF NOT EXISTS savings_ledger (

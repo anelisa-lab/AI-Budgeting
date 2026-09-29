@@ -9,7 +9,8 @@ drift apart.
 """
 
 from dataclasses import dataclass
-from decimal import Decimal
+from datetime import date, datetime, time
+from decimal import Decimal, ROUND_HALF_UP
 
 
 @dataclass
@@ -94,6 +95,205 @@ def calculate_budget_update(
     delta = new_total - current_total
     new_remaining = max(current_remaining + delta, Decimal("0"))
     return new_total, new_remaining
+
+
+# ---------------------------------------------------------------------------
+# Editing a budget (savings stay in step with the total)
+# ---------------------------------------------------------------------------
+
+def _cents(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def calculate_savings_amount(
+    total_amount: Decimal,
+    savings_percentage: Decimal,
+    carried_over_amount: Decimal = Decimal("0"),
+) -> Decimal:
+    """
+    Savings are a percentage of the FRESH allowance only. Money carried over
+    from the previous cycle (see calculate_renewal) is never re-saved, so it is
+    taken out of the base before the percentage is applied.
+    """
+    base = max(Decimal(total_amount) - Decimal(carried_over_amount or 0), Decimal("0"))
+    return _cents(base * Decimal(savings_percentage) / 100)
+
+
+def calculate_budget_edit(
+    current_total: Decimal,
+    current_remaining: Decimal,
+    current_savings: Decimal,
+    savings_percentage: Decimal,
+    carried_over_amount: Decimal,
+    new_total: Decimal | None = None,
+    new_savings_percentage: Decimal | None = None,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """
+    Apply an edit to total_amount and/or savings_percentage.
+
+    Returns (total, remaining, savings_amount, savings_percentage).
+
+    The old rule shifted `remaining` by the change in total and left
+    savings_amount fixed, so raising the total on a budget with 10% savings left
+    the savings at 10% of the OLD total. Now savings are recomputed from the
+    percentage, and `remaining` moves by the change in the SPENDABLE amount
+    (total - savings), so what has already been spent is preserved exactly.
+    """
+    total = Decimal(new_total) if new_total is not None else Decimal(current_total)
+    pct = (
+        Decimal(new_savings_percentage)
+        if new_savings_percentage is not None
+        else Decimal(savings_percentage)
+    )
+    savings = calculate_savings_amount(total, pct, carried_over_amount)
+    if savings > total:
+        raise ValueError("savings cannot be more than the total")
+
+    old_spendable = Decimal(current_total) - Decimal(current_savings)
+    new_spendable = total - savings
+    remaining = max(Decimal(current_remaining) + (new_spendable - old_spendable), Decimal("0"))
+    remaining = min(remaining, new_spendable)
+    return total, _cents(remaining), savings, pct
+
+
+def normalise_survival_threshold(value: Decimal | None) -> Decimal | None:
+    """0 means "survival mode off", exactly like no threshold at all."""
+    if value is None or Decimal(value) <= 0:
+        return None
+    return Decimal(value)
+
+
+# ---------------------------------------------------------------------------
+# Renewing a budget — the next cycle
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Renewal:
+    total_amount: Decimal
+    remaining_amount: Decimal
+    savings_amount: Decimal
+    carried_over_amount: Decimal
+    leftover_carried: Decimal
+    savings_carried: Decimal
+
+
+def calculate_renewal(
+    old_remaining: Decimal,
+    old_savings: Decimal,
+    new_allowance: Decimal,
+    savings_percentage: Decimal,
+    carry_over_leftover: bool = True,
+    carry_over_savings: bool = False,
+) -> Renewal:
+    """
+    The numbers for the next cycle.
+
+        total_amount = new allowance + whatever is carried over
+        savings      = savings_percentage of the NEW allowance only
+        remaining    = total - savings
+
+    `old_remaining` is the spendable money the student did not use. The old
+    cycle's savings are only spendable again if the student asks for that
+    (carry_over_savings) — otherwise they stay banked in the savings ledger.
+    """
+    allowance = Decimal(new_allowance)
+    if allowance < 0:
+        raise ValueError("new allowance cannot be negative")
+    leftover = _cents(old_remaining) if carry_over_leftover else Decimal("0.00")
+    saved = _cents(old_savings) if carry_over_savings else Decimal("0.00")
+    carried = leftover + saved
+    total = _cents(allowance + carried)
+    if total <= 0:
+        raise ValueError("the new budget needs a total above zero")
+    savings = calculate_savings_amount(total, savings_percentage, carried)
+    return Renewal(
+        total_amount=total,
+        remaining_amount=_cents(total - savings),
+        savings_amount=savings,
+        carried_over_amount=carried,
+        leftover_carried=leftover,
+        savings_carried=saved,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Spend dates and editing a recorded spend
+# ---------------------------------------------------------------------------
+
+def resolve_transaction_datetime(
+    requested: date | None,
+    today: date,
+    cycle_start: date,
+) -> datetime | None:
+    """
+    When a spend happened.
+
+    None  -> "now" (the caller lets the database default apply): no date given,
+             or the date given is today.
+    past  -> midday on that day. Midday keeps the purchase on the right
+             calendar day whichever timezone the database session uses.
+
+    A date in the future, or before the budget's cycle_start_date, is refused —
+    the first would hide a spend from every split until that day arrives, the
+    second belongs to a different cycle.
+    """
+    if requested is None or requested == today:
+        return None
+    if requested > today:
+        raise ValueError("A spend cannot be dated in the future.")
+    if requested < cycle_start:
+        raise ValueError(f"A spend cannot be dated before this budget started on {cycle_start}.")
+    return datetime.combine(requested, time(12, 0))
+
+
+def resolve_edit_datetime(
+    requested: date | None,
+    current_day: date,
+    today: date,
+    cycle_start: date,
+    now: datetime,
+) -> datetime | None:
+    """
+    The new transaction_date when a spend is edited, or None to leave it alone.
+
+    Unchanged when no date is sent or it is the day the spend already sits on.
+    Otherwise the same rules as a new spend: today -> `now`, a past day -> midday,
+    and never the future or before the budget started.
+    """
+    if requested is None or requested == current_day:
+        return None
+    resolved = resolve_transaction_datetime(requested, today, cycle_start)
+    return resolved if resolved is not None else now
+
+
+def calculate_transaction_edit(
+    remaining_amount: Decimal,
+    old_amount: Decimal,
+    new_amount: Decimal,
+    spendable_amount: Decimal,
+    spent_after_edit: Decimal,
+) -> Decimal:
+    """
+    remaining_amount after a recorded spend changes from old_amount to new_amount.
+
+    Bigger  -> the difference is spent like a fresh purchase (floored at 0).
+    Smaller -> the difference is refunded, capped by the ledger exactly as when
+               a spend is deleted (calculate_transaction_removal), so undoing
+               part of an overspend cannot create money.
+    """
+    old_amount, new_amount = Decimal(old_amount), Decimal(new_amount)
+    if new_amount < 0 or old_amount < 0:
+        raise ValueError("amounts cannot be negative")
+    if new_amount == old_amount:
+        return Decimal(remaining_amount)
+    if new_amount > old_amount:
+        return calculate_transaction_impact(remaining_amount, new_amount - old_amount).new_remaining
+    return calculate_transaction_removal(
+        remaining_amount=remaining_amount,
+        transaction_amount=old_amount - new_amount,
+        spendable_amount=spendable_amount,
+        spent_after_removal=spent_after_edit,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -145,6 +145,10 @@ class BudgetSplit:
     message: str
     days: List[DaySplit] = field(default_factory=list)
     tomorrow_limit: Optional[Decimal] = None   # None on payout day / after it
+    # True once cycle_end_date is in the past: the budget needs renewing
+    # (POST /budgets/{id}/renew). The numbers above are then just "what is left".
+    cycle_ended: bool = False
+    days_overdue: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -162,6 +166,8 @@ class BudgetSplit:
             "survival_threshold": self.survival_threshold,
             "message": self.message,
             "days": [d.as_dict() for d in self.days],
+            "cycle_ended": self.cycle_ended,
+            "days_overdue": self.days_overdue,
         }
 
 
@@ -184,6 +190,7 @@ def _build_message(
     cycle_ended: bool,
     spent_today: Decimal = ZERO,
     tomorrow_limit: Optional[Decimal] = None,
+    days_overdue: int = 0,
 ) -> str:
     if spent_today > daily_limit and remaining > 0 and not cycle_ended and mode != MODE_SURVIVAL:
         over = _money(spent_today - daily_limit)
@@ -195,9 +202,11 @@ def _build_message(
             "hold out until your next payout."
         )
     if cycle_ended:
+        ago = "yesterday" if days_overdue == 1 else f"{days_overdue} days ago"
         return (
-            f"Your payout date has passed with R{remaining} left. Treat it as "
-            "today's budget until the next one lands."
+            f"Your payout date has passed ({ago}) with R{remaining} left. Start your "
+            "next cycle to get a fresh daily limit — until then this figure is only "
+            "what is left, not a plan."
         )
     if mode == MODE_SURVIVAL:
         # Use remaining_today and tomorrow_limit here, not daily_limit.
@@ -261,6 +270,7 @@ def build_split(
 
     days = days_remaining(as_of, cycle_end)
     cycle_ended = cycle_end < as_of
+    days_overdue = (as_of - cycle_end).days if cycle_ended else 0
     spent_today = _money(spent_by_date.get(as_of, ZERO))
 
     # Today's allowance comes from the balance at the START of today — see the
@@ -278,7 +288,14 @@ def build_split(
         after_today = max(_money(remaining - remaining_today), ZERO)
         tomorrow_limit = _money_down(after_today / Decimal(days - 1))
 
-    mode = MODE_SURVIVAL if (threshold is not None and remaining <= threshold) else MODE_NORMAL
+    # A threshold of 0 means "off", the same as no threshold. Left as a live
+    # threshold it would put a fully used-up budget (remaining 0 <= 0) into
+    # "survival mode", which is what students who cleared the field were seeing.
+    mode = (
+        MODE_SURVIVAL
+        if (threshold is not None and threshold > 0 and remaining <= threshold)
+        else MODE_NORMAL
+    )
 
     # Day-by-day schedule. Today carries today's allowance; the days after it
     # carry tomorrow_limit, so an overspend today shows up as tighter days
@@ -318,9 +335,12 @@ def build_split(
         message=_build_message(
             remaining, limit, remaining_today, days, mode, cycle_ended,
             spent_today=spent_today, tomorrow_limit=tomorrow_limit,
+            days_overdue=days_overdue,
         ),
         days=schedule,
         tomorrow_limit=tomorrow_limit,
+        cycle_ended=cycle_ended,
+        days_overdue=days_overdue,
     )
 
 

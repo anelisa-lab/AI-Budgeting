@@ -116,12 +116,43 @@ export const ROUTES = [
   {
     name: 'updateBudget',
     method: 'PUT', pattern: /^\/budgets\/\d+$/, auth: true,
-    body: ['total_amount', 'cycle_end_date', 'survival_threshold'], requiredBody: [],
+    body: ['total_amount', 'cycle_end_date', 'survival_threshold', 'savings_percentage'],
+    requiredBody: [],
+  },
+  {
+    name: 'renewBudget',
+    method: 'POST', pattern: /^\/budgets\/\d+\/renew$/, auth: true,
+    body: [
+      'total_amount', 'cycle_start_date', 'cycle_end_date', 'savings_percentage',
+      'survival_threshold', 'carry_over_leftover', 'carry_over_savings', 'keep_categories',
+    ],
+    requiredBody: ['total_amount'],
+  },
+  {
+    name: 'budgetTemplate',
+    method: 'POST', pattern: /^\/budgets\/template$/, auth: true,
+    body: ['categories', 'total_amount', 'savings_percentage', 'period_days', 'start_date'],
+    requiredBody: ['categories'],
+  },
+  {
+    name: 'listBudgetCategories',
+    method: 'GET', pattern: /^\/budgets\/\d+\/categories$/, auth: true,
+  },
+  {
+    name: 'replaceBudgetCategories',
+    method: 'PUT', pattern: /^\/budgets\/\d+\/categories$/, auth: true,
+    body: ['categories'], requiredBody: [],
+  },
+  {
+    name: 'updateTransaction',
+    method: 'PUT', pattern: /^\/budgets\/\d+\/transactions\/\d+$/, auth: true,
+    body: ['item_name', 'amount', 'category', 'is_essential', 'transaction_date'],
+    requiredBody: [],
   },
   {
     name: 'createTransaction',
     method: 'POST', pattern: /^\/budgets\/\d+\/transactions$/, auth: true,
-    body: ['item_name', 'amount', 'category', 'is_essential'],
+    body: ['item_name', 'amount', 'category', 'is_essential', 'transaction_date'],
     requiredBody: ['item_name', 'amount'],
   },
   {
@@ -135,6 +166,7 @@ export const ROUTES = [
   {
     name: 'listTransactions',
     method: 'GET', pattern: /^\/budgets\/\d+\/transactions$/, auth: true,
+    query: ['limit', 'offset'],
   },
   {
     name: 'search',
@@ -256,6 +288,7 @@ export function budgetOut(over = {}) {
     id: 7, user_id: 1, budget_kind: 'monthly', status: 'active', currency: 'ZAR',
     total_amount: dec(1650), remaining_amount: dec(1650),
     savings_percentage: dec(0), savings_amount: dec(0),
+    carried_over_amount: dec(0), completed_at: null, renewed_from_budget_id: null,
     cycle_start_date: '2026-09-21', cycle_end_date: '2026-10-21',
     created_at: '2026-09-21T08:00:00+00:00', updated_at: '2026-09-21T08:00:00+00:00',
   };
@@ -309,6 +342,7 @@ export function budgetSplitOut(over = {}) {
     mode: 'normal', survival_threshold: null,
     message: 'R1257.99 over 16 days gives you R78.62 a day. You have R20.63 left to spend today.',
     days: [],
+    cycle_ended: false, days_overdue: 0,
     ...over,
   };
 }
