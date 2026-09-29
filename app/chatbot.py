@@ -71,6 +71,7 @@ def _get_gemini_client():
     global _gemini_client
     if _gemini_client is None:
         from google import genai
+        from google.genai import types
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -78,7 +79,18 @@ def _get_gemini_client():
                 "GEMINI_API_KEY is not set — the chatbot needs it to reach Gemini. "
                 "Get a free key at https://aistudio.google.com/apikey."
             )
-        _gemini_client = genai.Client(api_key=api_key)
+        # The SDK does ZERO automatic retries unless retry_options is set —
+        # an empty HttpRetryOptions() opts into its own sensible defaults
+        # (5 attempts, exponential backoff with jitter, retrying exactly the
+        # transient codes free-tier traffic actually hits: 429 rate-limited
+        # and 500/502/503/504 — 503 being Google's own "model is
+        # experiencing high demand, temporary" response). Without this, a
+        # single busy moment on the free tier surfaces as a hard error
+        # instead of the SDK quietly waiting it out.
+        _gemini_client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions()),
+        )
     return _gemini_client
 
 
