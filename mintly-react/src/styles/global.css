@@ -34,7 +34,7 @@ body {
    screens show the photo almost as-is; Sign in / Create account keep a heavier
    wash because their form floats straight on it. */
 body { --bg-wash: 22%; }
-body:has(.auth) { --bg-wash: 68%; }
+body:has(.auth) { --bg-wash: 22%; }
 /* Page headings sit directly on the photo, so they are white with a tight
    shadow (no glow) for contrast. The inline colours are overridden on purpose. */
 .app-body h1,
@@ -449,9 +449,18 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .auth__form { padding: var(--s-8); }
 /* Create account: no card surface, so the form floats on the page background. */
-.auth__float { text-shadow: 0 0 6px rgba(255, 255, 255, 0.95), 0 0 14px rgba(255, 255, 255, 0.8); background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; }
+.auth__float { background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; }
+/* The form floats on the photo, so its text is white with a tight shadow. */
+.auth__float,
+.auth__float .auth__title, .auth__float .auth__sub, .auth__float .auth__foot,
+.auth__float .field__label, .auth__float .field__hint, .auth__float .eyebrow,
+.auth__float legend, .auth__float fieldset > p, .auth__float .checkbox {
+  color: #ffffff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.auth__float .eyebrow::before { background: #ffffff; }
+.auth__float a, .auth .logo__name { color: #ffffff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); }
+.auth__float a { text-decoration: underline; }
 .auth__float .auth__form { padding: 0; }
-html[data-theme='dark'] .auth__float { text-shadow: 0 0 6px rgba(10, 21, 20, 0.95), 0 0 14px rgba(10, 21, 20, 0.8); }
 @media (max-width: 720px) {
   .auth__split { grid-template-columns: 1fr; }
   .auth__photo { min-height: 150px; }
