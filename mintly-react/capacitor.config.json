@@ -1,0 +1,9 @@
+{
+  "appId": "za.ac.dut.uniwallet",
+  "appName": "UniWallet",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}

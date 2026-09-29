@@ -10,15 +10,21 @@
     "preview": "vite preview",
     "lint": "eslint src --ext js,jsx",
     "test:contract": "node tests/contract/run.mjs",
-    "seed:backend": "python3 docs/seed/build_backend_seed.py > docs/seed/seed_backend.sql"
+    "seed:backend": "python3 docs/seed/build_backend_seed.py > docs/seed/seed_backend.sql",
+    "android:sync": "vite build && cap sync android",
+    "android:open": "cap open android",
+    "android:apk": "vite build && cap sync android && cd android && gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/core": "^6.2.2",
     "leaflet": "^1.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.2",
     "@vitejs/plugin-react": "^4.3.1",
     "eslint": "^8.57.0",
     "eslint-plugin-react": "^7.35.0",

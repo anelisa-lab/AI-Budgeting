@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">UniWallet</string>
+    <string name="title_activity_main">UniWallet</string>
+    <string name="package_name">za.ac.dut.uniwallet</string>
+    <string name="custom_url_scheme">za.ac.dut.uniwallet</string>
+</resources>
