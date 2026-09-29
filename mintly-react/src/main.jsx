@@ -30,6 +30,11 @@ import './styles/global.css';
 // Device-only settings (reduced motion) apply before the first paint.
 applyStoredSettings();
 
+// Lets the phone offer "Install app" (no caching — see public/sw.js).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     {/* Opt in to the v7 behaviour now, so the console stays quiet. */}

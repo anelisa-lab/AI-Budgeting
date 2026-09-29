@@ -1,4 +1,19 @@
-# UniWallet as an Android app (APK)
+# Run UniWallet on your connected phone (no Android Studio)
+
+## Option A — install it as an app straight from the dev server (easiest)
+1. Phone: Settings -> Developer options -> turn on **USB debugging**; plug it into the PC and accept the prompt.
+2. PC: start the backend (`uvicorn app.main:app --reload --port 4000`) and the frontend (`npm run dev`, port 5000).
+3. PC Chrome: open `chrome://inspect/#devices`, tick **Discover USB devices**, click **Port forwarding**,
+   add **5000 -> localhost:5000**, tick **Enable port forwarding**.
+4. Phone Chrome: open `http://localhost:5000`, then menu (three dots) -> **Install app** / **Add to Home screen**.
+   UniWallet now has its own icon and opens full-screen like an app. Keep the USB cable and both servers running.
+
+Chrome on the PC also lets you press **inspect** under your phone to see the console, like an emulator.
+
+---
+
+# Optional: a real APK file (needs the Android SDK)
+
 
 The React app is wrapped with Capacitor. The APK contains the frontend only;
 it talks to the FastAPI backend running on your PC, so the phone and the PC
