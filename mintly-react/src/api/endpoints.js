@@ -17,7 +17,7 @@
  * where browsers drop the Authorization header.
  */
 
-import { request } from './http.js';
+import { request, streamRequest } from './http.js';
 
 /* =======================================================================
  * AUTH  —  app/routers/auth.py   (router prefix "/auth")
@@ -605,6 +605,24 @@ export function sendChatMessage(token, { message, history = [] }, opts = {}) {
     method: 'POST',
     body: { message, history },
     token,
+    ...opts,
+  });
+}
+
+/**
+ * POST /chat/stream  ->  text/event-stream of { type, ... } events:
+ *   { type: 'tool', name }            a tool is running
+ *   { type: 'delta', text }           more reply text
+ *   { type: 'reset' }                 discard text streamed so far
+ *   { type: 'done', reply, tools_used }
+ *   { type: 'error', status, detail }
+ * Same body as POST /chat. `onEvent` is called for each event as it arrives.
+ */
+export function streamChatMessage(token, { message, history = [] }, onEvent, opts = {}) {
+  return streamRequest('/chat/stream', {
+    body: { message, history },
+    token,
+    onEvent,
     ...opts,
   });
 }

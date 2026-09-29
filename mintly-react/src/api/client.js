@@ -522,6 +522,10 @@ export const chat = {
   async send(token, message, history = []) {
     return endpoints.sendChatMessage(token, { message, history });
   },
+  /** Streaming variant: `onEvent` gets tool/delta/reset/done/error events. */
+  async stream(token, message, history = [], onEvent) {
+    return endpoints.streamChatMessage(token, { message, history }, onEvent);
+  },
 };
 
 /* ------------------------------------------------------------------ health */

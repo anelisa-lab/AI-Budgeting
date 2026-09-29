@@ -225,3 +225,77 @@ def test_run_chat_translates_assistant_history_role_to_model():
     contents = stub_client.models.calls[0]["contents"]
     roles = [c.role for c in contents]
     assert roles == ["user", "model", "user"]
+
+
+# ----------------------------------------------------- speed-up behaviour
+
+
+def test_thinking_budget_defaults_to_off_and_can_be_overridden():
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("GEMINI_THINKING_BUDGET", None)
+        assert chatbot._thinking_budget() == 0
+    with patch.dict(os.environ, {"GEMINI_THINKING_BUDGET": "512"}):
+        assert chatbot._thinking_budget() == 512
+    with patch.dict(os.environ, {"GEMINI_THINKING_BUDGET": ""}):
+        assert chatbot._thinking_budget() is None
+
+
+def test_run_chat_sends_the_thinking_budget_to_gemini():
+    stub_client = _StubClient([_text_response("ok")])
+    with patch.dict(os.environ, {"GEMINI_THINKING_BUDGET": "0"}), patch.object(
+        chatbot, "_get_gemini_client", return_value=stub_client
+    ):
+        chatbot.run_chat(user_id=1, message="hi")
+    config = stub_client.models.calls[0]["config"]
+    assert config.thinking_config.thinking_budget == 0
+
+
+def test_template_menu_is_only_in_the_prompt_for_spreadsheet_conversations():
+    assert "Payday-to-Payday Planner" not in chatbot._system_prompt(include_spreadsheets=False)
+    assert "Payday-to-Payday Planner" in chatbot._system_prompt(include_spreadsheets=True)
+    assert chatbot._wants_spreadsheet("Can you recommend a spreadsheet?", [])
+    assert chatbot._wants_spreadsheet("running out before payday", [{"role": "assistant", "content": "Want a spreadsheet?"}])
+    assert not chatbot._wants_spreadsheet("I have R400 for this week", [])
+
+
+def test_shopping_turn_uses_the_shorter_prompt():
+    stub_client = _StubClient([_text_response("ok")])
+    with patch.object(chatbot, "_get_gemini_client", return_value=stub_client):
+        chatbot.run_chat(user_id=1, message="I have R400 for this week")
+    assert "Payday-to-Payday Planner" not in stub_client.models.calls[0]["config"].system_instruction
+
+
+class _StreamModels:
+    def __init__(self, turns):
+        self._turns = iter(turns)
+
+    def generate_content_stream(self, **kwargs):
+        return iter(next(self._turns))
+
+
+def _stream_client(turns):
+    client = type("C", (), {})()
+    client.models = _StreamModels(turns)
+    return client
+
+
+def test_run_chat_stream_emits_deltas_then_done():
+    client = _stream_client([[_text_response("Here's "), _text_response("your plan.")]])
+    with patch.object(chatbot, "_get_gemini_client", return_value=client):
+        events = list(chatbot.run_chat_stream(user_id=1, message="hi"))
+    assert [e["text"] for e in events if e["type"] == "delta"] == ["Here's ", "your plan."]
+    assert events[-1] == {"type": "done", "reply": "Here's your plan.", "tools_used": []}
+
+
+def test_run_chat_stream_runs_tools_then_streams_the_answer():
+    client = _stream_client([
+        [_tool_call_response("get_budget_status")],
+        [_text_response("You have R50 a day.")],
+    ])
+    with patch.object(chatbot, "_get_gemini_client", return_value=client), patch.object(
+        chatbot, "_run_tool", return_value={"ok": True}
+    ):
+        events = list(chatbot.run_chat_stream(user_id=1, message="what's left?"))
+    assert {"type": "tool", "name": "get_budget_status"} in events
+    assert events[-1]["reply"] == "You have R50 a day."
+    assert events[-1]["tools_used"] == ["get_budget_status"]

@@ -63,6 +63,18 @@ MAX_TOKENS = 8192
 # (budget check, a few category searches, a store comparison, an
 # affordability check).
 MAX_TOOL_ITERATIONS = 8
+# Flash models "think" before answering, which adds seconds to every model
+# call (and a plan makes several). 0 turns thinking off; a small number such
+# as 512 keeps a little reasoning; blank leaves the model's own default.
+# Set GEMINI_THINKING_BUDGET in .env to tune it without touching code.
+def _thinking_budget() -> Optional[int]:
+    raw = os.getenv("GEMINI_THINKING_BUDGET", "0").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 _gemini_client = None
 
@@ -94,7 +106,65 @@ def _get_gemini_client():
     return _gemini_client
 
 
-def _system_prompt() -> str:
+_SPREADSHEET_MENU = """Template menu - pick the best fit:
+1. Payday-to-Payday Planner - for running out before the next payout.
+   Columns: Date | Item | Category | Amount | Running balance | Days left | Daily allowance
+   Key formulas: Running balance = starting amount minus the sum of amounts so far; \
+Days left = payout date minus TODAY() plus 1; Daily allowance = Running balance divided \
+by Days left, rounded down.
+2. Weekly Essentials Tracker - for very tight budgets and survival mode.
+   Columns: Day | Food | Transport | Data/Airtime | Toiletries | Other | Day total | Left \
+for the week
+   Key formulas: Day total = sum of the row; Left for the week = weekly budget minus the \
+sum of Day total so far.
+3. Grocery and Meal Planner - for planning food.
+   Columns: Item | Store | Qty | Unit price | Line total | Essential? (Y/N) | Bought? \
+(Y/N)
+   Key formulas: Line total = Qty times Unit price; Total = sum of Line total; Remaining = \
+budget minus Total; add a check that flags the sheet if Total is over budget.
+4. Savings Goal Tracker - for saving toward a laptop, textbooks, registration or a \
+buffer.
+   Columns: Goal | Target amount | Saved so far | Cycles left | Needed per cycle | % done
+   Key formulas: Needed per cycle = (Target minus Saved) divided by Cycles left; % done = \
+Saved divided by Target.
+5. Semester Big-Costs Planner - for registration, textbooks, res or transport deposits, \
+and other lumpy costs.
+   Columns: Cost | Due date | Amount | Paid? | Months until due | Set aside per month
+   Key formulas: Set aside per month = Amount divided by Months until due (only while \
+Paid? is No).
+6. Shared Costs Splitter - for housemates or group purchases.
+   Columns: Expense | Who paid | Amount | Number of people | Each person's share | \
+Balance per person
+   Key formulas: Share = Amount divided by number of people; Balance = amount paid minus \
+share, summed per person.
+7. Income and Side-Hustle Log - for irregular income on top of an allowance.
+   Columns: Date | Source | Amount in | Set aside for savings (%) | Spendable
+   Key formulas: Spendable = Amount in minus (Amount in times savings %).
+"""
+
+_SPREADSHEET_WORDS = (
+    "spreadsheet", "sheet", "excel", "template", "tracker", "planner", "splitter",
+    "help me budget", "track my", "log my",
+)
+
+
+def _wants_spreadsheet(message: str, history: List[dict]) -> bool:
+    """
+    The template menu is ~40 lines the model resends on every call. Only
+    include it when the conversation is actually about a spreadsheet, so
+    ordinary shopping turns carry a shorter, faster prompt.
+    """
+    text = " ".join([message] + [h.get("content", "") for h in history]).lower()
+    return any(w in text for w in _SPREADSHEET_WORDS)
+
+
+def _system_prompt(include_spreadsheets: bool = True) -> str:
+    spreadsheet_menu = (
+        _SPREADSHEET_MENU + "\n"
+        if include_spreadsheets
+        else "(The template menu is left out this turn. If the student turns out to want a \
+spreadsheet, ask them to say so and offer to describe one.)\n\n"
+    )
     return f"""You are UniWallet's budgeting assistant, built into an app that helps \
 NSFAS and other students in South Africa stretch a fixed allowance across a budget cycle. \
 You do two things: (1) turn "I have R500 for this week" into a real, priced shopping list \
@@ -184,42 +254,7 @@ their top priority. If their priority is unclear, ask ONE question: "What's the 
 money problem right now: running out before payday, planning food, saving for something, \
 or splitting costs?" Suggest one template (two at most), not the whole menu.
 
-Template menu - pick the best fit:
-1. Payday-to-Payday Planner - for running out before the next payout.
-   Columns: Date | Item | Category | Amount | Running balance | Days left | Daily allowance
-   Key formulas: Running balance = starting amount minus the sum of amounts so far; \
-Days left = payout date minus TODAY() plus 1; Daily allowance = Running balance divided \
-by Days left, rounded down.
-2. Weekly Essentials Tracker - for very tight budgets and survival mode.
-   Columns: Day | Food | Transport | Data/Airtime | Toiletries | Other | Day total | Left \
-for the week
-   Key formulas: Day total = sum of the row; Left for the week = weekly budget minus the \
-sum of Day total so far.
-3. Grocery and Meal Planner - for planning food.
-   Columns: Item | Store | Qty | Unit price | Line total | Essential? (Y/N) | Bought? \
-(Y/N)
-   Key formulas: Line total = Qty times Unit price; Total = sum of Line total; Remaining = \
-budget minus Total; add a check that flags the sheet if Total is over budget.
-4. Savings Goal Tracker - for saving toward a laptop, textbooks, registration or a \
-buffer.
-   Columns: Goal | Target amount | Saved so far | Cycles left | Needed per cycle | % done
-   Key formulas: Needed per cycle = (Target minus Saved) divided by Cycles left; % done = \
-Saved divided by Target.
-5. Semester Big-Costs Planner - for registration, textbooks, res or transport deposits, \
-and other lumpy costs.
-   Columns: Cost | Due date | Amount | Paid? | Months until due | Set aside per month
-   Key formulas: Set aside per month = Amount divided by Months until due (only while \
-Paid? is No).
-6. Shared Costs Splitter - for housemates or group purchases.
-   Columns: Expense | Who paid | Amount | Number of people | Each person's share | \
-Balance per person
-   Key formulas: Share = Amount divided by number of people; Balance = amount paid minus \
-share, summed per person.
-7. Income and Side-Hustle Log - for irregular income on top of an allowance.
-   Columns: Date | Source | Amount in | Set aside for savings (%) | Spendable
-   Key formulas: Spendable = Amount in minus (Amount in times savings %).
-
-How to present a template:
+{spreadsheet_menu}How to present a template:
 - Say in one line why it fits their stated priority.
 - Show the columns and key formulas in plain text, then two or three sample rows using \
 either their real numbers or clearly labelled example numbers.
@@ -703,6 +738,106 @@ def _gemini_tools():
     ]
 
 
+def _generate_config(types, message: str, history: List[dict]):
+    """Per-turn Gemini config: system prompt, tools, output cap, thinking budget."""
+    kwargs: Dict[str, Any] = {}
+    budget = _thinking_budget()
+    if budget is not None:
+        kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
+    return types.GenerateContentConfig(
+        system_instruction=_system_prompt(_wants_spreadsheet(message, history)),
+        tools=_gemini_tools(),
+        max_output_tokens=MAX_TOKENS,
+        **kwargs,
+    )
+
+
+def _finalise_reply(text: Optional[str], finish_reason: Any) -> str:
+    reply = (text or "").strip()
+    if not reply:
+        return "I couldn't put together an answer that time — could you rephrase?"
+    if finish_reason == "MAX_TOKENS" or str(finish_reason).endswith("MAX_TOKENS"):
+        reply += "\n\n(That answer got cut off — ask me to continue for the rest.)"
+    return reply
+
+
+def _history_contents(types, message: str, history: List[dict]) -> List[Any]:
+    contents: List[Any] = [
+        types.Content(
+            role="model" if h["role"] == "assistant" else "user",
+            parts=[types.Part.from_text(text=h["content"])],
+        )
+        for h in history
+    ]
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
+    return contents
+
+
+def run_chat_stream(user_id: int, message: str, history: Optional[List[dict]] = None):
+    """
+    Same tool-use loop as run_chat(), but a generator of events so the UI can
+    show the reply as it is written instead of after the whole turn:
+
+      {"type": "tool",  "name": str}                  a tool is being run
+      {"type": "delta", "text": str}                  more reply text
+      {"type": "reset"}                               discard streamed text (it was
+                                                      a preamble to a tool call)
+      {"type": "done",  "reply": str, "tools_used": [str]}
+    """
+    from google.genai import types
+
+    history = history or []
+    client = _get_gemini_client()
+    contents = _history_contents(types, message, history)
+    config = _generate_config(types, message, history)
+
+    tools_used: List[str] = []
+    for _ in range(MAX_TOOL_ITERATIONS):
+        text_parts: List[str] = []
+        model_parts: List[Any] = []
+        calls: List[Any] = []
+        finish_reason = None
+        for chunk in client.models.generate_content_stream(
+            model=GEMINI_MODEL, contents=contents, config=config
+        ):
+            if not chunk.candidates:
+                continue
+            candidate = chunk.candidates[0]
+            finish_reason = getattr(candidate, "finish_reason", None) or finish_reason
+            # Keep the raw parts: the model's own function-call parts (with any
+            # signatures) have to go back in before the tool results do.
+            for part in (candidate.content.parts if candidate.content else None) or []:
+                model_parts.append(part)
+                if getattr(part, "function_call", None):
+                    calls.append(part.function_call)
+                elif getattr(part, "text", None) and not getattr(part, "thought", False):
+                    text_parts.append(part.text)
+                    yield {"type": "delta", "text": part.text}
+
+        if not calls:
+            yield {
+                "type": "done",
+                "reply": _finalise_reply("".join(text_parts), finish_reason),
+                "tools_used": tools_used,
+            }
+            return
+
+        if text_parts:
+            yield {"type": "reset"}
+        contents.append(types.Content(role="model", parts=model_parts))
+        result_parts = []
+        for call in calls:
+            tools_used.append(call.name)
+            yield {"type": "tool", "name": call.name}
+            result = _run_tool(user_id, call.name, dict(call.args or {}))
+            result_parts.append(
+                types.Part.from_function_response(name=call.name, response=_dump(result))
+            )
+        contents.append(types.Content(role="user", parts=result_parts))
+
+    yield {"type": "done", "reply": _TOO_MANY_STEPS, "tools_used": tools_used}
+
+
 def run_chat(user_id: int, message: str, history: Optional[List[dict]] = None) -> dict:
     """
     Run one chat turn to completion: send `message` (plus the prior plain-text
@@ -720,21 +855,10 @@ def run_chat(user_id: int, message: str, history: Optional[List[dict]] = None) -
 
     client = _get_gemini_client()
     # Gemini's roles are "user"/"model", not "user"/"assistant" — translated
-    # here only; the wire contract with the frontend stays "assistant".
-    contents: List[Any] = [
-        types.Content(
-            role="model" if h["role"] == "assistant" else "user",
-            parts=[types.Part.from_text(text=h["content"])],
-        )
-        for h in history
-    ]
-    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
+    # in _history_contents only; the wire contract with the frontend stays "assistant".
+    contents = _history_contents(types, message, history)
 
-    config = types.GenerateContentConfig(
-        system_instruction=_system_prompt(),
-        tools=_gemini_tools(),
-        max_output_tokens=MAX_TOKENS,
-    )
+    config = _generate_config(types, message, history)
 
     tools_used: List[str] = []
     for _ in range(MAX_TOOL_ITERATIONS):
@@ -744,13 +868,11 @@ def run_chat(user_id: int, message: str, history: Optional[List[dict]] = None) -
 
         calls = response.function_calls or []
         if not calls:
-            reply = (response.text or "").strip()
             finish_reason = getattr(response.candidates[0], "finish_reason", None) if response.candidates else None
-            if not reply:
-                reply = "I couldn't put together an answer that time — could you rephrase?"
-            elif finish_reason == "MAX_TOKENS":
-                reply += "\n\n(That answer got cut off — ask me to continue for the rest.)"
-            return {"reply": reply, "tools_used": tools_used}
+            return {
+                "reply": _finalise_reply(response.text, finish_reason),
+                "tools_used": tools_used,
+            }
 
         # The turn that made the calls has to go back in before the results do.
         contents.append(response.candidates[0].content)

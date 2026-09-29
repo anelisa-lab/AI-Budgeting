@@ -94,19 +94,51 @@ export default function Chat() {
     // Plain-text history only, oldest first — the backend never sees or
     // stores tool calls, so none of that belongs in what we resend either.
     const history = thread
-      .filter((m) => m.from !== 'error')
+      .filter((m) => m.from !== 'error' && m.text)
       .map((m) => ({ role: m.from === 'me' ? 'user' : 'assistant', content: m.text }));
 
-    setThread((t) => [...t, { from: 'me', text: message }]);
+    // The assistant bubble is added straight away and filled in as text streams
+    // in, so the student reads the start of the reply while the rest is written.
+    setThread((t) => [
+      ...t,
+      { from: 'me', text: message },
+      { from: 'assistant', text: '', toolsUsed: [], pending: true },
+    ]);
     setDraft('');
     setSending(true);
     setError(null);
+
+    const patchLast = (fn) => setThread((t) => {
+      const next = t.slice();
+      next[next.length - 1] = fn(next[next.length - 1]);
+      return next;
+    });
+    let failure = null;
+
     try {
-      const { reply, tools_used: toolsUsed } = await api.chat.send(token, message, history);
-      setThread((t) => [...t, { from: 'assistant', text: reply, toolsUsed }]);
+      await api.chat.stream(token, message, history, (event) => {
+        if (event.type === 'delta') {
+          patchLast((m) => ({ ...m, text: m.text + event.text }));
+        } else if (event.type === 'reset') {
+          patchLast((m) => ({ ...m, text: '' }));
+        } else if (event.type === 'tool') {
+          patchLast((m) => ({ ...m, toolsUsed: [...(m.toolsUsed || []), event.name] }));
+        } else if (event.type === 'done') {
+          patchLast((m) => ({
+            from: 'assistant', text: event.reply, toolsUsed: event.tools_used,
+          }));
+        } else if (event.type === 'error') {
+          failure = event.detail;
+        }
+      });
     } catch (err) {
-      setError(err.message || 'Could not reach the budgeting assistant. Try again.');
+      failure = err.message || 'Could not reach the budgeting assistant. Try again.';
     } finally {
+      if (failure) {
+        // Drop the empty placeholder, keep anything that did arrive.
+        setThread((t) => (t[t.length - 1]?.text ? t : t.slice(0, -1)));
+        setError(failure);
+      }
       setSending(false);
     }
   }
@@ -165,7 +197,7 @@ export default function Chat() {
                 // eslint-disable-next-line react/no-array-index-key
                 <ChatBubble key={i} from={m.from} text={m.text} toolsUsed={m.toolsUsed} />
               ))}
-              {sending && (
+              {sending && !thread[thread.length - 1]?.text && (
                 <div className="row" style={{ justifyContent: 'flex-start' }}>
                   <Badge tone="neutral">Thinking…</Badge>
                 </div>

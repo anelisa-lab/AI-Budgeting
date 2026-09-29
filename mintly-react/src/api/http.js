@@ -285,3 +285,71 @@ export function buildQuery(query) {
   const qs = params.toString();
   return qs ? `?${qs}` : '';
 }
+
+/**
+ * POST a JSON body and read a Server-Sent Events reply, calling `onEvent`
+ * with each parsed `data:` payload as it arrives. Errors returned before the
+ * stream starts (401, 422, ...) throw the same ApiError `request` would.
+ */
+export async function streamRequest(path, {
+  body,
+  token,
+  onEvent,
+  signal,
+  fetchImpl,
+} = {}) {
+  const doFetch = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!doFetch) throw new ApiError('No fetch implementation available.', { status: 0 });
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response;
+  try {
+    response = await doFetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    throw new ApiError(
+      'Could not reach the server. Check that the backend is running and try again.',
+      { status: 0 },
+    );
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    if (response.status === 401 && onUnauthorized) onUnauthorized();
+    throw toApiError(response.status, payload, {});
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let end = buffer.indexOf('\n\n');
+    while (end !== -1) {
+      const frame = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      const line = frame.split('\n').find((l) => l.startsWith('data:'));
+      if (line) {
+        try {
+          onEvent?.(JSON.parse(line.slice(5).trim()));
+        } catch {
+          /* ignore a malformed frame rather than dropping the whole reply */
+        }
+      }
+      end = buffer.indexOf('\n\n');
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(NOTIFICATIONS_STALE_EVENT));
+  }
+}
