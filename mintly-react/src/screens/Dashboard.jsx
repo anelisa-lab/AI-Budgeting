@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
 import { useShopping } from '../context/ShoppingContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import DailyBudgetSplit from '../components/budget/DailyBudgetSplit.jsx';
 import { money, plural, shortDate } from '../lib/format.js';
 import * as v from '../lib/validation.js';
@@ -87,6 +88,7 @@ function serverStatus(serverHealth) {
 }
 
 export default function Dashboard() {
+  const { t } = useLanguage();
   const { user } = useAuth();
   const budgetCtx = useBudget();
   const { listCount, listTotal } = useShopping();
@@ -229,9 +231,9 @@ export default function Dashboard() {
   return (
     <div className="stack stack--loose">
       <div>
-        <Eyebrow>Your money this period</Eyebrow>
+        <Eyebrow>{t('dash.eyebrow')}</Eyebrow>
         <h1 style={{ fontSize: 'var(--t-2xl)', color: 'var(--c-forest)', marginTop: 'var(--s-3)' }}>
-          {greeting()}, {user?.name?.split(' ')[0] || 'there'}.
+          {t(greetingKey())}, {user?.name?.split(' ')[0] || 'there'}.
         </h1>
       </div>
 
@@ -253,7 +255,7 @@ export default function Dashboard() {
       <div className="dash-hero">
         <Card tone="forest">
           <div className="row row--between">
-            <p className="dash-label">Left to spend</p>
+            <p className="dash-label">{t('dash.left')}</p>
             <Badge tone={health === 'over' ? 'danger' : 'accent'}>
               {plural(daysLeft, 'day')} left
             </Badge>
@@ -287,7 +289,7 @@ export default function Dashboard() {
           />
           <div style={{ marginTop: 'var(--s-5)' }}>
             <Button variant="primary" size="sm" block onClick={() => navigate('/search')}>
-              Find something to shop for →
+              {t('dash.shop')}
             </Button>
           </div>
         </Card>
@@ -466,9 +468,9 @@ export default function Dashboard() {
   );
 }
 
-function greeting() {
+function greetingKey() {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return 'dash.morning';
+  if (h < 18) return 'dash.afternoon';
+  return 'dash.evening';
 }

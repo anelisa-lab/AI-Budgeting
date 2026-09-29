@@ -14,20 +14,22 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useShopping } from '../../context/ShoppingContext.jsx';
 import { useBudget } from '../../context/BudgetContext.jsx';
 import { useNotifications } from '../../context/NotificationsContext.jsx';
+import { useLanguage } from '../../context/LanguageContext.jsx';
 import { money } from '../../lib/format.js';
 
 const LINKS = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/search', label: 'Search' },
-  { to: '/compare', label: 'Compare' },
-  { to: '/chat', label: 'Chat' },
-  { to: '/budget', label: 'Budget' },
-  { to: '/notifications', label: 'Notifications' },
-  { to: '/profile', label: 'Profile' },
-  { to: '/settings', label: 'Settings' },
+  { to: '/dashboard', key: 'nav.dashboard' },
+  { to: '/search', key: 'nav.search' },
+  { to: '/compare', key: 'nav.compare' },
+  { to: '/chat', key: 'nav.chat' },
+  { to: '/budget', key: 'nav.budget' },
+  { to: '/notifications', key: 'nav.notifications' },
+  { to: '/profile', key: 'nav.profile' },
+  { to: '/settings', key: 'nav.settings' },
 ];
 
 export default function NavBar() {
+  const { t } = useLanguage();
   const { isAuthenticated, user, logout } = useAuth();
   const { listCount, listTotal } = useShopping();
   const { budget, remaining } = useBudget();
@@ -69,7 +71,7 @@ export default function NavBar() {
           <div className="nav__links" ref={linksRef}>
             {LINKS.map((l) => (
               <NavLink key={l.to} to={l.to} className="nav__link">
-                {l.label}
+                {t(l.key)}
                 {l.to === '/compare' && listCount > 0 && (
                   <span
                     className={listOver ? 'nav__list nav__list--over num' : 'nav__list num'}
@@ -103,7 +105,7 @@ export default function NavBar() {
                 {user?.name?.split(' ')[0] || 'Student'}
               </NavLink>
               <Button variant="ghost" size="sm" onClick={handleLogout} loading={loggingOut}>
-                {loggingOut ? 'Signing out…' : 'Sign out'}
+                {loggingOut ? 'Signing out…' : t('nav.signOut')}
               </Button>
             </>
           ) : (

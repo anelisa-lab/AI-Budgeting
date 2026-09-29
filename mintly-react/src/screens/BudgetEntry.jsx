@@ -29,6 +29,7 @@ import {
   Alert, Button, Card, Eyebrow, Field, Input, Select,
 } from '../components/ui/index.js';
 import { useBudget, NSFAS } from '../context/BudgetContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import ListBudgetSummary from '../components/list/ListBudgetSummary.jsx';
 import { addDays, budgetToFormValues } from '../api/normalise.js';
@@ -81,6 +82,7 @@ const RULES = {
 };
 
 export default function BudgetEntry() {
+  const { t } = useLanguage();
   const { budget, saveBudget, deleteBudget, supports } = useBudget();
   const toast = useToast();
   const navigate = useNavigate();
@@ -219,9 +221,9 @@ export default function BudgetEntry() {
     <div className="page--narrow" style={{ margin: '0 auto' }}>
       <div className="stack stack--loose">
         <div>
-          <Eyebrow>{isEditing ? 'Edit your budget' : 'Step 1 of 2'}</Eyebrow>
+          <Eyebrow>{isEditing ? 'Edit your budget' : t('budget.step1')}</Eyebrow>
           <h1 style={{ fontSize: 'var(--t-2xl)', color: 'var(--c-forest)', marginTop: 'var(--s-3)' }}>
-            {isEditing ? 'Update your budget' : 'What are you working with?'}
+            {isEditing ? 'Update your budget' : t('budget.title')}
           </h1>
           <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)' }}>
             Tell UniWallet what landed and when. It will work out what you can safely
@@ -236,7 +238,7 @@ export default function BudgetEntry() {
             {!isEditing && (
               <div>
                 <p className="field__label" id="budget-presets-label" style={{ marginBottom: 'var(--s-2)' }}>
-                  Start from a known amount
+                  {t('budget.known')}
                 </p>
                 <div className="chips" role="group" aria-labelledby="budget-presets-label">
                   {PRESETS.map((p) => (
@@ -259,7 +261,7 @@ export default function BudgetEntry() {
 
             <Field
               id="amount"
-              label="How much did you receive?"
+              label={t('budget.received')}
               hint="The full amount for this period, before you spend any of it."
               error={errors.amount}
               required
@@ -281,7 +283,7 @@ export default function BudgetEntry() {
 
             <Field
               id="payoutDate"
-              label="When did it land?"
+              label={t('budget.landed')}
               hint={isEditing
                 ? 'The start date of a budget cannot be changed once it is set.'
                 : 'The day your allowance was paid. The daily figure counts from here.'}
@@ -304,7 +306,7 @@ export default function BudgetEntry() {
 
             <Field
               id="periodDays"
-              label="How long must it last?"
+              label={t('budget.last')}
               hint="Sets the date of your next payout, which is what the daily figure counts down to."
               error={errors.periodDays}
               required

@@ -20,6 +20,7 @@
  */
 
 import { Badge, Progress } from '../ui/index.js';
+import { useLanguage } from '../../context/LanguageContext.jsx';
 import { money, plural, shortDate } from '../../lib/format.js';
 
 export default function DailyBudgetSplit({
@@ -29,6 +30,7 @@ export default function DailyBudgetSplit({
   daysLeft = 0,
   children,
 }) {
+  const { t } = useLanguage();
   const survival = split?.mode === 'survival';
   const exhausted = remaining <= 0;
   const overToday = split ? split.spent_today > split.daily_limit : false;
@@ -40,7 +42,7 @@ export default function DailyBudgetSplit({
   return (
     <>
       <div className="row row--between">
-        <p className="dash-label">Safe to spend</p>
+        <p className="dash-label">{t('dash.safe')}</p>
         {survival && <Badge tone="danger">Survival mode</Badge>}
       </div>
 

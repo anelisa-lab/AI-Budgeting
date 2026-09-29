@@ -13,10 +13,12 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, Eyebrow, Input } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import LivePrices from '../components/search/LivePrices.jsx';
 import NearbyStores from '../components/search/NearbyStores.jsx';
 
 export default function Search() {
+  const { t } = useLanguage();
   const { token } = useAuth();
   const [params, setParams] = useSearchParams();
   const q = params.get('q') || '';
@@ -25,12 +27,12 @@ export default function Search() {
   return (
     <div className="stack stack--loose">
       <div>
-        <Eyebrow>Find it cheaper</Eyebrow>
+        <Eyebrow>{t('search.eyebrow')}</Eyebrow>
         <h1 style={{ fontSize: 'var(--t-2xl)', color: 'var(--c-forest)', marginTop: 'var(--s-3)' }}>
-          What are you looking for?
+          {t('search.title')}
         </h1>
         <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)', maxWidth: '58ch' }}>
-          Search Checkers, Shoprite, SuperbHyper, Pick n Pay and SPAR at once.
+          {t('search.sub')}
         </p>
       </div>
 

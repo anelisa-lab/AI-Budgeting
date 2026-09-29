@@ -90,6 +90,7 @@ export function applyStoredSettings() {
   root.dataset.textSize = getTextSize();
   root.dataset.contrast = getContrastMode();
   root.dataset.theme = resolveTheme(getTheme());
+  try { root.lang = localStorage.getItem('uniwallet.language') || 'en'; } catch { /* keep default */ }
   // While set to 'system', follow the OS when it flips.
   try {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

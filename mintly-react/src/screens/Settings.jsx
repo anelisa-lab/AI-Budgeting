@@ -18,6 +18,8 @@ import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, Eyebrow, Select } from '../components/ui/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBudget } from '../context/BudgetContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
+import { LANGUAGES } from '../i18n/translations.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { api } from '../api/client.js';
 import { fullDate, longDate, money } from '../lib/format.js';
@@ -35,6 +37,7 @@ import {
 export default function Settings() {
   const { user, logout } = useAuth();
   const { budget, remaining } = useBudget();
+  const { t, lang, setLang } = useLanguage();
   const toast = useToast();
   const navigate = useNavigate();
   const [reducedMotion, setReducedMotionState] = useState(getReducedMotion);
@@ -88,18 +91,17 @@ export default function Settings() {
   return (
     <div style={{ maxWidth: 760, margin: '0 auto' }} className="stack stack--loose">
       <div>
-        <Eyebrow>App settings</Eyebrow>
-        <h1 style={{ fontSize: 'var(--t-2xl)', color: 'var(--c-forest)', marginTop: 'var(--s-3)' }}>Settings</h1>
+        <Eyebrow>{t('settings.eyebrow')}</Eyebrow>
+        <h1 style={{ fontSize: 'var(--t-2xl)', color: 'var(--c-forest)', marginTop: 'var(--s-3)' }}>{t('settings.title')}</h1>
         <p style={{ color: 'var(--c-muted)', marginTop: 'var(--s-3)', maxWidth: '62ch' }}>
-          Each setting says where it is kept: on your account (follows you to any device)
-          or on this device only.
+          {t('settings.intro')}
         </p>
       </div>
 
       <Card className="stack">
         <div className="card__head">
-          <h2 className="card__title">Account</h2>
-          <Badge tone="success">Saved to your account</Badge>
+          <h2 className="card__title">{t('settings.account')}</h2>
+          <Badge tone="success">{t('settings.savedAccount')}</Badge>
         </div>
         <p style={sectionText}>
           {user?.name} · {user?.email}
@@ -110,15 +112,15 @@ export default function Settings() {
           Recommendations use them.
         </p>
         <div className="row">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/profile')}>Profile &amp; preferences →</Button>
-          <Button variant="quiet" size="sm" onClick={signOut}>Sign out</Button>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/profile')}>{t('settings.profileLink')}</Button>
+          <Button variant="quiet" size="sm" onClick={signOut}>{t('nav.signOut')}</Button>
         </div>
       </Card>
 
       <Card className="stack">
         <div className="card__head">
-          <h2 className="card__title">Budget</h2>
-          <Badge tone="success">Saved to your account</Badge>
+          <h2 className="card__title">{t('settings.budget')}</h2>
+          <Badge tone="success">{t('settings.savedAccount')}</Badge>
         </div>
         <p style={sectionText}>
           {budget
@@ -134,19 +136,19 @@ export default function Settings() {
 
       <Card className="stack">
         <div className="card__head">
-          <h2 className="card__title">Appearance</h2>
-          <Badge tone="neutral">This device only</Badge>
+          <h2 className="card__title">{t('settings.appearance')}</h2>
+          <Badge tone="neutral">{t('settings.deviceOnly')}</Badge>
         </div>
         <div className="field">
-          <label className="field__label" htmlFor="theme">Theme</label>
+          <label className="field__label" htmlFor="theme">{t('settings.theme')}</label>
           <Select
             id="theme"
             value={theme}
             onChange={(e) => changeTheme(e.target.value)}
             options={[
-              { value: 'system', label: 'Match my device' },
-              { value: 'light', label: 'Light' },
-              { value: 'dark', label: 'Dark' },
+              { value: 'system', label: t('settings.themeSystem') },
+              { value: 'light', label: t('settings.themeLight') },
+              { value: 'dark', label: t('settings.themeDark') },
             ]}
           />
         </div>
@@ -154,8 +156,26 @@ export default function Settings() {
 
       <Card className="stack">
         <div className="card__head">
-          <h2 className="card__title">Accessibility</h2>
-          <Badge tone="neutral">This device only</Badge>
+          <h2 className="card__title">{t('settings.language')}</h2>
+          <Badge tone="neutral">{t('settings.deviceOnly')}</Badge>
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="language">{t('settings.language')}</label>
+          <Select
+            id="language"
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+            describedBy="language-hint"
+            options={LANGUAGES.map((l) => ({ value: l.code, label: l.native }))}
+          />
+          <p className="field__hint" id="language-hint">{t('settings.languageHint')}</p>
+        </div>
+      </Card>
+
+      <Card className="stack">
+        <div className="card__head">
+          <h2 className="card__title">{t('settings.accessibility')}</h2>
+          <Badge tone="neutral">{t('settings.deviceOnly')}</Badge>
         </div>
         <p style={sectionText}>
           These controls change how UniWallet is presented on this browser. They do not change
@@ -216,9 +236,9 @@ export default function Settings() {
 
       <Card>
         <div className="card__head">
-          <h2 className="card__title">Connection</h2>
+          <h2 className="card__title">{t('settings.connection')}</h2>
           <Badge tone={connection === 'up' ? 'success' : connection === 'down' ? 'danger' : 'neutral'}>
-            {connection === 'up' ? 'Online' : connection === 'down' ? 'Offline' : 'Checking'}
+            {connection === 'up' ? t('settings.online') : connection === 'down' ? t('settings.offline') : t('settings.checking')}
           </Badge>
         </div>
         <p style={sectionText}>

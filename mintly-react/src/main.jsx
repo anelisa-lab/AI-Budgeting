@@ -20,6 +20,7 @@ import { AuthProvider } from './context/AuthContext.jsx';
 import { BudgetProvider } from './context/BudgetContext.jsx';
 import { NotificationsProvider } from './context/NotificationsContext.jsx';
 import { ShoppingProvider } from './context/ShoppingContext.jsx';
+import { LanguageProvider } from './context/LanguageContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
 
 import { applyStoredSettings } from './lib/localSettings.js';
@@ -33,6 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     {/* Opt in to the v7 behaviour now, so the console stays quiet. */}
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <LanguageProvider>
       <ToastProvider>
         <AuthProvider>
           <BudgetProvider>
@@ -44,6 +46,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           </BudgetProvider>
         </AuthProvider>
       </ToastProvider>
+      </LanguageProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );
